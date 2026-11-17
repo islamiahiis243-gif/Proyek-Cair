@@ -1,0 +1,6 @@
+{
+  "name": "Proyek Cair",
+  "description": "Aplikasi kontrol master BOQ, mutasi stok fisik, mutasi kas, dan laporan berdasarkan data operasional Supabase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,10 @@
+node_modules/
+build/
+dist/
+coverage/
+msc/
+.DS_Store
+desktop.ini
+*.log
+.env*
+!.env.example
