@@ -1,0 +1,14 @@
+revoke all on function public.create_npwp_master_key_recovery_set() from public,anon;
+revoke all on function public.enroll_key_recovery_custodian(uuid,text) from public,anon;
+revoke all on function public.assign_key_recovery_share(uuid,integer,uuid) from public,anon;
+revoke all on function public.claim_key_recovery_share(uuid) from public,anon;
+revoke all on function public.approve_key_recovery(uuid,text) from public,anon;
+revoke all on function public.verify_key_recovery_set(uuid,text) from public,anon;
+revoke all on function public.restore_npwp_master_key_from_recovery_set(uuid) from public,anon;
+grant execute on function public.create_npwp_master_key_recovery_set() to authenticated;
+grant execute on function public.enroll_key_recovery_custodian(uuid,text) to authenticated;
+grant execute on function public.assign_key_recovery_share(uuid,integer,uuid) to authenticated;
+grant execute on function public.claim_key_recovery_share(uuid) to authenticated;
+grant execute on function public.approve_key_recovery(uuid,text) to authenticated;
+grant execute on function public.verify_key_recovery_set(uuid,text) to authenticated;
+grant execute on function public.restore_npwp_master_key_from_recovery_set(uuid) to authenticated;;
