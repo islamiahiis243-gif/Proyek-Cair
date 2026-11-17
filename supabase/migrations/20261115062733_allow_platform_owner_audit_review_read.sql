@@ -1,1 +1,0 @@
-drop policy if exists audit_read_platform_owner on public.audit_logs;create policy audit_read_platform_owner on public.audit_logs for select to authenticated using(private.is_platform_super_admin());

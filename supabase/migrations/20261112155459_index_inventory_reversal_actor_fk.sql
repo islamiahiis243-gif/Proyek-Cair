@@ -1,1 +1,0 @@
-create index if not exists inventory_transaction_reversals_reversed_by_idx on public.inventory_transaction_reversals(reversed_by);
