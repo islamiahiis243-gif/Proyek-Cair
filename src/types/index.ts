@@ -1,5 +1,9 @@
 export type AvailabilityStatus = 'Belum Dicatat' | 'Tersedia' | 'Stok Menipis' | 'Tidak Tersedia';
 
+export type AppMode = 'PERSONAL' | 'IMPERSONATE' | 'CSA' | 'PSA';
+export type ImpersonateRole = 'Clerk' | 'Foreman' | 'Spv.' | 'Dept. Manager' | 'KTT/Proj. Manager' | 'CEO/Direktur';
+export type StatusDokumenWorkflow = 'DRAFT' | 'DITERBITKAN' | 'DIPERIKSA' | 'DISETUJUI' | 'MENGETAHUI' | 'BATAL' | 'DIGANTI';
+
 export interface ItemBarang {
   parent_section_id?: string | null;
   source_excel_row?: number | null;
@@ -53,6 +57,15 @@ export interface MutasiBarang {
   purpose?: string;
   addition_id?: string;
   created_by_name?: string;
+  status_dokumen?: StatusDokumenWorkflow;
+  diperiksa_oleh?: string;
+  disetujui_oleh?: string;
+  mengetahui_oleh?: string;
+  tte_qr_code?: string;
+  is_batal?: boolean;
+  is_ganti?: boolean;
+  referensi_ganti_id?: string;
+  alasan_batal_ganti?: string;
 }
 
 export type JenisMutasiKas = 'MASUK' | 'KELUAR';
@@ -68,6 +81,15 @@ export interface MutasiKas {
   tanggal: string; // ISO String
   saldo_setelah: number; // Running balance
   catatan?: string;
+  status_dokumen?: StatusDokumenWorkflow;
+  diperiksa_oleh?: string;
+  disetujui_oleh?: string;
+  mengetahui_oleh?: string;
+  tte_qr_code?: string;
+  is_batal?: boolean;
+  is_ganti?: boolean;
+  referensi_ganti_id?: string;
+  alasan_batal_ganti?: string;
 }
 
 export interface DokumenLaporan {

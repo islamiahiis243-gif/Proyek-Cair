@@ -6,5 +6,6 @@ msc/
 .DS_Store
 desktop.ini
 *.log
+~$*
 .env*
 !.env.example

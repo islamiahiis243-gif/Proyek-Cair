@@ -2,8 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Building2, FolderKanban, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { getSupabaseClient, resolveMyActiveContext } from '../lib/supabase';
 import { RfinBInvitationPanel } from './RfinBInvitationPanel';
-import { CompanyBusinessCalendarPanel } from './CompanyBusinessCalendarPanel';
-import { CompanyAuditTrailPanel } from './CompanyAuditTrailPanel';
 
 type CompanyWorkspace = { id: string; name: string; company_id: string | null };
 type ProjectRow = { id: string; workspace_id: string; project_code: string; name: string; description: string | null; status: string; created_at: string };
@@ -353,8 +351,6 @@ export const CompanyConsole: React.FC = () => {
         </section>
       </div>
       <RfinBInvitationPanel workspaceId={workspaceId} companyId={activeWorkspace?.company_id || ''} canAdmin={canAdmin} projects={projects}/>
-      <CompanyBusinessCalendarPanel workspaceId={workspaceId} canAdmin={canAdmin}/>
-      <CompanyAuditTrailPanel workspaceId={workspaceId} canAdmin={canAdmin}/>
       <p className="text-xs leading-5 text-slate-500">Catatan keamanan: Company Super Admin otomatis menjadi anggota awal Project untuk tata kelola, tetapi tidak otomatis menerima hak BOQ, inventory, cash, dokumen, approval, TTE, atau QR. Permission tersebut harus diberikan secara eksplisit melalui alur penugasan yang sesuai. Relasi client pada Project Registry adalah hubungan bisnis, bukan Company/Tenant, Workspace, atau Membership. Client tidak memperoleh akses aplikasi hanya karena dicatat sebagai client.</p>
       </>}
     </main>
