@@ -613,13 +613,18 @@ create policy cash_transaction_reversals_authenticated on public.cash_transactio
 create policy documents_authenticated on public.documents for all to authenticated using(true) with check(true);
 create policy audit_logs_authenticated on public.audit_logs for all to authenticated using(true) with check(true);
 
--- Berikan izin akses penuh ke authenticated
+-- Berikan izin akses penuh ke authenticated dan baca ke anon
 grant all on public.profiles, public.workspaces, public.companies, public.company_memberships,
   public.projects, public.project_memberships, public.project_permission_catalog,
   public.project_membership_permissions, public.boq_sections, public.boq_items,
   public.boq_additions, public.inventory_transactions, public.inventory_transaction_reversals,
   public.cash_transactions, public.cash_transaction_reversals, public.documents,
   public.audit_logs to authenticated;
+
+grant select on public.profiles, public.workspaces, public.companies, public.projects, public.boq_items to anon;
+
+create policy profiles_anon_select on public.profiles for select to anon using(true);
+create policy boq_items_anon_select on public.boq_items for select to anon using(true);
 
 grant execute on function public.resolve_my_active_context() to authenticated;
 grant execute on function public.record_inventory_mutation_scoped(uuid,uuid,uuid,uuid,text,numeric,timestamptz,text,text,text,text,text,text,text,text,text,uuid) to authenticated;
