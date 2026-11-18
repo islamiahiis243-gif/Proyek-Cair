@@ -3,8 +3,8 @@ const fs = require('fs');
 const csvPath = 'supabase/seed/boq_trainer_udu_office_sheet1.csv';
 const lines = fs.readFileSync(csvPath, 'utf8').trim().split('\n');
 
-const projectId = '364248b1-c5e4-441b-a94c-d15c964d3ecb';
-const workspaceId = '5d9443c5-14d5-4f75-a885-9944d5d1026e';
+const projectId = '2506245e-ff3f-4313-b821-920ab368a5df';
+const workspaceId = '50e273d9-735a-4f75-8204-badab2929f3a';
 
 const values = [];
 
