@@ -74,13 +74,14 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
         return;
       }
 
+      const personalWsId = profile?.personal_workspace_id || activeContext.workspaces?.find((w: any) => w.type === 'PERSONAL')?.id || activeContext.workspaces?.[0]?.id;
       saveStoredUser({
         id: session.user.id,
         name: profile?.full_name || session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Pengguna',
         email: session.user.email || '',
         avatar_url: session.user.user_metadata?.avatar_url,
         role: 'User',
-        personalWorkspaceId: profile?.personal_workspace_id || undefined,
+        personalWorkspaceId: personalWsId,
         workspaceType: 'PERSONAL',
         provider: session.user.app_metadata?.provider === 'google' ? 'google' : 'guest',
       });

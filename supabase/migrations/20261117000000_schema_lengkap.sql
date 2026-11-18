@@ -10,6 +10,7 @@ create table if not exists public.profiles (
   full_name text not null default '',
   role text not null default 'admin' check(role in ('admin','site_manager','storekeeper','finance','auditor','viewer')),
   is_active boolean not null default true,
+  personal_workspace_id uuid,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
