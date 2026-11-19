@@ -14,13 +14,7 @@ import {
   Ban,
   FileEdit,
   Clock,
-  ShieldCheck,
-  Package,
-  Sparkles,
-  HelpCircle,
-  Coins,
-  Building2,
-  Truck
+  ShieldCheck
 } from 'lucide-react';
 import { formatDateTime } from '../lib/pdfGenerator';
 
@@ -768,177 +762,108 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSubmitMutation} className="p-5 space-y-4 text-xs">
-              {/* Toggle Kategori Material: Kontrak BOQ vs Custom / Non-BOQ */}
-              <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCustomMode(false);
-                    if (mutationType === 'MASUK') {
-                      setPurpose('Penyediaan Material Kontrak BOQ');
-                    } else if (currentPhysicalMaterial?.budget_lines[0]) {
-                      const bl = currentPhysicalMaterial.budget_lines[0];
-                      setPurpose(`${bl.kode_boq} - ${bl.kategori}`);
-                    }
-                  }}
-                  className={`flex-1 py-2 px-3 rounded-lg font-semibold text-xs transition-all flex items-center justify-center gap-1.5 ${
-                    !isCustomMode
-                      ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
-                >
-                  <Package className="w-3.5 h-3.5" />
-                  <span>Material Kontrak BOQ</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCustomMode(true);
-                    if (bebanBiaya === 'KONTRAKTOR') {
-                      setBebanBiaya('OPERASIONAL');
-                    }
-                    if (!purpose || purpose === 'Penyediaan Material Kontrak BOQ') {
-                      setPurpose('');
-                    }
-                  }}
-                  className={`flex-1 py-2 px-3 rounded-lg font-semibold text-xs transition-all flex items-center justify-center gap-1.5 ${
-                    isCustomMode
-                      ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-300 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Material Custom / Non-BOQ</span>
-                </button>
-              </div>
+            <form onSubmit={handleSubmitMutation} className="p-5 space-y-3.5 text-xs">
+              {/* Baris 1: Pemilihan Material (dengan tombol kecil toggle Non-BOQ) */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">
+                    Material / Barang <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !isCustomMode;
+                      setIsCustomMode(next);
+                      if (next) {
+                        setBebanBiaya('OPERASIONAL');
+                        setPurpose('');
+                      } else {
+                        setBebanBiaya('KONTRAKTOR');
+                        if (mutationType === 'MASUK') setPurpose('Penyediaan Material Kontrak BOQ');
+                        else if (currentPhysicalMaterial?.budget_lines[0]) {
+                          const bl = currentPhysicalMaterial.budget_lines[0];
+                          setPurpose(`${bl.kode_boq} - ${bl.kategori}`);
+                        }
+                      }
+                    }}
+                    className={`text-[11px] px-2 py-0.5 rounded-md font-medium transition-colors ${
+                      isCustomMode
+                        ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
+                        : 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {isCustomMode ? '← Kembali ke Katalog BOQ' : '+ Item Custom / Non-BOQ'}
+                  </button>
+                </div>
 
-              {/* Mode Custom: Input Manual Nama & Satuan */}
-              {isCustomMode ? (
-                <div className="p-3.5 rounded-xl border border-purple-200 dark:border-purple-900/60 bg-purple-50/40 dark:bg-purple-950/20 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs text-purple-950 dark:text-purple-200 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-purple-500" />
-                      Detail Material Custom / Luar BOQ
-                    </span>
-                    <span className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">
-                      Pencatatan Mandiri
-                    </span>
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Nama Barang / Material Custom <span className="text-rose-500">*</span>
-                    </label>
+                {isCustomMode ? (
+                  <div className="grid grid-cols-3 gap-2">
                     <input
                       type="text"
                       required
-                      placeholder="Cth: Beras 50kg Logistik Tukang, Balok Camp Albasia, Solar Genset..."
+                      placeholder="Nama barang (Cth: Beras 50kg, Balok Camp, Solar...)"
                       value={customItemName}
                       onChange={(e) => setCustomItemName(e.target.value)}
-                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700/80 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-purple-500/20"
+                      className="col-span-2 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-purple-300 dark:border-purple-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-purple-500/20"
                     />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Satuan Material <span className="text-rose-500">*</span>
-                    </label>
                     <input
                       type="text"
                       required
-                      placeholder="Cth: Zak, Kg, Batang, Liter, Unit, Hari..."
+                      placeholder="Satuan (Kg, Zak...)"
                       value={customItemUom}
                       onChange={(e) => setCustomItemUom(e.target.value)}
-                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700/80 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-purple-500/20"
+                      className="col-span-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-purple-300 dark:border-purple-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-purple-500/20"
                     />
                   </div>
-                </div>
-              ) : (
-                /* Mode BOQ: Pemilihan Material Berbasis Kolom Pencarian (Search Autocomplete) */
-                <div className="relative" ref={itemSearchRef}>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300">
-                      Pilih Material / Barang <span className="text-rose-500">*</span>
-                    </label>
-                    {currentPhysicalMaterial && (
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        Stok Fisik Gudang: <b className="text-slate-700 dark:text-slate-200">{currentStock} {currentPhysicalMaterial.satuan}</b>
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Tampilan Material Terpilih */}
-                  {currentPhysicalMaterial && !isItemSearchOpen ? (
-                    <div className={`p-3 rounded-xl border transition-colors ${
-                      mutationType === 'MASUK'
-                        ? 'border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/30'
-                        : 'border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/30'
-                    }`}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
-                              {currentPhysicalMaterial.nama_barang}
-                            </span>
-                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-semibold uppercase ${
-                              mutationType === 'MASUK'
-                                ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
-                                : 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
-                            }`}>
-                              {mutationType === 'MASUK' ? 'Penerimaan Fisik Terpadu' : 'Material Fisik Gudang'}
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-2 mt-1">
-                            <span>Satuan: <b className="text-slate-700 dark:text-slate-300">{currentPhysicalMaterial.satuan}</b></span>
-                            <span>·</span>
-                            <span>Saldo Fisik Saat Ini: <b className={currentStock > 0 ? "text-emerald-600 dark:text-emerald-400 font-mono" : "text-rose-600 dark:text-rose-400 font-mono"}>{currentStock} {currentPhysicalMaterial.satuan}</b></span>
-                            <span>·</span>
-                            <span>Total Kebutuhan Proyek: <b className="text-blue-600 dark:text-blue-400 font-mono">{currentPhysicalMaterial.total_qty_boq.toLocaleString('id-ID', { maximumFractionDigits: 4 })} {currentPhysicalMaterial.satuan}</b> ({currentPhysicalMaterial.budget_lines.length} Pos Alokasi BOQ)</span>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsItemSearchOpen(true);
-                            setItemSearchQuery('');
-                          }}
-                          className="shrink-0 px-3 py-1.5 text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 bg-white dark:bg-slate-800 rounded-lg border border-blue-200 dark:border-blue-800 shadow-2xs hover:bg-blue-50 dark:hover:bg-slate-700 transition-colors"
-                        >
-                          Ganti Material
-                        </button>
+                ) : (
+                  currentPhysicalMaterial && !isItemSearchOpen ? (
+                    <div className="flex items-center justify-between px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                      <div className="min-w-0 flex-1 flex items-center gap-2">
+                        <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                          {currentPhysicalMaterial.nama_barang}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          (Stok: <b className={currentStock > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-600 dark:text-slate-300"}>{currentStock} {currentPhysicalMaterial.satuan}</b>)
+                        </span>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsItemSearchOpen(true);
+                          setItemSearchQuery('');
+                        }}
+                        className="px-2 py-0.5 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        Ganti
+                      </button>
                     </div>
                   ) : (
-                    /* Kolom Search Input dengan Hasil Autocomplete */
-                    <div>
+                    <div className="relative" ref={itemSearchRef}>
                       <div className="relative">
                         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                         <input
                           type="text"
                           autoFocus
-                          placeholder="Ketik nama material fisik (cth: Pasir, Semen, Kayu, Besi, Batako)..."
+                          placeholder="Ketik nama material (cth: Pasir, Semen, Kayu 5/7)..."
                           value={itemSearchQuery}
                           onChange={(e) => {
                             setItemSearchQuery(e.target.value);
                             setIsItemSearchOpen(true);
                           }}
                           onFocus={() => setIsItemSearchOpen(true)}
-                          className="w-full pl-9 pr-8 py-2.5 bg-slate-50 dark:bg-slate-800 border border-blue-400 dark:border-blue-500 text-slate-900 dark:text-white rounded-xl text-xs focus:ring-2 focus:ring-blue-500/20 font-medium"
+                          className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-800 border border-blue-400 dark:border-blue-500 text-slate-900 dark:text-white rounded-xl text-xs focus:ring-2 focus:ring-blue-500/20 font-medium"
                         />
                         {currentPhysicalMaterial && (
                           <button
                             type="button"
                             onClick={() => setIsItemSearchOpen(false)}
                             className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
-                            title="Tutup pencarian"
                           >
                             ✕
                           </button>
                         )}
                       </div>
 
-                      {/* Dropdown Hasil Pencarian Autocomplete */}
                       {isItemSearchOpen && (
                         <div className="absolute left-0 right-0 mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl z-50 divide-y divide-slate-100 dark:divide-slate-700/60">
                           {filteredPhysicalMaterialsForPicker.length > 0 ? (
@@ -978,10 +903,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                 </div>
                                 <div className="text-right shrink-0">
                                   <div className="text-[10px] font-mono font-bold text-slate-700 dark:text-slate-300">
-                                    Stok Fisik: {pm.stok_fisik} {pm.satuan}
-                                  </div>
-                                  <div className="text-[9px] text-slate-400">
-                                    Total Rencana: {pm.total_qty_boq.toLocaleString('id-ID')} {pm.satuan}
+                                    Stok: {pm.stok_fisik} {pm.satuan}
                                   </div>
                                 </div>
                               </button>
@@ -994,38 +916,29 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-              )}
+                  )
+                )}
+              </div>
 
-              {/* KHUSUS PENGELUARAN BOQ: Rincian Alokasi Pos BOQ (Pengeluaran Dirincikan) */}
+              {/* Baris 2: KHUSUS PENGELUARAN BOQ: Pos Pekerjaan BOQ */}
               {!isCustomMode && mutationType === 'KELUAR' && currentPhysicalMaterial && (
-                <div className="p-3 rounded-xl border border-amber-300 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
-                      Alokasi Pos Pekerjaan BOQ <span className="text-rose-500">*</span>
-                    </label>
-                    <span className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">
-                      {currentPhysicalMaterial.budget_lines.length} pos pekerjaan tersedia
-                    </span>
-                  </div>
-
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Pos Pekerjaan BOQ <span className="text-rose-500">*</span>
+                  </label>
                   {currentPhysicalMaterial.budget_lines.length === 1 ? (
-                    <div className="p-2.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                    <div className="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs">
+                      <div className="truncate mr-2">
+                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400 mr-1.5">
                           {currentPhysicalMaterial.budget_lines[0].kode_boq}
                         </span>
-                        <span className="text-[10px] text-slate-400">Tunggal / Otomatis</span>
+                        <span className="text-slate-800 dark:text-slate-200">
+                          {currentPhysicalMaterial.budget_lines[0].kategori}
+                        </span>
                       </div>
-                      <div className="text-slate-800 dark:text-slate-200 font-semibold mt-0.5">
-                        {currentPhysicalMaterial.budget_lines[0].kategori}
-                      </div>
-                      <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 flex gap-3 font-mono">
-                        <span>Target: <b>{currentPhysicalMaterial.budget_lines[0].qty_boq.toLocaleString('id-ID')}</b></span>
-                        <span>Terpakai: <b className="text-rose-600 dark:text-rose-400">{currentPhysicalMaterial.budget_lines[0].qty_keluar_total.toLocaleString('id-ID')}</b></span>
-                        <span>Sisa Kuota: <b className="text-emerald-600 dark:text-emerald-400">{currentPhysicalMaterial.budget_lines[0].sisa_anggaran.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}</b></span>
-                      </div>
+                      <span className="text-[10px] text-slate-500 font-mono shrink-0">
+                        Sisa: <b className="text-emerald-600 dark:text-emerald-400">{currentPhysicalMaterial.budget_lines[0].sisa_anggaran.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}</b>
+                      </span>
                     </div>
                   ) : (
                     <select
@@ -1038,120 +951,63 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                           setPurpose(`${line.kode_boq} - ${line.kategori}`);
                         }
                       }}
-                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700/80 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-amber-500/20"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500/20"
                     >
                       {currentPhysicalMaterial.budget_lines.map((line) => (
                         <option key={line.id} value={line.id}>
-                          [{line.kode_boq}] {line.kategori} — Rencana: {line.qty_boq.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan} (Sisa: {line.sisa_anggaran.toLocaleString('id-ID')})
+                          [{line.kode_boq}] {line.kategori} (Sisa: {line.sisa_anggaran.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan})
                         </option>
                       ))}
                     </select>
                   )}
-
-                  {selectedBudgetLine && currentPhysicalMaterial.budget_lines.length > 1 && (
-                    <div className="p-2 rounded-lg bg-white/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-[11px] grid grid-cols-3 gap-2 text-center">
-                      <div>
-                        <span className="text-[10px] text-slate-400 block">Rencana Pos</span>
-                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                          {selectedBudgetLine.qty_boq.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-400 block">Sudah Terpakai</span>
-                        <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">
-                          {selectedBudgetLine.qty_keluar_total.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-400 block">Sisa Anggaran Pos</span>
-                        <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                          {selectedBudgetLine.sisa_anggaran.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedBudgetLine && qty > selectedBudgetLine.sisa_anggaran && (
-                    <div className="text-[10px] text-amber-700 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-900/40 p-2 rounded-lg flex items-center gap-1.5">
-                      <span>⚠️</span>
-                      <span>
-                        Kuantitas keluar ({qty} {currentPhysicalMaterial.satuan}) melebihi sisa anggaran pos ini ({selectedBudgetLine.sisa_anggaran.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}).
-                      </span>
-                    </div>
-                  )}
                 </div>
               )}
 
-              {/* Alokasi Beban Pembiayaan (3 Pilihan) */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300">
-                    Beban Pembiayaan (Alokasi Biaya) <span className="text-rose-500">*</span>
-                  </label>
-                  <span className="text-[10px] text-slate-400">Pilih penanggung beban</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {/* Opsi 1: KLIEN */}
-                  <button
-                    type="button"
-                    onClick={() => setBebanBiaya('KLIEN')}
-                    className={`p-2.5 rounded-xl border text-left transition-all ${
-                      bebanBiaya === 'KLIEN'
-                        ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40 ring-1 ring-emerald-500 shadow-xs'
-                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 font-bold text-xs text-emerald-700 dark:text-emerald-400">
-                      <Coins className="w-3.5 h-3.5" />
-                      <span>Tagihan Klien (VO)</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-tight">
-                      Permintaan Owner / pekerjaan tambah (invoiceable).
-                    </p>
-                  </button>
-
-                  {/* Opsi 2: KONTRAKTOR */}
+              {/* Baris 3: Beban Pembiayaan (3 Tombol Ramping Sebaris) */}
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Beban Pembiayaan <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => setBebanBiaya('KONTRAKTOR')}
-                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                    className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
                       bebanBiaya === 'KONTRAKTOR'
-                        ? 'border-amber-500 bg-amber-50/70 dark:bg-amber-950/40 ring-1 ring-amber-500 shadow-xs'
-                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'
+                        ? 'border-amber-500 bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 ring-1 ring-amber-500'
+                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
                     }`}
                   >
-                    <div className="flex items-center gap-1.5 font-bold text-xs text-amber-700 dark:text-amber-400">
-                      <Building2 className="w-3.5 h-3.5" />
-                      <span>Beban Kontraktor</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-tight">
-                      CV Menara Megah (bonus mutu, perkuatan, toleransi).
-                    </p>
+                    Beban Kontraktor
                   </button>
 
-                  {/* Opsi 3: OPERASIONAL */}
+                  <button
+                    type="button"
+                    onClick={() => setBebanBiaya('KLIEN')}
+                    className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
+                      bebanBiaya === 'KLIEN'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 ring-1 ring-emerald-500'
+                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                    }`}
+                  >
+                    Tagihan Klien (VO)
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => setBebanBiaya('OPERASIONAL')}
-                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                    className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
                       bebanBiaya === 'OPERASIONAL'
-                        ? 'border-sky-500 bg-sky-50/70 dark:bg-sky-950/40 ring-1 ring-sky-500 shadow-xs'
-                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'
+                        ? 'border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 ring-1 ring-sky-500'
+                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
                     }`}
                   >
-                    <div className="flex items-center gap-1.5 font-bold text-xs text-sky-700 dark:text-sky-400">
-                      <Truck className="w-3.5 h-3.5" />
-                      <span>Operasional Lapangan</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-tight">
-                      Logistik non-BOQ (makan tukang, genset, bedeng camp).
-                    </p>
+                    Operasional
                   </button>
                 </div>
               </div>
 
-              {/* Tanggal Mutasi & Jumlah Kuantitas */}
+              {/* Baris 4: Tanggal Mutasi & Jumlah Kuantitas */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -1167,9 +1023,16 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Jumlah ({isCustomMode ? (customItemUom || 'Unit') : (currentPhysicalMaterial?.satuan || 'Unit')}) <span className="text-rose-500">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-semibold text-slate-700 dark:text-slate-300">
+                      Jumlah ({isCustomMode ? (customItemUom || 'Unit') : (currentPhysicalMaterial?.satuan || 'Unit')}) <span className="text-rose-500">*</span>
+                    </label>
+                    {!isCustomMode && (
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        Stok jadi: <b className={mutationType === 'MASUK' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>{projectedStock}</b>
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="number"
                     min="0.0001"
@@ -1182,97 +1045,28 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 </div>
               </div>
 
-              {/* Ringkasan Proyeksi Sisa Stok Fisik Gudang / Info Non-BOQ */}
-              {isCustomMode ? (
-                <div className="bg-purple-50/60 dark:bg-purple-950/30 p-3 rounded-xl border border-purple-200 dark:border-purple-900/60 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="text-[10px] text-purple-600 dark:text-purple-400 uppercase font-semibold block">Jenis Item Non-BOQ</span>
-                    <span className="font-bold text-slate-900 dark:text-white">Pencatatan Mandiri di luar Kontrak Utama</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Alokasi Biaya</span>
-                    <span className="font-bold font-mono text-purple-700 dark:text-purple-300">
-                      {bebanBiaya === 'KLIEN' ? 'Tagihan Klien (VO)' : bebanBiaya === 'OPERASIONAL' ? 'Operasional Lapangan' : 'Beban CV Menara Megah'}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Proyeksi Saldo Fisik Gudang</span>
-                    <div className="text-xs font-bold text-slate-900 dark:text-white font-mono mt-0.5">
-                      {currentStock} →{' '}
-                      <span
-                        className={
-                          mutationType === 'MASUK' ? 'text-emerald-500 font-extrabold' : 'text-rose-500 font-extrabold'
-                        }
-                      >
-                        {projectedStock}
-                      </span>{' '}
-                      {currentPhysicalMaterial?.satuan}
-                    </div>
-                  </div>
-                  {currentPhysicalMaterial && (
-                    <div className="text-right">
-                      <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Kebutuhan Proyek</span>
-                      <span className="text-xs font-mono font-semibold text-blue-600 dark:text-blue-400">
-                        {currentPhysicalMaterial.total_qty_boq.toLocaleString('id-ID', { maximumFractionDigits: 4 })}{' '}
-                        {currentPhysicalMaterial.satuan}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-
+              {/* Baris 5: Tujuan & Keperluan */}
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300">
-                    Tujuan & Keperluan <span className="text-rose-500">*</span>
-                  </label>
-                  {!isCustomMode && mutationType === 'MASUK' && (
-                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-                      Otomatis: Penyediaan Material Kontrak BOQ
-                    </span>
-                  )}
-                </div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Tujuan & Keperluan <span className="text-rose-500">*</span>
+                </label>
                 <input
                   type="text"
                   required
                   placeholder={
                     isCustomMode
-                      ? 'Contoh: Konsumsi tukang minggu ke-3, Balok bedeng pekerja camp...'
+                      ? 'Contoh: Konsumsi tukang minggu ke-3, Bahan bedeng camp...'
                       : mutationType === 'MASUK'
                       ? 'Penyediaan Material Kontrak BOQ'
                       : 'Contoh: Pengecoran sloof kolom zona A...'
                   }
                   value={purpose}
                   onChange={(e) => setPurpose(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500/20"
                 />
-
-                {/* Chip saran cepat keperluan */}
-                <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
-                  <span className="text-[10px] text-slate-400">Saran:</span>
-                  {(isCustomMode
-                    ? ['Konsumsi & Logistik Tukang', 'Pembangunan Bedeng / Camp', 'Bahan Bakar Genset', 'Permintaan Tambahan Klien (VO)', 'Kebutuhan Tambal Sulam Lapangan']
-                    : mutationType === 'MASUK'
-                    ? ['Penyediaan Material Kontrak BOQ', 'Restok Gudang Utama', 'Pengiriman Parsial Supplier']
-                    : selectedBudgetLine
-                    ? [`${selectedBudgetLine.kode_boq} - ${selectedBudgetLine.kategori}`, 'Perkuatan Mutu Bekisting', 'Pekerjaan Tambah Klien (VO)']
-                    : ['Pengecoran Zona A', 'Pemasangan Dinding Batako', 'Perkuatan Mutu Bekisting']
-                  ).map((chip, cIdx) => (
-                    <button
-                      key={cIdx}
-                      type="button"
-                      onClick={() => setPurpose(chip)}
-                      className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
-                    >
-                      {chip}
-                    </button>
-                  ))}
-                </div>
               </div>
 
+              {/* Baris 6: PIC & No. Surat Jalan */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">PIC / Petugas</label>
@@ -1280,7 +1074,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     type="text"
                     value={pic}
                     onChange={(e) => setPic(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl text-xs"
                   />
                 </div>
                 <div>
@@ -1290,11 +1084,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     placeholder="SJ-001 / BON-12"
                     value={suratJalan}
                     onChange={(e) => setSuratJalan(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl font-mono"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl font-mono text-xs"
                   />
                 </div>
               </div>
 
+              {/* Baris 7: Tombol Aksi */}
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
