@@ -65,20 +65,30 @@ export const Header: React.FC = () => {
     return 'Clerk';
   };
 
-  const defaultRoles: Array<{ role: ImpersonateRole; label: string; desc: string }> = [
-    { role: 'Clerk', label: 'Clerk', desc: 'Staf Administrasi / Logistik · Input Transaksi & Draf' },
-    { role: 'Foreman', label: 'Foreman', desc: 'Mandor / Pengawas Lapangan · Diperiksa Oleh' },
-    { role: 'Spv.', label: 'Spv. (Supervisor)', desc: 'Pengawas Teknis Divisi · Disetujui Oleh' },
-    { role: 'Dept. Manager', label: 'Dept. Manager', desc: 'Manajer Bagian · Disetujui & TTE/QR' },
-    { role: 'KTT/Proj. Manager', label: 'KTT / Project Manager', desc: 'Kepala Teknik Tambang / PM · Mengetahui & TTE/QR' },
-    { role: 'CEO/Direktur', label: 'CEO / Direktur', desc: 'Direktur Utama Perusahaan · Otorisasi Puncak & TTE/QR' }
-  ];
+  const userAssignments = activeContext?.projects || [];
+  const isCSA = (activeContext?.workspaces || []).some(
+    w => w.type === 'COMPANY' && w.is_company_super_admin === true
+  );
+  const isPSA = Boolean(activeContext?.is_platform_super_admin || user.email === 'islamiahiis243@gmail.com');
 
-  const handleSelectRole = (role: ImpersonateRole) => {
-    setActiveRole(role);
-    setAppMode('IMPERSONATE');
-    setDropdownOpen(false);
-  };
+  // Auto-snap: jika di mode jabatan tapi peran aktif tidak ada di penugasan sah, kunci ke penugasan pertama
+  useEffect(() => {
+    if (appMode === 'IMPERSONATE' && userAssignments.length > 0) {
+      const validRoles = userAssignments.map(a => mapRoleCode(a.role_code));
+      if (!validRoles.includes(activeRole)) {
+        const first = userAssignments[0];
+        setActiveRole(mapRoleCode(first.role_code));
+        if (first.id) setActiveProjectId(first.id);
+        if (first.company_id && first.company_name) {
+          setActiveCompany({
+            id: first.company_id,
+            name: first.company_name,
+            npwp: first.company_npwp || activeCompany.npwp
+          });
+        }
+      }
+    }
+  }, [userAssignments, appMode, activeRole]);
 
   const handleSelectAssignment = (proj: any) => {
     const role = mapRoleCode(proj.role_code);
@@ -111,10 +121,6 @@ export const Header: React.FC = () => {
     setAppMode('PSA');
     setDropdownOpen(false);
   };
-
-  const userAssignments = activeContext?.projects || [];
-  const isCSA = (activeContext?.workspaces || []).some(w => w.type === 'COMPANY' && w.status === 'ACTIVE') || appMode === 'CSA';
-  const isPSA = activeContext?.is_platform_super_admin || user.email === 'islamiahiis243@gmail.com' || appMode === 'PSA';
 
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between gap-3 px-3 py-2.5 sm:px-6 bg-slate-900 border-b border-slate-800 text-white transition-colors">
@@ -296,91 +302,67 @@ export const Header: React.FC = () => {
                   })}
                 </div>
               ) : (
-                /* Fallback jika belum memiliki penugasan database spesifik */
-                <div className="space-y-1">
-                  {defaultRoles.map(({ role, label, desc }) => {
-                    const isActive = appMode === 'IMPERSONATE' && activeRole === role;
-                    return (
-                      <button
-                        key={role}
-                        type="button"
-                        onClick={() => handleSelectRole(role)}
-                        className={`w-full flex items-center justify-between gap-2 p-2 rounded-xl text-left transition-all ${
-                          isActive
-                            ? 'bg-amber-950/60 border border-amber-500/40 text-amber-100 font-semibold'
-                            : 'hover:bg-slate-800/80 text-slate-300'
-                        }`}
-                      >
-                        <div className="min-w-0">
-                          <div className="text-xs flex items-center gap-1.5 font-bold">
-                            <span>{label}</span>
-                            {role === 'Clerk' && (
-                              <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[9px]">Draf & Input</span>
-                            )}
-                            {['Dept. Manager', 'KTT/Proj. Manager', 'CEO/Direktur'].includes(role) && (
-                              <span className="px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 text-[9px]">TTE/QR</span>
-                            )}
-                          </div>
-                          <div className="text-[10px] text-slate-400 truncate">{desc}</div>
-                        </div>
-                        {isActive && <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />}
-                      </button>
-                    );
-                  })}
+                <div className="p-3 text-center rounded-xl bg-slate-800/40 border border-slate-800/80 text-slate-400">
+                  <p className="text-xs font-semibold text-slate-300">Belum ada penugasan proyek</p>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Aktifkan kode RFIN-B yang Anda terima dari CSA untuk membuka wewenang jabatan proyek Anda.
+                  </p>
                 </div>
               )}
             </div>
 
-            {/* 3. Konsol Super Admin (CSA & PSA) */}
-            <div className="pt-3 space-y-1">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5 px-2">
-                Konsol Pengelola
+            {/* 3. Konsol Pengelola (Hanya muncul jika pengguna sah memegang kursi CSA atau PSA) */}
+            {(isCSA || isPSA) && (
+              <div className="pt-3 space-y-1">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5 px-2">
+                  Konsol Pengelola
+                </div>
+
+                {/* Konsol CSA */}
+                {isCSA && (
+                  <button
+                    type="button"
+                    onClick={handleSelectCSA}
+                    className={`w-full flex items-center justify-between gap-2 p-2 rounded-xl text-left transition-all ${
+                      appMode === 'CSA'
+                        ? 'bg-blue-950/60 border border-blue-500/40 text-blue-100 font-semibold'
+                        : 'hover:bg-slate-800/80 text-slate-300'
+                    }`}
+                  >
+                    <div>
+                      <div className="text-xs font-semibold flex items-center gap-1.5">
+                        <ShieldAlert className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Company Super Admin (CSA)</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400">Pengaturan Proyek & Terbitkan RFIN-B</div>
+                    </div>
+                    {appMode === 'CSA' && <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />}
+                  </button>
+                )}
+
+                {/* Konsol PSA */}
+                {isPSA && (
+                  <button
+                    type="button"
+                    onClick={handleSelectPSA}
+                    className={`w-full flex items-center justify-between gap-2 p-2 rounded-xl text-left transition-all ${
+                      appMode === 'PSA'
+                        ? 'bg-purple-950/60 border border-purple-500/40 text-purple-100 font-semibold'
+                        : 'hover:bg-slate-800/80 text-slate-300'
+                    }`}
+                  >
+                    <div>
+                      <div className="text-xs font-semibold flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Platform Super Admin (PSA)</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400">Persetujuan RFIN-A & Kontrol Platform</div>
+                    </div>
+                    {appMode === 'PSA' && <CheckCircle2 className="w-4 h-4 text-purple-400 shrink-0" />}
+                  </button>
+                )}
               </div>
-
-              {/* Konsol CSA */}
-              {isCSA && (
-                <button
-                  type="button"
-                  onClick={handleSelectCSA}
-                  className={`w-full flex items-center justify-between gap-2 p-2 rounded-xl text-left transition-all ${
-                    appMode === 'CSA'
-                      ? 'bg-blue-950/60 border border-blue-500/40 text-blue-100 font-semibold'
-                      : 'hover:bg-slate-800/80 text-slate-300'
-                  }`}
-                >
-                  <div>
-                    <div className="text-xs font-semibold flex items-center gap-1.5">
-                      <ShieldAlert className="w-3.5 h-3.5 text-blue-400" />
-                      <span>Company Super Admin (CSA)</span>
-                    </div>
-                    <div className="text-[10px] text-slate-400">Pengaturan Proyek & Terbitkan RFIN-B</div>
-                  </div>
-                  {appMode === 'CSA' && <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />}
-                </button>
-              )}
-
-              {/* Konsol PSA */}
-              {isPSA && (
-                <button
-                  type="button"
-                  onClick={handleSelectPSA}
-                  className={`w-full flex items-center justify-between gap-2 p-2 rounded-xl text-left transition-all ${
-                    appMode === 'PSA'
-                      ? 'bg-purple-950/60 border border-purple-500/40 text-purple-100 font-semibold'
-                      : 'hover:bg-slate-800/80 text-slate-300'
-                  }`}
-                >
-                  <div>
-                    <div className="text-xs font-semibold flex items-center gap-1.5">
-                      <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
-                      <span>Platform Super Admin (PSA)</span>
-                    </div>
-                    <div className="text-[10px] text-slate-400">Persetujuan RFIN-A & Kontrol Platform</div>
-                  </div>
-                  {appMode === 'PSA' && <CheckCircle2 className="w-4 h-4 text-purple-400 shrink-0" />}
-                </button>
-              )}
-            </div>
+            )}
           </div>
         )}
       </div>

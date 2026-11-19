@@ -59,7 +59,18 @@ export async function testSupabaseConnection(_url?: string, _anonKey?: string): 
 }
 
 export interface ActiveContextPersona { persona_code:string; display_name:string; description:string }
-export interface ActiveContextWorkspace { id:string; type:'PERSONAL'|'COMPANY'; name:string; status:string; company_id:string|null; access_basis:string; personas?:ActiveContextPersona[]; active_persona_code?:string|null }
+export interface ActiveContextWorkspace {
+  id: string;
+  type: 'PERSONAL' | 'COMPANY';
+  name: string;
+  status: string;
+  company_id: string | null;
+  company_npwp?: string;
+  is_company_super_admin?: boolean;
+  access_basis: string;
+  personas?: ActiveContextPersona[];
+  active_persona_code?: string | null;
+}
 export interface ActiveContextProject {
   id: string;
   workspace_id: string;
