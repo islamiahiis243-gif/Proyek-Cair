@@ -17,7 +17,7 @@ type Permohonan = {
   review_notes: string | null;
   notes: string | null;
 };
-type Company = { id: string; legal_name: string; registration_status?: string; created_at: string };
+type Company = { id: string; legal_name: string; registration_status?: string; status?: string; created_at: string };
 type Seat = { company_id: string; recipient_email: string; seat_status: string };
 type AuditRow = { id: string; actor_id: string; action: string; entity_type: string; entity_id: string; details: any; created_at: string };
 type ProfileChange = {
@@ -126,7 +126,7 @@ export const PlatformConsole: React.FC = () => {
           .select('id,legal_name,npwp_last4,super_admin_email,status,created_at,review_notes,notes')
           .order('created_at', { ascending: false }).limit(100),
         db.from('companies')
-          .select('id,legal_name,registration_status,created_at')
+          .select('id,legal_name,status,created_at')
           .order('created_at', { ascending: false }).limit(100),
         db.from('company_admin_seats').select('company_id,recipient_email,seat_status').limit(100),
         db.from('audit_logs')
@@ -470,7 +470,7 @@ export const PlatformConsole: React.FC = () => {
                             {kursi ? kursi.recipient_email : 'Belum ada kursi admin'} · {tgl(c.created_at)}
                           </p>
                           <div className="mt-1 flex gap-2">
-                            {c.registration_status && <Badge status={c.registration_status} />}
+                            {(c.status || c.registration_status) && <Badge status={c.status || c.registration_status || ''} />}
                             {kursi && <Badge status={kursi.seat_status} />}
                           </div>
                         </div>
