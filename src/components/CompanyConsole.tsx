@@ -1,27 +1,55 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Building2, FolderKanban, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react';
+import {
+  Building2,
+  FolderKanban,
+  RefreshCw,
+  ShieldAlert,
+  ShieldCheck,
+  LayoutDashboard,
+  KeyRound,
+  Settings,
+  Users,
+  CheckCircle2,
+  UserCheck,
+  Briefcase
+} from 'lucide-react';
+import { useApp } from '../context/AppContext';
 import { getSupabaseClient, resolveMyActiveContext } from '../lib/supabase';
 import { RfinBInvitationPanel } from './RfinBInvitationPanel';
 
 type CompanyWorkspace = { id: string; name: string; company_id: string | null };
 type ProjectRow = { id: string; workspace_id: string; project_code: string; name: string; description: string | null; status: string; created_at: string };
 type ClientRow = { id: string; project_id: string; client_name: string; relationship_type: string; commercial_reference: string | null; notes: string | null };
-type ProfileChangeRow={id:string;proposed_legal_name:string|null;change_npwp:boolean;proposed_npwp_last4:string|null;reason:string;status:string;created_at:string;review_notes:string|null};
-type CompanyDashboard={company_name:string;company_status:string;memberships:{total:number;active:number;suspended:number;revoked:number};invitations:{active:number;expired:number;redeemed:number;revoked:number};projects:{total:number;active:number;completed:number;archived:number};approvals:{pending:number};documents:{total:number;by_status:Record<string,number>};access_alerts:{suspended_memberships:number;revoked_memberships:number;expired_invitations:number};last_activity_at:string|null;recent_activity:{action:string;entity_type:string;created_at:string}[]};
-type CoveragePermission={permission_code:string;module:string;action:string;risk_level:string;requires_authority_check:boolean;description:string};
-type CoverageMember={project_membership_id:string;company_membership_id:string;user_id:string;full_name:string;membership_status:string;permissions:CoveragePermission[]};
-type CoverageProject={id:string;project_code:string;name:string;status:string;active_member_count:number;members_without_permissions:number;permission_code_count:number;members:CoverageMember[]};
-type ProjectCoverage={active_company_members:number;active_projects:number;active_project_memberships:number;members_without_active_project:number;active_members_without_permissions:number;projects:CoverageProject[];unassigned_members:{company_membership_id:string;user_id:string;full_name:string;activated_at:string|null}[]};
-
-type MemberAccessCatalogItem={code:string;name:string;description?:string;approved_permission_codes?:string[]};
-type AuthorityCatalogItem={authority_code:string;permission_code:string;display_name:string;description:string;allowed_dimensions:string[]};
-type MemberAccessAssignment={id:string;code:string;name:string;starts_at:string;ends_at:string|null;revoked_at:string|null;is_active:boolean;approved_permission_codes?:string[];project_id?:string;project_code?:string;project_name?:string;scope?:Record<string,unknown>;max_amount?:number|null;currency?:string|null};
-type MemberAccessMember={company_membership_id:string;user_id:string;full_name:string;membership_status:string;personas:MemberAccessAssignment[];roles:MemberAccessAssignment[];authorities:MemberAccessAssignment[]};
-type MemberAccessState={workspace_id:string;personas:MemberAccessCatalogItem[];roles:MemberAccessCatalogItem[];members:MemberAccessMember[]};
-
+type ProfileChangeRow = { id: string; proposed_legal_name: string | null; change_npwp: boolean; proposed_npwp_last4: string | null; reason: string; status: string; created_at: string; review_notes: string | null };
+type CompanyDashboard = {
+  company_name: string;
+  company_status: string;
+  memberships: { total: number; active: number; suspended: number; revoked: number };
+  invitations: { active: number; expired: number; redeemed: number; revoked: number };
+  projects: { total: number; active: number; completed: number; archived: number };
+  approvals: { pending: number };
+  documents: { total: number; by_status: Record<string, number> };
+  access_alerts: { suspended_memberships: number; revoked_memberships: number; expired_invitations: number };
+  last_activity_at: string | null;
+  recent_activity: { action: string; entity_type: string; created_at: string }[];
+};
+type CoveragePermission = { permission_code: string; module: string; action: string; risk_level: string; requires_authority_check: boolean; description: string };
+type CoverageMember = { project_membership_id: string; company_membership_id: string; user_id: string; full_name: string; membership_status: string; permissions: CoveragePermission[] };
+type CoverageProject = { id: string; project_code: string; name: string; status: string; active_member_count: number; members_without_permissions: number; permission_code_count: number; members: CoverageMember[] };
+type ProjectCoverage = {
+  active_company_members: number;
+  active_projects: number;
+  active_project_memberships: number;
+  members_without_active_project: number;
+  active_members_without_permissions: number;
+  projects: CoverageProject[];
+  unassigned_members: { company_membership_id: string; user_id: string; full_name: string; activated_at: string | null }[];
+};
 
 export const CompanyConsole: React.FC = () => {
   const db = getSupabaseClient();
+  const { currentView, setCurrentView } = useApp();
+
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [workspaces, setWorkspaces] = useState<CompanyWorkspace[]>([]);
@@ -31,31 +59,31 @@ export const CompanyConsole: React.FC = () => {
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+
+  // Proyek Baru
   const [projectCode, setProjectCode] = useState('');
   const [projectName, setProjectName] = useState('');
   const [description, setDescription] = useState('');
   const [clientName, setClientName] = useState('');
   const [commercialReference, setCommercialReference] = useState('');
-  const [currentCompanyLegalName,setCurrentCompanyLegalName]=useState('');
-  const [companyLegalName,setCompanyLegalName]=useState('');
-  const [profileNpwp,setProfileNpwp]=useState('');
-  const [changeNpwp,setChangeNpwp]=useState(false);
-  const [profileReason,setProfileReason]=useState('');
-  const [profileChanges,setProfileChanges]=useState<ProfileChangeRow[]>([]);
-  const [dashboard,setDashboard]=useState<CompanyDashboard|null>(null);
-  const [dashboardLoading,setDashboardLoading]=useState(false);
-  const [dashboardError,setDashboardError]=useState('');
-  const [projectCoverage,setProjectCoverage]=useState<ProjectCoverage|null>(null);
-  const [coverageLoading,setCoverageLoading]=useState(false);
-  const [coverageError,setCoverageError]=useState('');
-  const [assignmentTargets,setAssignmentTargets]=useState<Record<string,string>>({});
-  const [assigningMember,setAssigningMember]=useState('');
-  const [memberAccess,setMemberAccess]=useState<MemberAccessState|null>(null);
-  const [authorityCatalog,setAuthorityCatalog]=useState<AuthorityCatalogItem[]>([]);
-  const [memberAccessLoading,setMemberAccessLoading]=useState(false);
-  const [memberAccessError,setMemberAccessError]=useState('');
-  const [memberAccessDrafts,setMemberAccessDrafts]=useState<Record<string,{persona:string;role:string;authorityCode:string;authorityProjectId:string;authorityScope:string;authorityMaxAmount:string;authorityCurrency:string;endsAt:string;reason:string}>>({});
-  const [memberAccessBusy,setMemberAccessBusy]=useState('');
+
+  // Profil Perusahaan
+  const [currentCompanyLegalName, setCurrentCompanyLegalName] = useState('');
+  const [companyLegalName, setCompanyLegalName] = useState('');
+  const [profileNpwp, setProfileNpwp] = useState('');
+  const [changeNpwp, setChangeNpwp] = useState(false);
+  const [profileReason, setProfileReason] = useState('');
+  const [profileChanges, setProfileChanges] = useState<ProfileChangeRow[]>([]);
+
+  // Dasbor & Coverage
+  const [dashboard, setDashboard] = useState<CompanyDashboard | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState('');
+  const [projectCoverage, setProjectCoverage] = useState<ProjectCoverage | null>(null);
+  const [coverageLoading, setCoverageLoading] = useState(false);
+  const [coverageError, setCoverageError] = useState('');
+  const [assignmentTargets, setAssignmentTargets] = useState<Record<string, string>>({});
+  const [assigningMember, setAssigningMember] = useState('');
 
   const loadProjects = useCallback(async (targetWorkspaceId: string): Promise<ProjectRow[]> => {
     if (!targetWorkspaceId) { setProjects([]); setClients([]); return []; }
@@ -71,7 +99,7 @@ export const CompanyConsole: React.FC = () => {
       .select('id,project_id,client_name,relationship_type,commercial_reference,notes')
       .in('project_id', rows.map(row => row.id));
     if (clientError) {
-      console.warn('Gagal memuat relasi client:', clientError);
+      console.warn('Gagal memuat relasi klien:', clientError);
       setClients([]);
     } else {
       setClients((clientData || []) as ClientRow[]);
@@ -79,79 +107,54 @@ export const CompanyConsole: React.FC = () => {
     return rows;
   }, [db]);
 
-  const loadDashboard=useCallback(async(targetWorkspaceId:string)=>{
-    if(!targetWorkspaceId){setDashboard(null);setDashboardError('');return;}
-    setDashboardLoading(true);setDashboardError('');
-    try{const {data,error}=await db.rpc('get_company_console_dashboard',{p_workspace_id:targetWorkspaceId});if(error)throw error;setDashboard(data as CompanyDashboard);}
-    catch(e:any){setDashboard(null);setDashboardError(e?.message||'Ringkasan Company Dashboard gagal dimuat.');}
-    finally{setDashboardLoading(false);}
-  },[db]);
-
-  const loadProjectCoverage=useCallback(async(targetWorkspaceId:string)=>{
-    if(!targetWorkspaceId){setProjectCoverage(null);setCoverageError('');return;}
-    setCoverageLoading(true);setCoverageError('');
-    try{const {data,error}=await db.rpc('get_company_project_assignment_coverage',{p_workspace_id:targetWorkspaceId});if(error)throw error;setProjectCoverage(data as ProjectCoverage);}
-    catch(e:any){setProjectCoverage(null);setCoverageError(e?.message||'Ringkasan Project Assignment & Coverage gagal dimuat.');}
-    finally{setCoverageLoading(false);}
-  },[db]);
-
-
-  const loadMemberAccess=useCallback(async(targetWorkspaceId:string)=>{
-    if(!targetWorkspaceId){setMemberAccess(null);setMemberAccessError('');return;}
-    setMemberAccessLoading(true);setMemberAccessError('');
-    try{const [accessResult,catalogResult]=await Promise.all([db.rpc('get_company_member_access_assignments',{p_workspace_id:targetWorkspaceId}),db.from('authority_catalog').select('authority_code,permission_code,display_name,description,allowed_dimensions').eq('active',true).order('display_name')]);if(accessResult.error)throw accessResult.error;if(catalogResult.error)throw catalogResult.error;setMemberAccess(accessResult.data as MemberAccessState);setAuthorityCatalog((catalogResult.data||[]) as AuthorityCatalogItem[]);}
-    catch(e:any){setMemberAccess(null);setAuthorityCatalog([]);setMemberAccessError(e?.message||'Daftar persona, role, dan Authority anggota gagal dimuat.');}
-    finally{setMemberAccessLoading(false);}
-  },[db]);
-
-  const assignMemberAccess=async(memberId:string,type:'PERSONA'|'ROLE'|'AUTHORITY')=>{
-    const draft=memberAccessDrafts[memberId];const code=type==='PERSONA'?draft?.persona:type==='ROLE'?draft?.role:draft?.authorityCode;
-    if(!canAdmin||!draft||!code||draft.reason.trim().length<8||memberAccessBusy)return;
-    let authorityScope:Record<string,unknown>={};
-    if(type==='AUTHORITY'){
-      if(!draft.authorityProjectId){setError('Pilih Project tempat anggota memiliki Project Membership aktif.');return;}
-      try{const parsed=JSON.parse(draft.authorityScope||'{}');if(!parsed||Array.isArray(parsed)||typeof parsed!=='object'){setError('Scope Authority harus berupa objek JSON.');return;}authorityScope=parsed;}
-      catch{setError('Scope Authority harus berupa JSON objek yang valid.');return;}
-      if(Boolean(draft.authorityMaxAmount.trim())!==Boolean(draft.authorityCurrency.trim())){setError('Nominal maksimum dan mata uang harus diisi bersamaan.');return;}
-      if(draft.authorityMaxAmount.trim()&&(!Number.isFinite(Number(draft.authorityMaxAmount))||Number(draft.authorityMaxAmount)<0||!/^[A-Z]{3}$/.test(draft.authorityCurrency.trim()))){setError('Nominal harus >= 0 dan mata uang menggunakan kode ISO 4217 tiga huruf kapital.');return;}
+  const loadDashboard = useCallback(async (targetWorkspaceId: string) => {
+    if (!targetWorkspaceId) { setDashboard(null); setDashboardError(''); return; }
+    setDashboardLoading(true); setDashboardError('');
+    try {
+      const { data, error: rpcErr } = await db.rpc('get_company_console_dashboard', { p_workspace_id: targetWorkspaceId });
+      if (rpcErr) throw rpcErr;
+      setDashboard(data as CompanyDashboard);
+    } catch (e: any) {
+      setDashboard(null);
+      setDashboardError(e?.message || 'Ringkasan Dasbor Perusahaan gagal dimuat.');
+    } finally {
+      setDashboardLoading(false);
     }
-    const busyKey=memberId+':'+type;setMemberAccessBusy(busyKey);setError('');setNotice('');
-    try{
-      const {data,error}=await db.rpc('assign_company_member_access',{
-        p_workspace_id:workspaceId,p_company_membership_id:memberId,p_assignment_type:type,p_code:code,
-        p_ends_at:draft.endsAt?new Date(draft.endsAt).toISOString():null,p_reason:draft.reason.trim(),
-        p_project_id:type==='AUTHORITY'?draft.authorityProjectId:null,p_scope:type==='AUTHORITY'?authorityScope:{},
-        p_max_amount:type==='AUTHORITY'&&draft.authorityMaxAmount.trim()?Number(draft.authorityMaxAmount):null,
-        p_currency:type==='AUTHORITY'&&draft.authorityCurrency.trim()?draft.authorityCurrency.trim():null
+  }, [db]);
+
+  const loadProjectCoverage = useCallback(async (targetWorkspaceId: string) => {
+    if (!targetWorkspaceId) { setProjectCoverage(null); setCoverageError(''); return; }
+    setCoverageLoading(true); setCoverageError('');
+    try {
+      const { data, error: rpcErr } = await db.rpc('get_company_project_assignment_coverage', { p_workspace_id: targetWorkspaceId });
+      if (rpcErr) throw rpcErr;
+      setProjectCoverage(data as ProjectCoverage);
+    } catch (e: any) {
+      setProjectCoverage(null);
+      setCoverageError(e?.message || 'Ringkasan penugasan tim proyek gagal dimuat.');
+    } finally {
+      setCoverageLoading(false);
+    }
+  }, [db]);
+
+  const assignMemberToProject = async (companyMembershipId: string, targetProjectId: string) => {
+    if (!canAdmin || !companyMembershipId || !targetProjectId || assigningMember) return;
+    setAssigningMember(companyMembershipId); setError(''); setNotice('');
+    try {
+      const { data, error: rpcErr } = await db.rpc('assign_company_member_to_project', {
+        p_project_id: targetProjectId,
+        p_company_membership_id: companyMembershipId
       });
-      if(error)throw error;
-      setNotice((type==='PERSONA'?'Persona':type==='ROLE'?'Role':'Authority')+' berhasil ditetapkan. Penetapan ini tidak membuat Project Membership atau permission baru. Referensi '+String(data).slice(0,8).toUpperCase()+'.');
-      setMemberAccessDrafts(current=>({...current,[memberId]:{...current[memberId],persona:type==='PERSONA'?'':current[memberId]?.persona||'',role:type==='ROLE'?'':current[memberId]?.role||'',authorityCode:type==='AUTHORITY'?'':current[memberId]?.authorityCode||'',authorityProjectId:type==='AUTHORITY'?'':current[memberId]?.authorityProjectId||'',authorityScope:type==='AUTHORITY'?'{}':current[memberId]?.authorityScope||'{}',authorityMaxAmount:type==='AUTHORITY'?'':current[memberId]?.authorityMaxAmount||'',authorityCurrency:type==='AUTHORITY'?'':current[memberId]?.authorityCurrency||'',reason:''}}));
-      await loadMemberAccess(workspaceId);
-    }catch(e:any){setError(e?.message||'Penetapan akses anggota gagal.');}
-    finally{setMemberAccessBusy('');}
-  };
-
-  const revokeMemberAccess=async(type:'PERSONA'|'ROLE'|'AUTHORITY',assignmentId:string)=>{
-    if(!canAdmin||memberAccessBusy)return;
-    const reason=window.prompt('Alasan pencabutan akses (8–500 karakter):')||'';
-    if(reason.trim().length<8||reason.trim().length>500){setError('Alasan pencabutan wajib 8–500 karakter.');return;}
-    setMemberAccessBusy(assignmentId);setError('');setNotice('');
-    try{const {error}=await db.rpc('revoke_company_member_access',{p_workspace_id:workspaceId,p_assignment_type:type,p_assignment_id:assignmentId,p_reason:reason.trim()});if(error)throw error;
-      setNotice('Penugasan '+type+' berhasil dicabut. Riwayat tetap dipertahankan.');await loadMemberAccess(workspaceId);
-    }catch(e:any){setError(e?.message||'Pencabutan akses gagal.');}
-    finally{setMemberAccessBusy('');}
-  };
-
-  const assignMemberToProject=async(companyMembershipId:string,targetProjectId:string)=>{
-    if(!canAdmin||!companyMembershipId||!targetProjectId||assigningMember)return;
-    setAssigningMember(companyMembershipId);setError('');setNotice('');
-    try{const {data,error}=await db.rpc('assign_company_member_to_project',{p_project_id:targetProjectId,p_company_membership_id:companyMembershipId});if(error)throw error;
-      setNotice('Penugasan Project berhasil dibuat. Tidak ada permission operasional yang diberikan otomatis. Referensi '+String(data).slice(0,8).toUpperCase()+'.');
-      setAssignmentTargets(current=>({...current,[companyMembershipId]:''}));
-      await loadProjectCoverage(workspaceId);await loadDashboard(workspaceId);
-    }catch(e:any){setError(e?.message||'Penugasan anggota ke Project gagal.');}
-    finally{setAssigningMember('');}
+      if (rpcErr) throw rpcErr;
+      setNotice('Anggota berhasil ditugaskan ke Proyek.');
+      setAssignmentTargets(current => ({ ...current, [companyMembershipId]: '' }));
+      await loadProjectCoverage(workspaceId);
+      await loadDashboard(workspaceId);
+    } catch (e: any) {
+      setError(e?.message || 'Penugasan anggota ke proyek gagal.');
+    } finally {
+      setAssigningMember('');
+    }
   };
 
   const refresh = useCallback(async () => {
@@ -167,8 +170,8 @@ export const CompanyConsole: React.FC = () => {
         setAdminWorkspaceIds([]); setWorkspaceId(''); setProjects([]); setClients([]); setDashboard(null); setProjectCoverage(null);
         return;
       }
-      // This read only controls the UI. Every project RPC and row read is independently
-      // enforced by database authorization and RLS.
+
+      // Verifikasi ganda hak akses CSA melalui membership aktif dan kursi terverifikasi
       const [membershipsRes, seatsRes] = await Promise.all([
         db.from('company_memberships')
           .select('workspace_id,company_id,is_company_super_admin,membership_status')
@@ -186,186 +189,745 @@ export const CompanyConsole: React.FC = () => {
         .filter((m: any) => m.is_company_super_admin || claimedCompanyIds.has(m.company_id))
         .map((m: any) => m.workspace_id)
         .filter((id: string) => allowed.has(id));
+
       setAdminWorkspaceIds(adminIds);
       const preferred = adminIds.includes(workspaceId) ? workspaceId : adminIds[0] || '';
       setWorkspaceId(preferred);
-      await loadProjects(preferred);
-      await loadDashboard(preferred);
-      await loadProjectCoverage(preferred);
-      await loadMemberAccess(preferred);
-      const selectedWorkspace=companyWorkspaces.find(w=>w.id===preferred);
-      if(selectedWorkspace?.company_id){
-        const [profileResult,changeResult]=await Promise.all([
-          db.from('companies').select('legal_name').eq('id',selectedWorkspace.company_id).maybeSingle(),
-          db.from('company_profile_change_requests').select('id,proposed_legal_name,change_npwp,proposed_npwp_last4,reason,status,created_at,review_notes').eq('company_id',selectedWorkspace.company_id).order('created_at',{ascending:false}).limit(20)
-        ]);
-        if(profileResult.error)throw profileResult.error;if(changeResult.error)throw changeResult.error;
-        setCurrentCompanyLegalName(profileResult.data?.legal_name||'');setProfileChanges(changeResult.data||[]);
-      }else{setCurrentCompanyLegalName('');setProfileChanges([]);}
 
+      await Promise.all([
+        loadProjects(preferred),
+        loadDashboard(preferred),
+        loadProjectCoverage(preferred)
+      ]);
+
+      const selectedWorkspace = companyWorkspaces.find(w => w.id === preferred);
+      if (selectedWorkspace?.company_id) {
+        const [profileResult, changeResult] = await Promise.all([
+          db.from('companies').select('legal_name').eq('id', selectedWorkspace.company_id).maybeSingle(),
+          db.from('company_profile_change_requests').select('id,proposed_legal_name,change_npwp,proposed_npwp_last4,reason,status,created_at,review_notes').eq('company_id', selectedWorkspace.company_id).order('created_at', { ascending: false }).limit(10)
+        ]);
+        if (!profileResult.error) setCurrentCompanyLegalName(profileResult.data?.legal_name || '');
+        if (!changeResult.error) setProfileChanges(changeResult.data || []);
+      }
     } catch (e: any) {
-      setError(e?.message || 'Gagal memuat Company Console.');
-    } finally { setLoading(false); }
-  }, [db, loadProjects, loadDashboard, loadProjectCoverage, loadMemberAccess, workspaceId]);
+      setError(e?.message || 'Gagal memuat Konsol Perusahaan.');
+    } finally {
+      setLoading(false);
+    }
+  }, [db, loadProjects, loadDashboard, loadProjectCoverage, workspaceId]);
 
   useEffect(() => { void refresh(); }, []);
 
   const changeWorkspace = async (id: string) => {
     setWorkspaceId(id); setError(''); setNotice('');
     try {
-      await loadProjects(id);
-      await loadDashboard(id);
-      await loadProjectCoverage(id);
-      await loadMemberAccess(id);
-      const selectedWorkspace=workspaces.find(w=>w.id===id);
-      if(selectedWorkspace?.company_id){
-        const [profileResult,changeResult]=await Promise.all([
-          db.from('companies').select('legal_name').eq('id',selectedWorkspace.company_id).maybeSingle(),
-          db.from('company_profile_change_requests').select('id,proposed_legal_name,change_npwp,proposed_npwp_last4,reason,status,created_at,review_notes').eq('company_id',selectedWorkspace.company_id).order('created_at',{ascending:false}).limit(20)
+      await Promise.all([
+        loadProjects(id),
+        loadDashboard(id),
+        loadProjectCoverage(id)
+      ]);
+      const selectedWorkspace = workspaces.find(w => w.id === id);
+      if (selectedWorkspace?.company_id) {
+        const [profileResult, changeResult] = await Promise.all([
+          db.from('companies').select('legal_name').eq('id', selectedWorkspace.company_id).maybeSingle(),
+          db.from('company_profile_change_requests').select('id,proposed_legal_name,change_npwp,proposed_npwp_last4,reason,status,created_at,review_notes').eq('company_id', selectedWorkspace.company_id).order('created_at', { ascending: false }).limit(10)
         ]);
-        if(profileResult.error)throw profileResult.error;if(changeResult.error)throw changeResult.error;
-        setCurrentCompanyLegalName(profileResult.data?.legal_name||'');setProfileChanges(changeResult.data||[]);
-      }else{setCurrentCompanyLegalName('');setProfileChanges([]);}
-    } catch (e: any) { setError(e?.message || 'Gagal memuat Company Profile dan daftar Project.'); }
+        if (!profileResult.error) setCurrentCompanyLegalName(profileResult.data?.legal_name || '');
+        if (!changeResult.error) setProfileChanges(changeResult.data || []);
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Gagal memperbarui workspace.');
+    }
   };
 
   const createProject = async (event: React.FormEvent) => {
     event.preventDefault();
     if (busy) return;
-    if (!adminWorkspaceIds.includes(workspaceId)) { setError('Akses Company Super Admin tidak terverifikasi untuk workspace ini.'); return; }
+    if (!adminWorkspaceIds.includes(workspaceId)) {
+      setError('Akses Company Super Admin tidak terverifikasi untuk workspace ini.');
+      return;
+    }
     const code = projectCode.trim().toUpperCase();
     const name = projectName.trim();
     const client = clientName.trim();
-    if (!/^[A-Z0-9][A-Z0-9_-]{1,39}$/.test(code)) { setError('Kode Project harus 2–40 karakter: huruf kapital, angka, garis bawah, atau tanda hubung.'); return; }
-    if (name.length < 2 || name.length > 160) { setError('Nama Project harus 2–160 karakter.'); return; }
-    if (client.length < 2 || client.length > 200) { setError('Nama client harus 2–200 karakter.'); return; }
-    if (projects.some(p => p.project_code.toUpperCase() === code)) { setError('Kode Project sudah digunakan pada Company Workspace ini.'); return; }
-    setBusy(true); setError(''); setNotice('Membuat Project dan relasi client secara atomik…');
+    if (!/^[A-Z0-9][A-Z0-9_-]{1,39}$/.test(code)) {
+      setError('Kode Proyek harus 2–40 karakter: huruf kapital, angka, garis bawah, atau tanda hubung.');
+      return;
+    }
+    if (name.length < 2 || name.length > 160) {
+      setError('Nama Proyek harus 2–160 karakter.');
+      return;
+    }
+    if (client.length < 2 || client.length > 200) {
+      setError('Nama klien harus 2–200 karakter.');
+      return;
+    }
+    if (projects.some(p => p.project_code.toUpperCase() === code)) {
+      setError('Kode Proyek sudah digunakan pada Ruang Kerja Perusahaan ini.');
+      return;
+    }
+
+    setBusy(true); setError(''); setNotice('Membuat Proyek dan relasi klien…');
     try {
-      const { data, error: rpcError } = await db.rpc('create_company_project_with_client', {
+      const { error: rpcError } = await db.rpc('create_company_project_with_client', {
         p_workspace_id: workspaceId,
         p_project_code: code,
         p_name: name,
         p_description: description.trim() || null,
         p_client_name: client,
-        p_relationship_type: 'CLIENT',
+        p_relationship_type: 'MAIN_CLIENT',
         p_commercial_reference: commercialReference.trim() || null,
         p_notes: null
       });
       if (rpcError) throw rpcError;
       await loadProjects(workspaceId);
       setProjectCode(''); setProjectName(''); setDescription(''); setClientName(''); setCommercialReference('');
-      setNotice('Project berhasil dibuat. Company Super Admin tercatat sebagai anggota Project; permission operasional tetap harus diberikan secara eksplisit.');
+      setNotice('Proyek baru dan hubungan klien berhasil didaftarkan.');
     } catch (e: any) {
-      // A network timeout can occur after the database transaction committed.
-      // Reconcile by the tenant-scoped unique project code before allowing retry.
-      try {
-        const refreshedProjects = await loadProjects(workspaceId);
-        const existing = refreshedProjects.find(p => p.project_code.toUpperCase() === code);
-        if (existing) {
-          setNotice('Project dengan kode tersebut sudah tercatat. Daftar telah disinkronkan; jangan mengirim ulang.');
-        } else {
-          setError(e?.message || 'Project belum dapat dibuat. Periksa daftar sebelum mencoba kembali.');
-          setNotice('');
-        }
-      } catch {
-        setError((e?.message || 'Hasil transaksi belum dapat dipastikan.') + ' Periksa koneksi dan muat ulang daftar sebelum mencoba kembali.');
-        setNotice('');
-      }
-    } finally { setBusy(false); }
+      setError(e?.message || 'Proyek belum dapat dibuat. Periksa data kembali.');
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const submitProfileChange=async(event:React.FormEvent)=>{
-    event.preventDefault();if(busy||!activeWorkspace?.company_id||!canAdmin)return;
-    const name=companyLegalName.trim(),reasonText=profileReason.trim();
-    if(!name&&!changeNpwp){setError('Isi perubahan nama legal atau aktifkan perubahan NPWP.');return;}
-    if(name&&(name.length<2||name.length>200)){setError('Nama legal harus 2–200 karakter.');return;}
-    if(changeNpwp&&!profileNpwp.trim()){setError('NPWP baru wajib diisi.');return;}
-    if(reasonText.length<8||reasonText.length>500){setError('Alasan perubahan wajib 8–500 karakter.');return;}
-    setBusy(true);setError('');setNotice('');
-    try{const {data,error}=await db.rpc('request_company_profile_change',{p_company_id:activeWorkspace.company_id,p_legal_name:name||null,p_npwp:changeNpwp?profileNpwp:null,p_change_npwp:changeNpwp,p_reason:reasonText});if(error)throw error;
-      setCompanyLegalName('');setProfileNpwp('');setChangeNpwp(false);setProfileReason('');
-      setNotice('Permohonan perubahan profil perusahaan dikirim untuk keputusan Platform Super Admin. Referensi '+String(data).slice(0,8).toUpperCase()+'.');
+  const submitProfileChange = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (busy || !activeWorkspace?.company_id || !canAdmin) return;
+    const name = companyLegalName.trim();
+    const reasonText = profileReason.trim();
+    if (!name && !changeNpwp) {
+      setError('Isi perubahan nama legal atau aktifkan opsi perubahan NPWP.');
+      return;
+    }
+    if (name && (name.length < 2 || name.length > 200)) {
+      setError('Nama legal harus 2–200 karakter.');
+      return;
+    }
+    if (changeNpwp && !profileNpwp.trim()) {
+      setError('NPWP baru wajib diisi.');
+      return;
+    }
+    if (reasonText.length < 8 || reasonText.length > 500) {
+      setError('Alasan perubahan wajib 8–500 karakter.');
+      return;
+    }
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const { data, error: rpcErr } = await db.rpc('request_company_profile_change', {
+        p_company_id: activeWorkspace.company_id,
+        p_legal_name: name || null,
+        p_npwp: changeNpwp ? profileNpwp : null,
+        p_change_npwp: changeNpwp,
+        p_reason: reasonText
+      });
+      if (rpcErr) throw rpcErr;
+      setCompanyLegalName(''); setProfileNpwp(''); setChangeNpwp(false); setProfileReason('');
+      setNotice('Permohonan perubahan profil perusahaan telah dikirim ke Platform Super Admin. Ref: ' + String(data).slice(0, 8).toUpperCase());
       await refresh();
-    }catch(e:any){setError(e?.message||'Permohonan perubahan profil gagal dikirim.');}
-    finally{setBusy(false);}
+    } catch (e: any) {
+      setError(e?.message || 'Permohonan perubahan profil gagal dikirim.');
+    } finally {
+      setBusy(false);
+    }
   };
+
   const activeWorkspace = workspaces.find(w => w.id === workspaceId);
   const canAdmin = Boolean(activeWorkspace && adminWorkspaceIds.includes(workspaceId));
 
-  return <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-    <header className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-        <div className="flex items-center gap-3"><div className="rounded-xl bg-blue-100 p-2 text-blue-700 dark:bg-blue-950 dark:text-blue-300"><Building2 className="h-5 w-5"/></div><div><p className="text-[10px] font-semibold tracking-[.2em] text-blue-600 dark:text-blue-300">PROYEK CAIR · COMPANY</p><h1 className="text-xl font-bold">Company Console</h1><p className="text-xs text-slate-500">Tata kelola tenant dan Project Registry</p></div></div>
-        <div className="flex items-center gap-2"><button onClick={() => void refresh()} disabled={loading || busy} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}/>Perbarui</button><a href="/" className="hidden items-center gap-1 text-xs text-slate-500 hover:text-blue-600 sm:inline-flex"><ArrowLeft className="h-4 w-4"/>Workspace Center</a></div>
-      </div>
-    </header>
-    <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
-      {error && <div role="alert" className="rounded-xl border border-rose-300 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">{error}</div>}
-      {notice && <div role="status" aria-live="polite" className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">{notice}</div>}
-      {loading ? <div className="grid min-h-56 place-items-center text-sm text-slate-500"><RefreshCw className="mr-2 inline h-4 w-4 animate-spin"/>Memverifikasi membership Company…</div>
-      : !workspaces.length ? <section className="rounded-2xl border border-slate-200 bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-900"><ShieldAlert className="mx-auto h-8 w-8 text-slate-400"/><h2 className="mt-3 font-semibold">Company Workspace belum tersedia</h2><p className="mt-2 text-sm text-slate-500">Akun ini belum memiliki Company Workspace aktif. Gunakan Workspace Center untuk proses onboarding resmi.</p><a href="/" className="mt-4 inline-flex rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Buka Workspace Center</a></section>
-      : !canAdmin ? <section className="rounded-2xl border border-amber-300 bg-amber-50 p-8 text-center dark:border-amber-900 dark:bg-amber-950/20"><ShieldAlert className="mx-auto h-8 w-8 text-amber-600"/><h2 className="mt-3 font-semibold">Akses Company Super Admin diperlukan</h2><p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Company Console hanya tersedia bagi pemegang kursi Company Super Admin aktif. Keanggotaan biasa tidak memberikan hak pengelolaan tenant.</p></section>
-      : <><section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold tracking-widest text-blue-600 dark:text-blue-300">TENANT AKTIF</p><h2 className="mt-1 text-lg font-bold">{activeWorkspace?.name}</h2><p className="mt-1 text-xs text-slate-500">Company Super Admin terverifikasi melalui membership aktif.</p></div><span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300"><ShieldCheck className="h-4 w-4"/>Server-side authorization</span></div>{workspaces.length > 1 && <label className="mt-4 block max-w-lg text-xs font-medium">Pilih Company Workspace<select value={workspaceId} onChange={e => void changeWorkspace(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm dark:border-slate-700 dark:bg-slate-950">{workspaces.filter(w => adminWorkspaceIds.includes(w.id)).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label>}</section>
-      <section aria-labelledby="company-dashboard-title" className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 id="company-dashboard-title" className="font-semibold">Company Dashboard</h2><p className="mt-1 text-xs text-slate-500">Ringkasan live tenant dari database. Semua angka dibatasi pada Company Workspace aktif.</p></div><span className="text-xs text-slate-500">{dashboard?.company_status||'Status belum tersedia'}</span></div>
-        {dashboardLoading?<p role="status" className="mt-4 text-sm text-slate-500">Memuat ringkasan tenant…</p>:dashboardError?<div role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/20 dark:text-rose-200">{dashboardError}<button type="button" onClick={()=>void loadDashboard(workspaceId)} className="ml-2 font-semibold underline">Coba lagi</button></div>:dashboard?<>
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">{[
-            ['Anggota aktif',dashboard.memberships.active],['Total anggota',dashboard.memberships.total],['Undangan aktif',dashboard.invitations.active],['Project aktif',dashboard.projects.active],['Persetujuan berjalan',dashboard.approvals.pending],['Dokumen',dashboard.documents.total]
-          ].map(([label,value])=><div key={String(label)} className="rounded-xl border border-slate-200 p-3 dark:border-slate-800"><p className="text-[11px] text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold tabular-nums">{Number(value).toLocaleString('id-ID')}</p></div>)}</div>
-          <div className="mt-4 grid gap-4 md:grid-cols-2"><div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-800/60"><h3 className="text-xs font-semibold">Status keanggotaan & akses</h3><div className="mt-2 grid grid-cols-2 gap-2 text-xs"><p>Ditangguhkan <b className="float-right">{dashboard.memberships.suspended}</b></p><p>Dicabut <b className="float-right">{dashboard.memberships.revoked}</b></p><p>Undangan kedaluwarsa <b className="float-right">{dashboard.invitations.expired}</b></p><p>Undangan ditebus <b className="float-right">{dashboard.invitations.redeemed}</b></p></div><p className="mt-3 text-[11px] text-slate-500">Peringatan akses: {dashboard.access_alerts.suspended_memberships+dashboard.access_alerts.revoked_memberships+dashboard.access_alerts.expired_invitations} kondisi perlu ditinjau.</p></div><div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-800/60"><h3 className="text-xs font-semibold">Project & dokumen</h3><div className="mt-2 grid grid-cols-2 gap-2 text-xs"><p>Semua Project <b className="float-right">{dashboard.projects.total}</b></p><p>Selesai <b className="float-right">{dashboard.projects.completed}</b></p><p>Diarsipkan <b className="float-right">{dashboard.projects.archived}</b></p><p>Semua dokumen <b className="float-right">{dashboard.documents.total}</b></p></div><div className="mt-2 flex flex-wrap gap-1">{Object.entries(dashboard.documents.by_status).map(([status,count])=><span key={status} className="rounded-md border border-slate-200 px-2 py-1 text-[10px] dark:border-slate-700">{status}: {count}</span>)}</div></div></div>
-          <div className="mt-4 border-t border-slate-100 pt-3 dark:border-slate-800"><div className="flex flex-wrap justify-between gap-2"><h3 className="text-xs font-semibold">Aktivitas administrasi terbaru</h3><span className="text-[10px] text-slate-500">Terakhir: {dashboard.last_activity_at?new Date(dashboard.last_activity_at).toLocaleString('id-ID'):'Belum ada aktivitas'}</span></div>{dashboard.recent_activity.length?<ul className="mt-2 space-y-1">{dashboard.recent_activity.map((item,index)=><li key={item.created_at+'-'+index} className="flex flex-wrap justify-between gap-2 text-[11px]"><span>{item.action} · {item.entity_type}</span><time className="text-slate-500">{new Date(item.created_at).toLocaleString('id-ID')}</time></li>)}</ul>:<p className="mt-2 text-xs text-slate-500">Belum ada aktivitas tenant yang tercatat.</p>}</div>
-        </>:<p className="mt-4 text-xs text-slate-500">Ringkasan belum tersedia.</p>}
-      </section>
-      <section aria-labelledby="project-coverage-title" className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 id="project-coverage-title" className="font-semibold">Project Assignment & Coverage</h2><p className="mt-1 text-xs text-slate-500">Penugasan anggota dan permission aktual per Project. Tidak ada role bundle atau permission yang diasumsikan.</p></div><button type="button" onClick={()=>void loadProjectCoverage(workspaceId)} disabled={coverageLoading} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800">{coverageLoading?'Memuat…':'Perbarui coverage'}</button></div>
-        {coverageLoading?<p role="status" className="mt-4 text-sm text-slate-500">Memuat penugasan Project…</p>:coverageError?<div role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/20 dark:text-rose-200">{coverageError}<button type="button" onClick={()=>void loadProjectCoverage(workspaceId)} className="ml-2 font-semibold underline">Coba lagi</button></div>:projectCoverage?<>
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="rounded-xl border border-slate-200 p-3 dark:border-slate-800"><p className="text-[11px] text-slate-500">Anggota aktif tenant</p><p className="mt-1 text-2xl font-bold tabular-nums">{projectCoverage.active_company_members}</p></div><div className="rounded-xl border border-slate-200 p-3 dark:border-slate-800"><p className="text-[11px] text-slate-500">Project aktif</p><p className="mt-1 text-2xl font-bold tabular-nums">{projectCoverage.active_projects}</p></div><div className="rounded-xl border border-slate-200 p-3 dark:border-slate-800"><p className="text-[11px] text-slate-500">Penugasan Project aktif</p><p className="mt-1 text-2xl font-bold tabular-nums">{projectCoverage.active_project_memberships}</p></div><div className="rounded-xl border border-amber-200 p-3 dark:border-amber-900"><p className="text-[11px] text-slate-500">Belum ditugaskan ke Project aktif</p><p className="mt-1 text-2xl font-bold tabular-nums">{projectCoverage.members_without_active_project}</p></div></div>
-          <div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs dark:bg-slate-800/60">Anggota Project aktif tanpa permission operasional: <b>{projectCoverage.active_members_without_permissions}</b>. Keanggotaan Project dan permission operasional adalah dua hal berbeda.</div>
-          <div className="mt-4 space-y-3">{projectCoverage.projects.map(project=><article key={project.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-800"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-mono text-[11px] text-blue-600 dark:text-blue-300">{project.project_code}</p><h3 className="mt-1 text-sm font-semibold">{project.name}</h3><p className="mt-1 text-[11px] text-slate-500">{project.status} · {project.active_member_count} anggota aktif · {project.permission_code_count} kode permission terpakai</p></div><span className="rounded-lg bg-amber-50 px-2 py-1 text-[10px] text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{project.members_without_permissions} anggota tanpa permission</span></div>
-            {project.members.length?<div className="mt-3 space-y-2">{project.members.map(member=><div key={member.project_membership_id} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-semibold">{member.full_name}</p><p className="text-[10px] text-slate-500">Membership aktif · {member.permissions.length} permission eksplisit</p></div><span className="text-[10px] text-slate-400">{member.user_id.slice(0,8)}…</span></div>{member.permissions.length?<div className="mt-2 flex flex-wrap gap-1">{member.permissions.map(permission=><span key={permission.permission_code} title={permission.description} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] dark:border-slate-700 dark:bg-slate-900">{permission.permission_code} · {permission.risk_level}{permission.requires_authority_check?' · authority':''}</span>)}</div>:<p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">Belum ada permission operasional eksplisit.</p>}</div>)}</div>:<p className="mt-3 rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-slate-500 dark:border-slate-700">Belum ada anggota yang ditugaskan ke Project ini.</p>}
-          </article>)}{!projectCoverage.projects.length&&<p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-xs text-slate-500 dark:border-slate-700">Belum ada Project pada Company Workspace ini.</p>}</div>
-          <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800"><h3 className="text-sm font-semibold">Anggota belum memiliki penugasan operasional</h3><p className="mt-1 text-[11px] text-slate-500">Daftar ini berisi Company Membership aktif yang belum memiliki Project Membership aktif pada Project aktif mana pun.</p>{projectCoverage.unassigned_members.length?<ul className="mt-3 space-y-2">{projectCoverage.unassigned_members.map(member=><li key={member.company_membership_id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-800"><div><p className="font-medium">{member.full_name}</p><p className="mt-1 text-[10px] text-slate-500">Aktif sejak {member.activated_at?new Date(member.activated_at).toLocaleDateString('id-ID'):'tanggal tidak tersedia'}</p></div><div className="flex flex-wrap items-center gap-2"><select aria-label={'Project tujuan untuk '+member.full_name} value={assignmentTargets[member.company_membership_id]||''} onChange={e=>setAssignmentTargets(current=>({...current,[member.company_membership_id]:e.target.value}))} disabled={assigningMember===member.company_membership_id||!projectCoverage.projects.some(p=>p.status==='ACTIVE')} className="max-w-56 rounded-lg border border-slate-300 bg-white p-2 text-xs dark:border-slate-700 dark:bg-slate-950"><option value="">Pilih Project aktif</option>{projectCoverage.projects.filter(p=>p.status==='ACTIVE').map(p=><option key={p.id} value={p.id}>{p.project_code} · {p.name}</option>)}</select><button type="button" onClick={()=>void assignMemberToProject(member.company_membership_id,assignmentTargets[member.company_membership_id]||'')} disabled={!canAdmin||!assignmentTargets[member.company_membership_id]||Boolean(assigningMember)||!projectCoverage.projects.some(p=>p.status==='ACTIVE')} className="rounded-lg bg-blue-600 px-3 py-2 font-semibold text-white disabled:opacity-40">{assigningMember===member.company_membership_id?'Menugaskan…':'Tugaskan tanpa permission'}</button></div></li>)}</ul>:<p className="mt-2 text-xs text-slate-500">Semua anggota aktif sudah memiliki penugasan pada Project aktif, atau belum ada anggota yang perlu ditugaskan.</p>}</div>
-        </>:<p className="mt-4 text-xs text-slate-500">Coverage belum tersedia.</p>}
-      </section>
-      <section aria-labelledby="member-access-title" className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 id="member-access-title" className="font-semibold">Company Member Access Assignment</h2><p className="mt-1 text-xs text-slate-500">Penetapan Persona, Role, Authority, masa berlaku, dan pencabutan dengan histori audit.</p></div><button type="button" onClick={()=>void loadMemberAccess(workspaceId)} disabled={memberAccessLoading} className="rounded-lg border border-slate-300 px-3 py-2 text-xs dark:border-slate-700">{memberAccessLoading?'Memuat…':'Perbarui akses anggota'}</button></div>
-        <p className="mt-3 rounded-lg bg-blue-50 p-3 text-xs text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">Role tidak otomatis memberikan hak. Permission turunan hanya berasal dari Role–Permission mapping yang aktif dan disahkan Platform Super Admin. Efektivitas pada Project tetap memerlukan Project Membership aktif, Persona aktif yang sesuai, katalog permission aktif, dan Authority bila diwajibkan.</p>
-        {memberAccessLoading?<p role="status" className="mt-4 text-sm text-slate-500">Memuat konfigurasi akses anggota…</p>:memberAccessError?<div role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/20 dark:text-rose-200">{memberAccessError}<button type="button" onClick={()=>void loadMemberAccess(workspaceId)} className="ml-2 font-semibold underline">Coba lagi</button></div>:memberAccess?<div className="mt-4 space-y-3">
-          {memberAccess.members.length?memberAccess.members.map(member=>{const draft=memberAccessDrafts[member.company_membership_id]||{persona:'',role:'',authorityCode:'',authorityProjectId:'',authorityScope:'{}',authorityMaxAmount:'',authorityCurrency:'',endsAt:'',reason:''};return <article key={member.company_membership_id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-            <div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="text-sm font-semibold">{member.full_name}</h3><p className="text-[10px] text-slate-500">{member.membership_status} · {member.user_id.slice(0,8)}…</p></div><span className="text-[10px] text-slate-500">{member.personas.filter(x=>x.is_active).length} Persona aktif · {member.roles.filter(x=>x.is_active).length} Role aktif</span></div>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <div><h4 className="text-xs font-semibold">Persona</h4>{member.personas.length?<div className="mt-2 space-y-1">{member.personas.map(a=><div key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs dark:bg-slate-800/60"><span>{a.name} · {a.is_active?'Aktif':a.revoked_at?'Dicabut':'Kedaluwarsa'}{a.ends_at?' · s.d. '+new Date(a.ends_at).toLocaleDateString('id-ID'):''}</span>{!a.revoked_at&&<button type="button" disabled={Boolean(memberAccessBusy)} onClick={()=>void revokeMemberAccess('PERSONA',a.id)} className="text-rose-700 underline disabled:opacity-40 dark:text-rose-300">Cabut</button>}</div>)}</div>:<p className="mt-1 text-[11px] text-slate-500">Belum ada Persona.</p>}</div>
-              <div><h4 className="text-xs font-semibold">Role & permission mapping disahkan</h4>{member.roles.length?<div className="mt-2 space-y-1">{member.roles.map(a=><div key={a.id} className="rounded-lg bg-slate-50 px-3 py-2 text-xs dark:bg-slate-800/60"><div className="flex flex-wrap justify-between gap-2"><span>{a.name} · {a.is_active?'Aktif':a.revoked_at?'Dicabut':'Kedaluwarsa'}</span>{!a.revoked_at&&<button type="button" disabled={Boolean(memberAccessBusy)} onClick={()=>void revokeMemberAccess('ROLE',a.id)} className="text-rose-700 underline disabled:opacity-40 dark:text-rose-300">Cabut</button>}</div><p className="mt-1 text-[10px] text-slate-500">{a.approved_permission_codes?.length?('Mapping disahkan: '+a.approved_permission_codes.join(', ')):'Belum ada Role–Permission mapping aktif yang disahkan.'}</p>{a.ends_at&&<p className="text-[10px] text-slate-500">Berlaku sampai {new Date(a.ends_at).toLocaleString('id-ID')}</p>}</div>)}</div>:<p className="mt-1 text-[11px] text-slate-500">Belum ada Role.</p>}</div>
+  // Tab yang aktif sesuai sidebar atau default ke dashboard
+  const activeTab = currentView === 'rfin-b-generate' ? 'rfin-b-generate' : currentView === 'settings' ? 'settings' : 'dashboard';
+
+  return (
+    <div className="space-y-6">
+      {/* Header Utama Konsol Perusahaan */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-900">
+            <Building2 className="h-6 w-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Konsol Perusahaan (CSA)</h1>
+              <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                ADMIN
+              </span>
             </div>
-            {member.authorities.length>0&&<div className="mt-3"><h4 className="text-xs font-semibold">Authority per Project</h4><div className="mt-2 space-y-1">{member.authorities.map(a=><div key={a.id} className="flex flex-wrap justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs dark:bg-slate-800/60"><span>{a.name} · {a.project_code} · {a.is_active?'Aktif':a.revoked_at?'Dicabut':'Kedaluwarsa'}{a.max_amount!=null?' · '+a.currency+' '+Number(a.max_amount).toLocaleString('id-ID'):''}</span>{!a.revoked_at&&<button type="button" disabled={Boolean(memberAccessBusy)} onClick={()=>void revokeMemberAccess('AUTHORITY',a.id)} className="text-rose-700 underline disabled:opacity-40 dark:text-rose-300">Cabut</button>}</div>)}</div></div>}
-            {member.membership_status==='ACTIVE'&&<div className="mt-4 border-t border-slate-100 pt-3 dark:border-slate-800"><h4 className="text-xs font-semibold">Tetapkan akses baru</h4><div className="mt-2 grid gap-2 sm:grid-cols-2">
-              <label className="text-[11px]">Persona<select value={draft.persona} onChange={e=>setMemberAccessDrafts(v=>({...v,[member.company_membership_id]:{...draft,persona:e.target.value}}))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 text-xs dark:border-slate-700 dark:bg-slate-950"><option value="">Pilih Persona</option>{memberAccess.personas.map(x=><option key={x.code} value={x.code}>{x.name}</option>)}</select></label>
-              <label className="text-[11px]">Role<select value={draft.role} onChange={e=>setMemberAccessDrafts(v=>({...v,[member.company_membership_id]:{...draft,role:e.target.value}}))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 text-xs dark:border-slate-700 dark:bg-slate-950"><option value="">Pilih Role</option>{memberAccess.roles.map(x=><option key={x.code} value={x.code}>{x.name}</option>)}</select></label>
-              <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700 sm:col-span-2"><h5 className="text-[11px] font-semibold">Authority per Project</h5><p className="mt-1 text-[10px] text-slate-500">Authority hanya dapat diberikan pada Project tempat anggota sudah memiliki Project Membership aktif. Authority tidak membuat permission atau membership.</p>{draft.authorityCode&&<p className="mt-2 rounded bg-amber-50 p-2 text-[10px] text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">Pratinjau katalog: membatasi kewenangan untuk permission <b>{authorityCatalog.find(x=>x.authority_code===draft.authorityCode)?.permission_code||draft.authorityCode}</b>. Ini bukan pemberian permission; grant tetap harus berasal dari assignment yang sah dan mapping Role–Permission yang disetujui Platform.</p>}<div className="mt-2 grid gap-2 sm:grid-cols-2"><label className="text-[11px]">Katalog Authority<select value={draft.authorityCode} onChange={e=>setMemberAccessDrafts(v=>({...v,[member.company_membership_id]:{...draft,authorityCode:e.target.value}}))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 text-xs dark:border-slate-700 dark:bg-slate-950"><option value="">Pilih Authority</option>{authorityCatalog.map(x=><option key={x.authority_code} value={x.authority_code}>{x.display_name}</option>)}</select></label><label className="text-[11px]">Project anggota<select value={draft.authorityProjectId} onChange={e=>setMemberAccessDrafts(v=>({...v,[member.company_membership_id]:{...draft,authorityProjectId:e.target.value}}))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 text-xs dark:border-slate-700 dark:bg-slate-950"><option value="">Pilih Project Membership aktif</option>{(projectCoverage?.projects||[]).filter(p=>p.status==='ACTIVE'&&p.members.some(m=>m.company_membership_id===member.company_membership_id)).map(p=><option key={p.id} value={p.id}>{p.project_code} · {p.name}</option>)}</select></label><label className="text-[11px]">Nominal maksimum (opsional)<input type="number" min="0" step="0.01" value={draft.authorityMaxAmount} onChange={e=>setMemberAccessDrafts(v=>({...v,[member.company_membership_id]:{...draft,authorityMaxAmount:e.target.value}}))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 text-xs dark:border-slate-700 dark:bg-slate-950"/></label><label className="text-[11px]">Mata uang ISO 4217 (opsional)<input maxLength={3} placeholder="IDR" value={draft.authorityCurrency} onChange={e=>setMemberAccessDrafts(v=>({...v,[member.company_membership_id]:{...draft,authorityCurrency:e.target.value.toUpperCase()}}))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 text-xs uppercase dark:border-slate-700 dark:bg-slate-950"/></label><label className="text-[11px] sm:col-span-2">Scope Authority (JSON object)<textarea rows={2} value={draft.authorityScope} onChange={e=>setMemberAccessDrafts(v=>({...v,[member.company_membership_id]:{...draft,authorityScope:e.target.value}}))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 font-mono text-xs dark:border-slate-700 dark:bg-slate-950"/><span className="text-[10px] text-slate-500">Dimensi yang diizinkan katalog: {authorityCatalog.find(x=>x.authority_code===draft.authorityCode)?.allowed_dimensions.join(', ')||'pilih Authority terlebih dahulu'}</span></label></div><button type="button" onClick={()=>void assignMemberAccess(member.company_membership_id,'AUTHORITY')} disabled={!canAdmin||!draft.authorityCode||!draft.authorityProjectId||!draft.reason.trim()||draft.reason.trim().length<8||Boolean(memberAccessBusy)} className="mt-2 rounded-lg border border-amber-600 px-3 py-2 text-xs font-semibold text-amber-800 disabled:opacity-40 dark:text-amber-300">{memberAccessBusy===member.company_membership_id+':AUTHORITY'?'Menyimpan…':'Tetapkan Authority'}</button></div>
-              <label className="text-[11px]">Masa berlaku sampai (opsional)<input type="datetime-local" value={draft.endsAt} onChange={e=>setMemberAccessDrafts(v=>({...v,[member.company_membership_id]:{...draft,endsAt:e.target.value}}))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 text-xs dark:border-slate-700 dark:bg-slate-950"/></label>
-              <label className="text-[11px] sm:col-span-2">Alasan penugasan (wajib, 8–500 karakter)<input value={draft.reason} onChange={e=>setMemberAccessDrafts(v=>({...v,[member.company_membership_id]:{...draft,reason:e.target.value}}))} maxLength={500} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 text-xs dark:border-slate-700 dark:bg-slate-950"/></label>
-            </div><div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={()=>void assignMemberAccess(member.company_membership_id,'PERSONA')} disabled={!canAdmin||!draft.persona||draft.reason.trim().length<8||Boolean(memberAccessBusy)} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">{memberAccessBusy===member.company_membership_id+':PERSONA'?'Menyimpan…':'Tetapkan Persona'}</button><button type="button" onClick={()=>void assignMemberAccess(member.company_membership_id,'ROLE')} disabled={!canAdmin||!draft.role||draft.reason.trim().length<8||Boolean(memberAccessBusy)} className="rounded-lg border border-blue-600 px-3 py-2 text-xs font-semibold text-blue-700 disabled:opacity-40 dark:text-blue-300">{memberAccessBusy===member.company_membership_id+':ROLE'?'Menyimpan…':'Tetapkan Role'}</button></div></div>}
-          </article>}) : <p className="rounded-lg border border-dashed border-slate-300 p-5 text-center text-xs text-slate-500 dark:border-slate-700">Belum ada Company Member selain Company Super Admin.</p>}
-        </div>:<p className="mt-4 text-xs text-slate-500">Data assignment belum tersedia.</p>}
-      </section>
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><h2 className="font-semibold">Profil perusahaan & perubahan identitas</h2><p className="mt-1 text-xs text-slate-500">Nama legal saat ini: <b>{currentCompanyLegalName||"—"}</b>. Perubahan nama legal atau NPWP tidak langsung mengubah identitas tenant. Semua perubahan menunggu keputusan Platform Super Admin. NPWP hanya diproses server-side dan tidak ditampilkan kembali.</p><form onSubmit={submitProfileChange} className="mt-4 grid gap-3 md:grid-cols-2"><label className="text-xs font-medium">Nama legal baru <span className="font-normal text-slate-500">(kosongkan jika tidak berubah)</span><input maxLength={200} value={companyLegalName} onChange={e=>setCompanyLegalName(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"/></label><label className="flex items-center gap-2 self-end text-xs"><input type="checkbox" checked={changeNpwp} onChange={e=>setChangeNpwp(e.target.checked)}/> Ajukan perubahan NPWP</label>{changeNpwp&&<label className="text-xs font-medium md:col-span-2">NPWP baru<input required inputMode="numeric" autoComplete="off" value={profileNpwp} onChange={e=>setProfileNpwp(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm dark:border-slate-700 dark:bg-slate-950" placeholder="Masukkan NPWP baru"/></label>}<label className="text-xs font-medium md:col-span-2">Alasan perubahan (8–500 karakter)<textarea required minLength={8} maxLength={500} rows={2} value={profileReason} onChange={e=>setProfileReason(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"/></label><button disabled={busy||!canAdmin||profileReason.trim().length<8||(!companyLegalName.trim()&&!changeNpwp)} className="rounded-lg bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-40 md:col-span-2">Ajukan perubahan profil</button></form><div className="mt-5 border-t border-slate-200 pt-4 dark:border-slate-800"><h3 className="text-sm font-semibold">Riwayat permohonan profil</h3>{profileChanges.length?<div className="mt-2 space-y-2">{profileChanges.map(x=><article key={x.id} className="rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-800"><div className="flex flex-wrap justify-between gap-2"><b>{x.proposed_legal_name||'Perubahan NPWP'}{x.change_npwp?' · NPWP berakhir '+(x.proposed_npwp_last4||'••••'):''}</b><span>{x.status}</span></div><p className="mt-1 text-slate-500">{x.reason}</p><p className="mt-1 text-[10px] text-slate-400">{new Date(x.created_at).toLocaleString('id-ID')}{x.review_notes?' · Review: '+x.review_notes:''}</p></article>)}</div>:<p className="mt-2 text-xs text-slate-500">Belum ada permohonan perubahan profil.</p>}</div></section>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><div className="mb-4"><h2 className="flex items-center gap-2 font-semibold"><FolderKanban className="h-5 w-5 text-blue-600"/>Buat Project</h2><p className="mt-1 text-xs leading-5 text-slate-500">Project dibuat di Company Workspace aktif. Relasi client disimpan sebagai hubungan bisnis, bukan tenant atau membership.</p></div>
-          <form onSubmit={createProject} className="space-y-3">
-            <label className="block text-xs font-medium">Kode Project<input required maxLength={40} value={projectCode} onChange={e => setProjectCode(e.target.value.toUpperCase())} placeholder="Contoh: PRJ-001" className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm uppercase dark:border-slate-700 dark:bg-slate-950"/></label>
-            <label className="block text-xs font-medium">Nama Project<input required minLength={2} maxLength={160} value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Nama project operasional" className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"/></label>
-            <label className="block text-xs font-medium">Deskripsi <span className="font-normal text-slate-500">(opsional)</span><textarea maxLength={2000} rows={3} value={description} onChange={e => setDescription(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"/></label>
-            <div className="border-t border-slate-200 pt-3 dark:border-slate-800"><p className="mb-2 text-xs font-semibold">Relasi client awal</p><label className="block text-xs font-medium">Nama client<input required minLength={2} maxLength={200} value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Nama client / pemberi kerja" className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"/></label><label className="mt-3 block text-xs font-medium">Referensi komersial <span className="font-normal text-slate-500">(opsional)</span><input maxLength={200} value={commercialReference} onChange={e => setCommercialReference(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"/></label></div>
-            <button disabled={busy || !canAdmin} className="w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">{busy ? 'Menyimpan…' : 'Buat Project & relasi client'}</button>
-          </form>
-        </section>
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="font-semibold">Project Registry</h2><p className="mt-1 text-xs text-slate-500">Daftar dibaca dari Supabase melalui RLS.</p></div><span className="text-2xl font-bold tabular-nums">{projects.length}</span></div>
-          {projects.length ? <div className="space-y-3">{projects.map(project => <article key={project.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-800"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-mono text-blue-600 dark:text-blue-300">{project.project_code}</p><h3 className="mt-1 font-semibold">{project.name}</h3><p className="mt-1 text-xs text-slate-500">{project.description || 'Tanpa deskripsi'}</p></div><span className="text-xs text-slate-500">{project.status}</span></div><div className="mt-3 border-t border-slate-100 pt-3 text-xs dark:border-slate-800">{clients.filter(c => c.project_id === project.id).length ? clients.filter(c => c.project_id === project.id).map(c => <p key={c.id}><span className="text-slate-500">{c.relationship_type}:</span> <b>{c.client_name}</b>{c.commercial_reference ? ` · ${c.commercial_reference}` : ''}</p>) : <p className="text-slate-500">Belum ada relasi client.</p>}</div></article>)}</div>
-          : <div className="rounded-xl border border-dashed border-slate-300 px-5 py-12 text-center dark:border-slate-700"><FolderKanban className="mx-auto h-7 w-7 text-slate-400"/><p className="mt-3 text-sm font-medium">Belum ada Project</p><p className="mt-1 text-xs text-slate-500">Buat Project pertama melalui form. Project tidak otomatis menerima permission operasional.</p></div>}
-        </section>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Tata kelola tenant resmi, penerbitan undangan tim (RFIN-B), dan manajemen proyek.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => void refresh()}
+            disabled={loading || busy}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-sm"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin text-blue-600' : ''}`} />
+            Segarkan Data
+          </button>
+        </div>
       </div>
-      <RfinBInvitationPanel workspaceId={workspaceId} companyId={activeWorkspace?.company_id || ''} canAdmin={canAdmin} projects={projects}/>
-      <p className="text-xs leading-5 text-slate-500">Catatan keamanan: Company Super Admin otomatis menjadi anggota awal Project untuk tata kelola, tetapi tidak otomatis menerima hak BOQ, inventory, cash, dokumen, approval, TTE, atau QR. Permission tersebut harus diberikan secara eksplisit melalui alur penugasan yang sesuai. Relasi client pada Project Registry adalah hubungan bisnis, bukan Company/Tenant, Workspace, atau Membership. Client tidak memperoleh akses aplikasi hanya karena dicatat sebagai client.</p>
-      </>}
-    </main>
-  </div>;
+
+      {/* Tab Navigasi Bersih & Ramah Pengguna */}
+      <div className="flex border-b border-slate-200 dark:border-slate-800 gap-1 sm:gap-2">
+        <button
+          onClick={() => setCurrentView('dashboard')}
+          className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-semibold rounded-t-lg transition-colors border-b-2 -mb-[2px] ${
+            activeTab === 'dashboard'
+              ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/30'
+              : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/40'
+          }`}
+        >
+          <LayoutDashboard className="h-4 w-4" />
+          Dasbor & Tim
+        </button>
+
+        <button
+          onClick={() => setCurrentView('rfin-b-generate')}
+          className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-semibold rounded-t-lg transition-colors border-b-2 -mb-[2px] ${
+            activeTab === 'rfin-b-generate'
+              ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/30'
+              : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/40'
+          }`}
+        >
+          <KeyRound className="h-4 w-4" />
+          Penerbitan RFIN-B
+          {dashboard?.invitations?.active ? (
+            <span className="ml-1 px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-blue-600 text-white">
+              {dashboard.invitations.active}
+            </span>
+          ) : null}
+        </button>
+
+        <button
+          onClick={() => setCurrentView('settings')}
+          className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-semibold rounded-t-lg transition-colors border-b-2 -mb-[2px] ${
+            activeTab === 'settings'
+              ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/30'
+              : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/40'
+          }`}
+        >
+          <Settings className="h-4 w-4" />
+          Pengaturan & Proyek
+        </button>
+      </div>
+
+      {/* Pesan Pemberitahuan & Peringatan */}
+      {error && (
+        <div role="alert" className="rounded-xl border border-rose-300 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200 flex items-start gap-3">
+          <ShieldAlert className="h-5 w-5 text-rose-600 flex-shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {notice && (
+        <div role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200 flex items-start gap-3">
+          <CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+          <span>{notice}</span>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="grid min-h-64 place-items-center text-sm text-slate-500">
+          <div className="flex flex-col items-center gap-3">
+            <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
+            <p className="font-medium">Memverifikasi keanggotaan Company Super Admin…</p>
+          </div>
+        </div>
+      ) : !workspaces.length ? (
+        <section className="rounded-2xl border border-slate-200 bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-900">
+          <ShieldAlert className="mx-auto h-10 w-10 text-slate-400" />
+          <h2 className="mt-3 font-semibold text-base">Ruang Kerja Perusahaan belum tersedia</h2>
+          <p className="mt-2 text-sm text-slate-500 max-w-md mx-auto">
+            Akun ini belum memiliki Ruang Kerja Perusahaan aktif. Silakan ajukan pendaftaran perusahaan atau hubungi Platform Super Admin.
+          </p>
+        </section>
+      ) : !canAdmin ? (
+        <section className="rounded-2xl border border-amber-300 bg-amber-50 p-8 text-center dark:border-amber-900/60 dark:bg-amber-950/20">
+          <ShieldAlert className="mx-auto h-10 w-10 text-amber-600" />
+          <h2 className="mt-3 font-semibold text-base text-amber-900 dark:text-amber-200">Akses Company Super Admin Diperlukan</h2>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300 max-w-md mx-auto">
+            Konsol Perusahaan hanya dapat diakses oleh pemegang kursi Company Super Admin resmi yang telah mengklaim undangan RFIN-A.
+          </p>
+        </section>
+      ) : (
+        <>
+          {/* TAB 1: DASBOR & TIM */}
+          {activeTab === 'dashboard' && (
+            <div className="space-y-6">
+              {/* Kartu Informasi Perusahaan Aktif */}
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <span className="text-[11px] font-bold tracking-wider text-blue-600 dark:text-blue-400 uppercase">
+                      Perusahaan / Tenant Aktif
+                    </span>
+                    <h2 className="mt-1 text-xl font-bold text-slate-900 dark:text-slate-100">
+                      {activeWorkspace?.name || currentCompanyLegalName || 'CV. MENARA MEGAH'}
+                    </h2>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                      <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                      Status Administrator: <b>Company Super Admin Terverifikasi</b>
+                    </p>
+                  </div>
+
+                  {workspaces.length > 1 && (
+                    <label className="text-xs font-medium">
+                      Ganti Perusahaan
+                      <select
+                        value={workspaceId}
+                        onChange={e => void changeWorkspace(e.target.value)}
+                        className="mt-1 block rounded-lg border border-slate-300 bg-white p-2 text-xs dark:border-slate-700 dark:bg-slate-950"
+                      >
+                        {workspaces.filter(w => adminWorkspaceIds.includes(w.id)).map(w => (
+                          <option key={w.id} value={w.id}>{w.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+
+                {/* Ringkasan Angka Cepat */}
+                <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Total Anggota Perusahaan</p>
+                    <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                      {dashboard?.memberships.active ?? projectCoverage?.active_company_members ?? 0}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Proyek Aktif</p>
+                    <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                      {projects.length}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Undangan Aktif (RFIN-B)</p>
+                    <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums text-blue-600 dark:text-blue-400">
+                      {dashboard?.invitations.active ?? 0}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Dokumen Transaksi</p>
+                    <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                      {dashboard?.documents.total ?? 0}
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              {/* Penugasan Tim Proyek (Sederhana & User Friendly) */}
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    <div>
+                      <h2 className="font-bold text-base text-slate-900 dark:text-slate-100">Tim & Penugasan Proyek</h2>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Daftar anggota tim proyek, peran aktif (Impersonate), dan akses operasional.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void loadProjectCoverage(workspaceId)}
+                    disabled={coverageLoading}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${coverageLoading ? 'animate-spin text-blue-600' : ''}`} />
+                    Segarkan Tim
+                  </button>
+                </div>
+
+                {coverageLoading ? (
+                  <p className="py-8 text-center text-xs text-slate-500">Memuat data tim operasional…</p>
+                ) : coverageError ? (
+                  <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/20 dark:text-rose-200">
+                    {coverageError}
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-4">
+                    {/* Daftar per Proyek */}
+                    {projectCoverage?.projects?.length ? (
+                      projectCoverage.projects.map(project => {
+                        const clientRel = clients.find(c => c.project_id === project.id);
+                        return (
+                          <div key={project.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/20">
+                            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200/80 dark:border-slate-700/60">
+                              <div>
+                                <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">{project.project_code}</span>
+                                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{project.name}</h3>
+                                {clientRel && (
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    Klien: <b>{clientRel.client_name}</b> {clientRel.commercial_reference ? `(${clientRel.commercial_reference})` : ''}
+                                  </p>
+                                )}
+                              </div>
+                              <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                {project.active_member_count} Anggota Bertugas
+                              </span>
+                            </div>
+
+                            {/* Anggota di Proyek ini */}
+                            <div className="mt-3 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                              {project.members?.map(member => (
+                                <div key={member.project_membership_id} className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900 shadow-xs">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 flex items-center justify-center font-bold text-xs">
+                                        {member.full_name?.charAt(0).toUpperCase() || 'U'}
+                                      </div>
+                                      <div>
+                                        <p className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight">{member.full_name}</p>
+                                        <p className="text-[10px] text-slate-500 dark:text-slate-400">ID: {member.user_id?.slice(0, 8)}…</p>
+                                      </div>
+                                    </div>
+                                    <span className="px-1.5 py-0.5 text-[9px] font-semibold rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                      Aktif
+                                    </span>
+                                  </div>
+
+                                  {/* Hak Operasional Sederhana */}
+                                  <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-1">
+                                    {member.permissions?.length ? (
+                                      member.permissions.slice(0, 3).map(p => (
+                                        <span key={p.permission_code} className="px-1.5 py-0.5 text-[9px] rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                          {p.permission_code}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400 italic">Izin operasional terpasang</span>
+                                    )}
+                                    {member.permissions?.length > 3 && (
+                                      <span className="px-1.5 py-0.5 text-[9px] rounded bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300">
+                                        +{member.permissions.length - 3} lainnya
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-8 text-center text-xs text-slate-500">
+                        Belum ada Proyek yang tercatat. Silakan buat proyek pertama di tab <b>Pengaturan & Proyek</b>.
+                      </div>
+                    )}
+
+                    {/* Anggota yang belum terhubung ke Proyek */}
+                    {projectCoverage?.unassigned_members?.length ? (
+                      <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50/40 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
+                        <h4 className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                          <UserCheck className="h-4 w-4" />
+                          Anggota Terdaftar Belum Ditugaskan ke Proyek Spesifik
+                        </h4>
+                        <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-400">
+                          Anggota berikut telah terdaftar di perusahaan. Anda dapat langsung menugaskannya ke proyek aktif di bawah ini:
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          {projectCoverage.unassigned_members.map(member => (
+                            <div key={member.company_membership_id} className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
+                              <div>
+                                <p className="font-semibold text-slate-900 dark:text-slate-100">{member.full_name}</p>
+                                <p className="text-[10px] text-slate-500">{member.activated_at ? `Bergabung: ${new Date(member.activated_at).toLocaleDateString('id-ID')}` : ''}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <select
+                                  aria-label={'Pilih proyek untuk ' + member.full_name}
+                                  value={assignmentTargets[member.company_membership_id] || ''}
+                                  onChange={e => setAssignmentTargets(cur => ({ ...cur, [member.company_membership_id]: e.target.value }))}
+                                  className="rounded-lg border border-slate-300 bg-white p-1.5 text-xs dark:border-slate-700 dark:bg-slate-950"
+                                >
+                                  <option value="">Pilih Proyek…</option>
+                                  {projects.map(p => (
+                                    <option key={p.id} value={p.id}>{p.project_code} - {p.name}</option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => void assignMemberToProject(member.company_membership_id, assignmentTargets[member.company_membership_id] || '')}
+                                  disabled={!assignmentTargets[member.company_membership_id] || Boolean(assigningMember)}
+                                  className="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-semibold text-xs hover:bg-blue-700 disabled:opacity-40 transition-colors"
+                                >
+                                  {assigningMember === member.company_membership_id ? 'Menugaskan…' : 'Tugaskan ke Proyek'}
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
+
+          {/* TAB 2: PENERBITAN RFIN-B (UNDANGAN TIM) */}
+          {activeTab === 'rfin-b-generate' && (
+            <div className="space-y-6">
+              <RfinBInvitationPanel
+                workspaceId={workspaceId}
+                companyId={activeWorkspace?.company_id || ''}
+                canAdmin={canAdmin}
+                projects={projects}
+              />
+            </div>
+          )}
+
+          {/* TAB 3: PENGATURAN & PROYEK */}
+          {activeTab === 'settings' && (
+            <div className="space-y-6">
+              {/* Bagian Manajemen Proyek */}
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+                {/* Form Buat Proyek */}
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 shadow-sm">
+                  <div className="mb-4">
+                    <h2 className="flex items-center gap-2 font-bold text-base text-slate-900 dark:text-slate-100">
+                      <FolderKanban className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                      Daftarkan Proyek Baru
+                    </h2>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Proyek dibuat di Ruang Kerja Perusahaan aktif beserta hubungan bisnis dengan klien utama.
+                    </p>
+                  </div>
+
+                  <form onSubmit={createProject} className="space-y-3 text-xs">
+                    <div>
+                      <label className="block font-medium mb-1">Kode Proyek *</label>
+                      <input
+                        required
+                        maxLength={40}
+                        value={projectCode}
+                        onChange={e => setProjectCode(e.target.value.toUpperCase())}
+                        placeholder="Contoh: UDU-02"
+                        className="w-full rounded-lg border border-slate-300 bg-white p-2.5 uppercase dark:border-slate-700 dark:bg-slate-950 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-medium mb-1">Nama Proyek Operasional *</label>
+                      <input
+                        required
+                        minLength={2}
+                        maxLength={160}
+                        value={projectName}
+                        onChange={e => setProjectName(e.target.value)}
+                        placeholder="Contoh: Proyek Pembangunan Office UDU"
+                        className="w-full rounded-lg border border-slate-300 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-950"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-medium mb-1">Deskripsi Proyek (Opsional)</label>
+                      <textarea
+                        maxLength={2000}
+                        rows={2}
+                        value={description}
+                        onChange={e => setDescription(e.target.value)}
+                        placeholder="Ringkasan lingkup pekerjaan"
+                        className="w-full rounded-lg border border-slate-300 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-950"
+                      />
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                      <div>
+                        <label className="block font-medium mb-1">Nama Klien / Pemberi Kerja *</label>
+                        <input
+                          required
+                          minLength={2}
+                          maxLength={200}
+                          value={clientName}
+                          onChange={e => setClientName(e.target.value)}
+                          placeholder="Contoh: PT INDO MURO KENCANA"
+                          className="w-full rounded-lg border border-slate-300 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-950"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-medium mb-1">Referensi Kontrak / SPK (Opsional)</label>
+                        <input
+                          maxLength={200}
+                          value={commercialReference}
+                          onChange={e => setCommercialReference(e.target.value)}
+                          placeholder="Nomor kontrak atau surat perintah kerja"
+                          className="w-full rounded-lg border border-slate-300 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-950"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      disabled={busy || !canAdmin}
+                      className="w-full mt-2 rounded-lg bg-blue-600 px-4 py-3 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+                    >
+                      {busy ? 'Menyimpan…' : 'Simpan Proyek & Hubungan Klien'}
+                    </button>
+                  </form>
+                </section>
+
+                {/* Daftar Proyek Terdaftar */}
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 shadow-sm">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div>
+                      <h2 className="font-bold text-base text-slate-900 dark:text-slate-100">Daftar Proyek Terdaftar</h2>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Proyek yang aktif di bawah naungan perusahaan.</p>
+                    </div>
+                    <span className="text-xl font-bold text-blue-600 dark:text-blue-400 tabular-nums">
+                      {projects.length}
+                    </span>
+                  </div>
+
+                  {projects.length ? (
+                    <div className="space-y-3">
+                      {projects.map(project => {
+                        const relClients = clients.filter(c => c.project_id === project.id);
+                        return (
+                          <article key={project.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div>
+                                <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">{project.project_code}</span>
+                                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{project.name}</h3>
+                                {project.description && (
+                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{project.description}</p>
+                                )}
+                              </div>
+                              <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                {project.status}
+                              </span>
+                            </div>
+
+                            <div className="mt-3 pt-2.5 border-t border-slate-200/80 dark:border-slate-700/60 text-xs text-slate-600 dark:text-slate-300">
+                              {relClients.length ? (
+                                relClients.map(c => (
+                                  <div key={c.id} className="flex items-center gap-1.5">
+                                    <Briefcase className="h-3.5 w-3.5 text-slate-400" />
+                                    <span>Klien: <b>{c.client_name}</b> {c.commercial_reference ? `· ${c.commercial_reference}` : ''}</span>
+                                  </div>
+                                ))
+                              ) : (
+                                <p className="text-slate-400 italic">Belum ada data klien terhubung.</p>
+                              )}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500 dark:border-slate-700">
+                      Belum ada Proyek yang tercatat.
+                    </div>
+                  )}
+                </section>
+              </div>
+
+              {/* Bagian Profil Perusahaan */}
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 shadow-sm">
+                <div className="mb-4">
+                  <h2 className="font-bold text-base text-slate-900 dark:text-slate-100">Profil Perusahaan & Legalitas</h2>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Nama Legal Resmi: <b>{currentCompanyLegalName || 'CV. MENARA MEGAH'}</b>.
+                    Perubahan nama legal atau NPWP akan dikirim untuk peninjauan resmi Platform Super Admin.
+                  </p>
+                </div>
+
+                <form onSubmit={submitProfileChange} className="grid gap-3 sm:grid-cols-2 text-xs">
+                  <div>
+                    <label className="block font-medium mb-1">Nama Legal Baru (Kosongkan jika tidak berubah)</label>
+                    <input
+                      maxLength={200}
+                      value={companyLegalName}
+                      onChange={e => setCompanyLegalName(e.target.value)}
+                      placeholder="Masukkan nama legal baru"
+                      className="w-full rounded-lg border border-slate-300 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-950"
+                    />
+                  </div>
+
+                  <div className="flex flex-col justify-end">
+                    <label className="flex items-center gap-2 p-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={changeNpwp}
+                        onChange={e => setChangeNpwp(e.target.checked)}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="font-medium text-slate-700 dark:text-slate-300">Ajukan Perubahan NPWP Perusahaan (16 Digit)</span>
+                    </label>
+                  </div>
+
+                  {changeNpwp && (
+                    <div className="sm:col-span-2">
+                      <label className="block font-medium mb-1">Nomor NPWP 16 Digit Baru</label>
+                      <input
+                        required
+                        inputMode="numeric"
+                        maxLength={16}
+                        value={profileNpwp}
+                        onChange={e => setProfileNpwp(e.target.value.replace(/\D/g, '').slice(0, 16))}
+                        placeholder="Contoh: 0024376584714000"
+                        className="w-full rounded-lg border border-slate-300 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-950 font-mono"
+                      />
+                    </div>
+                  )}
+
+                  <div className="sm:col-span-2">
+                    <label className="block font-medium mb-1">Alasan Permohonan Perubahan (8–500 karakter) *</label>
+                    <textarea
+                      required
+                      minLength={8}
+                      maxLength={500}
+                      rows={2}
+                      value={profileReason}
+                      onChange={e => setProfileReason(e.target.value)}
+                      placeholder="Jelaskan alasan pembaruan data legalitas perusahaan…"
+                      className="w-full rounded-lg border border-slate-300 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-950"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <button
+                      disabled={busy || !canAdmin || profileReason.trim().length < 8 || (!companyLegalName.trim() && !changeNpwp)}
+                      className="rounded-lg bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-40 transition-colors shadow-sm"
+                    >
+                      Kirim Permohonan Perubahan Profil
+                    </button>
+                  </div>
+                </form>
+
+                {/* Riwayat Permohonan */}
+                {profileChanges.length ? (
+                  <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 mb-2">Riwayat Pengajuan Perubahan</h3>
+                    <div className="space-y-2">
+                      {profileChanges.map(change => (
+                        <div key={change.id} className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 text-xs bg-slate-50/50 dark:bg-slate-800/30 flex flex-wrap justify-between gap-2">
+                          <div>
+                            <p className="font-semibold text-slate-900 dark:text-slate-100">
+                              {change.proposed_legal_name || 'Perubahan NPWP'}
+                              {change.change_npwp ? ` (NPWP akhiran: ${change.proposed_npwp_last4 || '••••'})` : ''}
+                            </p>
+                            <p className="text-slate-500 mt-0.5">{change.reason}</p>
+                          </div>
+                          <div className="text-right">
+                            <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${
+                              change.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' :
+                              change.status === 'REJECTED' ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300' :
+                              'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                            }`}>
+                              {change.status === 'PENDING' ? 'Menunggu Peninjauan' : change.status === 'APPROVED' ? 'Disetujui' : 'Ditolak'}
+                            </span>
+                            <p className="text-[10px] text-slate-400 mt-1">{new Date(change.created_at).toLocaleDateString('id-ID')}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
 };
