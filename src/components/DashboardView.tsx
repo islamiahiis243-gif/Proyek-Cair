@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   Boxes,
@@ -60,6 +60,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     .reduce((sum, m) => sum + m.jumlah, 0);
 
   const totalItemCount = items.filter((item) => item.is_stock_item).length;
+  const totalBoqValue = useMemo(() => {
+    return items.reduce((sum, it) => sum + (Number(it.qty_boq || 0) * Number(it.harga_satuan || 0)), 0);
+  }, [items]);
   const availablePercent = totalItemCount > 0 ? Math.round((availableStockCount / totalItemCount) * 100) : 0;
   const lowPercent = totalItemCount > 0 ? Math.round((lowStockCount / totalItemCount) * 100) : 0;
   const outPercent = totalItemCount > 0 ? Math.round((outOfStockCount / totalItemCount) * 100) : 0;
@@ -167,46 +170,46 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Card 2: Valuasi Aset Stok */}
+        {/* Card 2: Valuasi Nilai Kontrak Master BOQ */}
         <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-medium uppercase tracking-wider">Valuasi Stok Fisik</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Nilai Master BOQ Proyek</span>
             <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
               <Boxes className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-2 text-2xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
-            {formatRupiah(totalStockAssetValue)}
+            {formatRupiah(totalBoqValue)}
           </div>
           <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-2">
-            <span>Total Item BOQ: {items.length} item</span>
+            <span>Stok Fisik Tersimpan: {formatRupiah(totalStockAssetValue)}</span>
             <span className="text-blue-600 dark:text-blue-400 font-medium cursor-pointer" onClick={() => setCurrentView('inventory')}>
-              Lihat Detail
+              {items.length} Item
             </span>
           </div>
         </div>
 
-        {/* Card 3: Status Ketersediaan */}
+        {/* Card 3: Status Ketersediaan & Katalog BOQ */}
         <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-medium uppercase tracking-wider">Ketersediaan Barang</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Katalog Material BOQ</span>
             <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center">
               <PackageCheck className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{availableStockCount}</span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">Tersedia ({availablePercent}%)</span>
+            <span className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{totalItemCount}</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">Item Material Terdaftar</span>
           </div>
           <div className="mt-3 flex h-2 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800">
-            <div style={{ width: `${availablePercent}%` }} className="bg-emerald-500" title={`Tersedia: ${availableStockCount}`} />
+            <div style={{ width: `${Math.max(availablePercent, availableStockCount > 0 ? 10 : 100)}%` }} className={availableStockCount > 0 ? "bg-emerald-500" : "bg-blue-500"} title={`Tersedia: ${availableStockCount}`} />
             <div style={{ width: `${lowPercent}%` }} className="bg-amber-500" title={`Menipis: ${lowStockCount}`} />
             <div style={{ width: `${outPercent}%` }} className="bg-rose-500" title={`Kosong: ${outOfStockCount}`} />
           </div>
           <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
-            <span className="text-emerald-700 dark:text-emerald-400 font-medium">Tersedia: {availableStockCount}</span>
+            <span className="text-emerald-700 dark:text-emerald-400 font-medium">Tersedia Fisik: {availableStockCount}</span>
             <span className="text-amber-700 dark:text-amber-400 font-medium">Menipis: {lowStockCount}</span>
-            <span className="text-rose-700 dark:text-rose-400 font-medium">Kosong: {outOfStockCount}</span>
+            <span className="text-blue-700 dark:text-blue-400 font-medium">Siap Catat: {totalItemCount - availableStockCount}</span>
           </div>
         </div>
 

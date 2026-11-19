@@ -34,6 +34,7 @@ export const Header: React.FC = () => {
     setActiveCompany,
     activeProjectId,
     setActiveProjectId,
+    setActiveWorkspaceId,
     activeContext,
     supabaseConfig,
     setCurrentView
@@ -79,6 +80,7 @@ export const Header: React.FC = () => {
         const first = userAssignments[0];
         setActiveRole(mapRoleCode(first.role_code));
         if (first.id) setActiveProjectId(first.id);
+        if (first.workspace_id) setActiveWorkspaceId(first.workspace_id);
         if (first.company_id && first.company_name) {
           setActiveCompany({
             id: first.company_id,
@@ -102,6 +104,9 @@ export const Header: React.FC = () => {
     }
     if (proj.id) {
       setActiveProjectId(proj.id);
+    }
+    if (proj.workspace_id) {
+      setActiveWorkspaceId(proj.workspace_id);
     }
     setAppMode('IMPERSONATE');
     setDropdownOpen(false);

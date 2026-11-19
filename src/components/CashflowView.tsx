@@ -52,6 +52,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
   // Form states
   const [jenis, setJenis] = useState<JenisMutasiKas>(defaultType);
   const [amount, setAmount] = useState<number>(0);
+  const [cashDate, setCashDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [purpose, setPurpose] = useState('');
   const [category, setCategory] = useState<MutasiKas['kategori_keperluan']>('Material');
   const [pic, setPic] = useState(user.name);
@@ -108,6 +109,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
     }
     setJenis(t);
     setAmount(0);
+    setCashDate(new Date().toISOString().slice(0, 10));
     setPurpose('');
     setCategory(t === 'MASUK' ? 'Dana Termin Proyek' : 'Material');
     setPic(user.name);
@@ -141,7 +143,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
         kategori_keperluan: category,
         pic,
         nomor_kuitansi: receipt || undefined,
-        tanggal: new Date().toISOString(),
+        tanggal: new Date(cashDate).toISOString(),
         catatan: notes || undefined,
       });
 
@@ -578,6 +580,19 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    {jenis === 'MASUK' ? 'Tanggal Kas Masuk' : 'Tanggal Kas Keluar'} <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={cashDate}
+                    onChange={(e) => setCashDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl font-medium focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Nominal Transaksi (Rp) <span className="text-rose-500">*</span>
                   </label>
                   <input
@@ -587,15 +602,15 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                     value={amount || ''}
                     onChange={(e) => setAmount(Number(e.target.value))}
                     placeholder="0"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl font-mono font-bold text-sm"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl font-mono font-bold text-sm focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
+              </div>
 
-                <div className="bg-slate-50 dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center">
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Proyeksi Saldo Akhir</span>
-                  <div className="text-xs font-bold text-slate-900 dark:text-white font-mono mt-0.5">
-                    {formatRupiah(projectedBalance)}
-                  </div>
+              <div className="bg-slate-50 dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 uppercase font-semibold">Proyeksi Saldo Kas Akhir</span>
+                <div className="text-xs font-bold text-slate-900 dark:text-white font-mono">
+                  {formatRupiah(projectedBalance)}
                 </div>
               </div>
 
