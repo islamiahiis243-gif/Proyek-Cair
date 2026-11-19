@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp, computeItemStatus } from '../context/AppContext';
-import { ItemBarang, JenisMutasiBarang, MutasiBarang, StatusDokumenWorkflow } from '../types';
+import { ItemBarang, JenisMutasiBarang, MutasiBarang, StatusDokumenWorkflow, BebanBiaya } from '../types';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -14,7 +14,13 @@ import {
   Ban,
   FileEdit,
   Clock,
-  ShieldCheck
+  ShieldCheck,
+  Package,
+  Sparkles,
+  HelpCircle,
+  Coins,
+  Building2,
+  Truck
 } from 'lucide-react';
 import { formatDateTime } from '../lib/pdfGenerator';
 
@@ -50,9 +56,14 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<'ALL' | 'MASUK' | 'KELUAR'>('ALL');
+  const [filterType, setFilterType] = useState<'ALL' | 'MASUK' | 'KELUAR' | 'KLIEN' | 'KONTRAKTOR' | 'OPERASIONAL'>('ALL');
 
   // Form input states
+  const [isCustomMode, setIsCustomMode] = useState<boolean>(false);
+  const [customItemName, setCustomItemName] = useState<string>('');
+  const [customItemUom, setCustomItemUom] = useState<string>('Unit');
+  const [bebanBiaya, setBebanBiaya] = useState<BebanBiaya>('KONTRAKTOR');
+
   const [selectedItemId, setSelectedItemId] = useState<string>(preselectedItem ? preselectedItem.id : (items[0]?.id || ''));
   const [selectedAllocationItemId, setSelectedAllocationItemId] = useState<string>('');
   const [mutationType, setMutationType] = useState<JenisMutasiBarang>(preselectedType || 'MASUK');
@@ -174,8 +185,14 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         (m.pic_penerima_penyerah || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (m.nomor_surat_jalan && m.nomor_surat_jalan.toLowerCase().includes(searchQuery.toLowerCase()));
 
-      const matchType = filterType === 'ALL' || m.jenis === filterType;
-      return matchSearch && matchType;
+      let matchFilter = true;
+      if (filterType === 'MASUK') matchFilter = m.jenis === 'MASUK';
+      else if (filterType === 'KELUAR') matchFilter = m.jenis === 'KELUAR';
+      else if (filterType === 'KLIEN') matchFilter = m.beban_biaya === 'KLIEN';
+      else if (filterType === 'KONTRAKTOR') matchFilter = m.beban_biaya === 'KONTRAKTOR';
+      else if (filterType === 'OPERASIONAL') matchFilter = m.beban_biaya === 'OPERASIONAL';
+
+      return matchSearch && matchFilter;
     });
   }, [stockMutations, searchQuery, filterType]);
 
@@ -185,6 +202,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       return;
     }
     setMutationType(type);
+    setIsCustomMode(false);
+    setCustomItemName('');
+    setCustomItemUom('Unit');
+    setBebanBiaya('KONTRAKTOR');
     setQty(1);
     setPic(user.name);
     setSuratJalan('');
@@ -197,7 +218,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     setOwnerType('KONTRAKTOR');
     setErrorMessage(null);
 
-    if (type === 'KELUAR' && currentPhysicalMaterial) {
+    if (type === 'MASUK') {
+      setPurpose('Penyediaan Material Kontrak BOQ');
+    } else if (type === 'KELUAR' && currentPhysicalMaterial) {
       const bl = currentPhysicalMaterial.budget_lines[0];
       if (bl) {
         setSelectedAllocationItemId(bl.id);
@@ -214,44 +237,61 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     e.preventDefault();
     if (submitting) return;
 
-    if (!currentPhysicalMaterial) {
-      setErrorMessage('Pilih material fisik dari katalog.');
-      return;
+    if (isCustomMode) {
+      if (!customItemName.trim()) {
+        setErrorMessage('Tuliskan nama material / kebutuhan custom.');
+        return;
+      }
+      if (!customItemUom.trim()) {
+        setErrorMessage('Tuliskan satuan untuk material custom (contoh: Zak, Kg, Batang, Hari).');
+        return;
+      }
+    } else {
+      if (!currentPhysicalMaterial) {
+        setErrorMessage('Pilih material fisik dari katalog BOQ.');
+        return;
+      }
+      if (mutationType === 'KELUAR' && currentStock < qty) {
+        setErrorMessage(
+          `Stok fisik saat ini di gudang (${currentStock} ${currentPhysicalMaterial.satuan}) tidak mencukupi untuk pengeluaran ${qty} ${currentPhysicalMaterial.satuan}.`
+        );
+        return;
+      }
     }
+
     if (qty <= 0) {
       setErrorMessage('Jumlah kuantitas mutasi harus lebih besar dari 0.');
       return;
     }
-    if (mutationType === 'KELUAR' && currentStock < qty) {
-      setErrorMessage(
-        `Stok fisik saat ini di gudang (${currentStock} ${currentPhysicalMaterial.satuan}) tidak mencukupi untuk pengeluaran ${qty} ${currentPhysicalMaterial.satuan}.`
-      );
-      return;
-    }
 
-    // Pemasukan disatukan (mengacu pada ID material fisik agregat), Pengeluaran dirincikan (mengacu pada ID pos BOQ spesifik)
-    const targetItemId =
-      mutationType === 'KELUAR'
-        ? (selectedAllocationItemId || currentPhysicalMaterial.id)
-        : currentPhysicalMaterial.id;
+    // Material BOQ: Pemasukan disatukan (agregat), Pengeluaran dirincikan (pos BOQ)
+    const targetItemId = isCustomMode
+      ? ''
+      : mutationType === 'KELUAR'
+      ? (selectedAllocationItemId || currentPhysicalMaterial?.id || '')
+      : (currentPhysicalMaterial?.id || '');
+
+    const itemName = isCustomMode ? customItemName.trim() : (currentPhysicalMaterial?.nama_barang || 'Material');
+    const itemSatuan = isCustomMode ? customItemUom.trim() : (currentPhysicalMaterial?.satuan || 'Unit');
 
     setSubmitting(true);
     setErrorMessage(null);
 
-    const defaultPurpose =
-      mutationType === 'MASUK'
-        ? 'Penerimaan logistik masuk gudang'
-        : selectedBudgetLine
-        ? `Pemakaian: ${selectedBudgetLine.kode_boq} - ${selectedBudgetLine.kategori}`
-        : 'Pemakaian material proyek';
+    const defaultPurpose = isCustomMode
+      ? (bebanBiaya === 'OPERASIONAL' ? 'Kebutuhan Operasional Lapangan' : bebanBiaya === 'KLIEN' ? 'Permintaan Tambahan Klien (VO)' : 'Kebutuhan Khusus Lapangan')
+      : mutationType === 'MASUK'
+      ? 'Penyediaan Material Kontrak BOQ'
+      : selectedBudgetLine
+      ? `${selectedBudgetLine.kode_boq} - ${selectedBudgetLine.kategori}`
+      : 'Pemakaian material proyek';
 
     try {
       const res = await addStockMutation({
         barang_id: targetItemId,
-        nama_barang: currentPhysicalMaterial.nama_barang,
+        nama_barang: itemName,
         jenis: mutationType,
         jumlah: qty,
-        satuan: currentPhysicalMaterial.satuan,
+        satuan: itemSatuan,
         tujuan_keperluan: purpose || defaultPurpose,
         pic_penerima_penyerah: pic,
         nomor_surat_jalan: suratJalan || undefined,
@@ -261,7 +301,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         destination_name: destinationName || undefined,
         recipient_name: pic || undefined,
         owner_type: ownerType,
-        purpose: purpose || defaultPurpose
+        purpose: purpose || defaultPurpose,
+        beban_biaya: bebanBiaya,
+        is_custom_item: isCustomMode
       });
 
       if (!res.success) {
@@ -304,6 +346,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   const handleOpenGanti = (item: MutasiBarang) => {
     setGantiTarget(item);
     setGantiReason('');
+    setIsCustomMode(Boolean(item.is_custom_item));
+    setCustomItemName(item.nama_barang || '');
+    setCustomItemUom(item.satuan || 'Unit');
+    setBebanBiaya(item.beban_biaya || 'KONTRAKTOR');
     setSelectedItemId(item.barang_id);
     setMutationType(item.jenis);
     setQty(item.jumlah);
@@ -322,15 +368,19 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     if (!gantiTarget || submitting) return;
     setSubmitting(true);
     setErrorMessage(null);
+
+    const itemName = isCustomMode ? customItemName.trim() : (currentPhysicalMaterial?.nama_barang || gantiTarget.nama_barang || 'Material');
+    const itemSatuan = isCustomMode ? customItemUom.trim() : (currentPhysicalMaterial?.satuan || gantiTarget.satuan || 'Unit');
+
     try {
       const res = await gantiStockMutation(
         gantiTarget.id,
         {
-          barang_id: selectedItemId,
-          nama_barang: currentPhysicalMaterial?.nama_barang || 'Material',
+          barang_id: isCustomMode ? '' : selectedItemId,
+          nama_barang: itemName,
           jenis: mutationType,
           jumlah: qty,
-          satuan: currentPhysicalMaterial?.satuan || 'Unit',
+          satuan: itemSatuan,
           tujuan_keperluan: purpose,
           pic_penerima_penyerah: pic,
           nomor_surat_jalan: suratJalan || undefined,
@@ -340,7 +390,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           destination_name: destinationName || undefined,
           recipient_name: pic || undefined,
           owner_type: ownerType,
-          purpose: purpose
+          purpose: purpose,
+          beban_biaya: bebanBiaya,
+          is_custom_item: isCustomMode
         },
         gantiReason
       );
@@ -462,11 +514,14 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               />
             </div>
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               {[
                 { id: 'ALL', label: `Semua (${stockMutations.length})` },
                 { id: 'MASUK', label: `Masuk (${stockMutations.filter((m) => m.jenis === 'MASUK').length})` },
                 { id: 'KELUAR', label: `Keluar (${stockMutations.filter((m) => m.jenis === 'KELUAR').length})` },
+                { id: 'KLIEN', label: `Tagihan Klien (${stockMutations.filter((m) => m.beban_biaya === 'KLIEN').length})` },
+                { id: 'KONTRAKTOR', label: `Beban Menara Megah (${stockMutations.filter((m) => m.beban_biaya === 'KONTRAKTOR').length})` },
+                { id: 'OPERASIONAL', label: `Operasional (${stockMutations.filter((m) => m.beban_biaya === 'OPERASIONAL').length})` },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -494,7 +549,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     <th className="py-3 px-3.5 text-center">Jenis</th>
                     <th className="py-3 px-3.5">Material</th>
                     <th className="py-3 px-3.5 text-right">Jumlah</th>
-                    <th className="py-3 px-3.5">Keperluan / Lokasi</th>
+                    <th className="py-3 px-3.5">Beban & Keperluan / Lokasi</th>
                     <th className="py-3 px-3.5 text-center">Status Dokumen</th>
                     <th className="py-3 px-3.5 text-center">Alur Persetujuan</th>
                     <th className="py-3 px-3.5 text-center">Koreksi</th>
@@ -539,7 +594,14 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                             </span>
                           </td>
                           <td className="py-3 px-3.5">
-                            <div className="font-semibold text-slate-900 dark:text-white">{mut.nama_barang}</div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-semibold text-slate-900 dark:text-white">{mut.nama_barang}</span>
+                              {mut.is_custom_item && (
+                                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">
+                                  ✍️ Non-BOQ
+                                </span>
+                              )}
+                            </div>
                             {mut.catatan && <div className="text-[11px] text-slate-400 italic mt-0.5">{mut.catatan}</div>}
                           </td>
                           <td className="py-3 px-3.5 text-right font-mono font-bold tabular-nums whitespace-nowrap">
@@ -548,9 +610,24 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                             </span>{' '}
                             <span className="text-[11px] text-slate-400 font-normal">{mut.satuan}</span>
                           </td>
-                          <td className="py-3 px-3.5 text-slate-700 dark:text-slate-300 max-w-xs truncate">
-                            <div>{mut.tujuan_keperluan || '-'}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">PIC: {mut.pic_penerima_penyerah}</div>
+                          <td className="py-3 px-3.5 text-slate-700 dark:text-slate-300 max-w-xs">
+                            <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                              {mut.beban_biaya === 'KLIEN' ? (
+                                <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300">
+                                  🟢 Tagihan Klien (VO)
+                                </span>
+                              ) : mut.beban_biaya === 'OPERASIONAL' ? (
+                                <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-950/70 text-sky-800 dark:text-sky-300">
+                                  🔵 Operasional Lapangan
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300">
+                                  🟠 Beban Menara Megah
+                                </span>
+                              )}
+                            </div>
+                            <div className="truncate font-medium">{mut.tujuan_keperluan || '-'}</div>
+                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">PIC: {mut.pic_penerima_penyerah}</div>
                           </td>
 
                           {/* Status Dokumen */}
@@ -692,150 +769,237 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
             </div>
 
             <form onSubmit={handleSubmitMutation} className="p-5 space-y-4 text-xs">
-              {/* Pemilihan Material Berbasis Kolom Pencarian (Search Autocomplete) */}
-              <div className="relative" ref={itemSearchRef}>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300">
-                    Pilih Material / Barang <span className="text-rose-500">*</span>
-                  </label>
-                  {currentPhysicalMaterial && (
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      Stok Fisik Gudang: <b className="text-slate-700 dark:text-slate-200">{currentStock} {currentPhysicalMaterial.satuan}</b>
-                    </span>
-                  )}
-                </div>
-
-                {/* Tampilan Material Terpilih */}
-                {currentPhysicalMaterial && !isItemSearchOpen ? (
-                  <div className={`p-3 rounded-xl border transition-colors ${
-                    mutationType === 'MASUK'
-                      ? 'border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/30'
-                      : 'border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/30'
-                  }`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
-                            {currentPhysicalMaterial.nama_barang}
-                          </span>
-                          <span className={`text-[9px] px-2 py-0.5 rounded-full font-semibold uppercase ${
-                            mutationType === 'MASUK'
-                              ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
-                              : 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
-                          }`}>
-                            {mutationType === 'MASUK' ? 'Penerimaan Fisik Terpadu' : 'Material Fisik Gudang'}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-2 mt-1">
-                          <span>Satuan: <b className="text-slate-700 dark:text-slate-300">{currentPhysicalMaterial.satuan}</b></span>
-                          <span>·</span>
-                          <span>Saldo Fisik Saat Ini: <b className={currentStock > 0 ? "text-emerald-600 dark:text-emerald-400 font-mono" : "text-rose-600 dark:text-rose-400 font-mono"}>{currentStock} {currentPhysicalMaterial.satuan}</b></span>
-                          <span>·</span>
-                          <span>Total Kebutuhan Proyek: <b className="text-blue-600 dark:text-blue-400 font-mono">{currentPhysicalMaterial.total_qty_boq.toLocaleString('id-ID', { maximumFractionDigits: 4 })} {currentPhysicalMaterial.satuan}</b> ({currentPhysicalMaterial.budget_lines.length} Pos Alokasi BOQ)</span>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsItemSearchOpen(true);
-                          setItemSearchQuery('');
-                        }}
-                        className="shrink-0 px-3 py-1.5 text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 bg-white dark:bg-slate-800 rounded-lg border border-blue-200 dark:border-blue-800 shadow-2xs hover:bg-blue-50 dark:hover:bg-slate-700 transition-colors"
-                      >
-                        Ganti Material
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  /* Kolom Search Input dengan Hasil Autocomplete */
-                  <div>
-                    <div className="relative">
-                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      <input
-                        type="text"
-                        autoFocus
-                        placeholder="Ketik nama material fisik (cth: Pasir, Semen, Kayu, Besi, Batako)..."
-                        value={itemSearchQuery}
-                        onChange={(e) => {
-                          setItemSearchQuery(e.target.value);
-                          setIsItemSearchOpen(true);
-                        }}
-                        onFocus={() => setIsItemSearchOpen(true)}
-                        className="w-full pl-9 pr-8 py-2.5 bg-slate-50 dark:bg-slate-800 border border-blue-400 dark:border-blue-500 text-slate-900 dark:text-white rounded-xl text-xs focus:ring-2 focus:ring-blue-500/20 font-medium"
-                      />
-                      {currentPhysicalMaterial && (
-                        <button
-                          type="button"
-                          onClick={() => setIsItemSearchOpen(false)}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
-                          title="Tutup pencarian"
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Dropdown Hasil Pencarian Autocomplete */}
-                    {isItemSearchOpen && (
-                      <div className="absolute left-0 right-0 mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl z-50 divide-y divide-slate-100 dark:divide-slate-700/60">
-                        {filteredPhysicalMaterialsForPicker.length > 0 ? (
-                          filteredPhysicalMaterialsForPicker.map((pm) => (
-                            <button
-                              key={pm.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedItemId(pm.id);
-                                if (pm.budget_lines.length > 0) {
-                                  setSelectedAllocationItemId(pm.budget_lines[0].id);
-                                  if (mutationType === 'KELUAR') {
-                                    setPurpose(`${pm.budget_lines[0].kode_boq} - ${pm.budget_lines[0].kategori}`);
-                                  }
-                                }
-                                setIsItemSearchOpen(false);
-                                setItemSearchQuery('');
-                              }}
-                              className={`w-full text-left p-2.5 transition-colors flex items-center justify-between gap-2 hover:bg-blue-50 dark:hover:bg-slate-700/60 ${
-                                pm.id === currentPhysicalMaterial?.id ? 'bg-blue-50/80 dark:bg-slate-700/90 font-semibold' : ''
-                              }`}
-                            >
-                              <div className="min-w-0 flex-1">
-                                <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
-                                  {pm.nama_barang}
-                                </div>
-                                <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5 truncate">
-                                  <span className="font-mono text-blue-600 dark:text-blue-400 font-semibold">
-                                    {pm.budget_lines.length} Pos BOQ
-                                  </span>
-                                  <span>·</span>
-                                  <span className="truncate">
-                                    {pm.budget_lines.slice(0, 2).map((bl) => bl.kode_boq).join(', ')}
-                                    {pm.budget_lines.length > 2 ? '...' : ''}
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="text-right shrink-0">
-                                <div className="text-[10px] font-mono font-bold text-slate-700 dark:text-slate-300">
-                                  Stok Fisik: {pm.stok_fisik} {pm.satuan}
-                                </div>
-                                <div className="text-[9px] text-slate-400">
-                                  Total Rencana: {pm.total_qty_boq.toLocaleString('id-ID')} {pm.satuan}
-                                </div>
-                              </div>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="p-4 text-center text-xs text-slate-400">
-                            Tidak ditemukan material fisik dengan kata kunci "{itemSearchQuery}".
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
+              {/* Toggle Kategori Material: Kontrak BOQ vs Custom / Non-BOQ */}
+              <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomMode(false);
+                    if (mutationType === 'MASUK') {
+                      setPurpose('Penyediaan Material Kontrak BOQ');
+                    } else if (currentPhysicalMaterial?.budget_lines[0]) {
+                      const bl = currentPhysicalMaterial.budget_lines[0];
+                      setPurpose(`${bl.kode_boq} - ${bl.kategori}`);
+                    }
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-lg font-semibold text-xs transition-all flex items-center justify-center gap-1.5 ${
+                    !isCustomMode
+                      ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Package className="w-3.5 h-3.5" />
+                  <span>Material Kontrak BOQ</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomMode(true);
+                    if (bebanBiaya === 'KONTRAKTOR') {
+                      setBebanBiaya('OPERASIONAL');
+                    }
+                    if (!purpose || purpose === 'Penyediaan Material Kontrak BOQ') {
+                      setPurpose('');
+                    }
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-lg font-semibold text-xs transition-all flex items-center justify-center gap-1.5 ${
+                    isCustomMode
+                      ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-300 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Material Custom / Non-BOQ</span>
+                </button>
               </div>
 
-              {/* KHUSUS PENGELUARAN: Rincian Alokasi Pos BOQ (Pengeluaran Dirincikan) */}
-              {mutationType === 'KELUAR' && currentPhysicalMaterial && (
+              {/* Mode Custom: Input Manual Nama & Satuan */}
+              {isCustomMode ? (
+                <div className="p-3.5 rounded-xl border border-purple-200 dark:border-purple-900/60 bg-purple-50/40 dark:bg-purple-950/20 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-purple-950 dark:text-purple-200 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                      Detail Material Custom / Luar BOQ
+                    </span>
+                    <span className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">
+                      Pencatatan Mandiri
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Nama Barang / Material Custom <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Cth: Beras 50kg Logistik Tukang, Balok Camp Albasia, Solar Genset..."
+                      value={customItemName}
+                      onChange={(e) => setCustomItemName(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700/80 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-purple-500/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Satuan Material <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Cth: Zak, Kg, Batang, Liter, Unit, Hari..."
+                      value={customItemUom}
+                      onChange={(e) => setCustomItemUom(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700/80 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-purple-500/20"
+                    />
+                  </div>
+                </div>
+              ) : (
+                /* Mode BOQ: Pemilihan Material Berbasis Kolom Pencarian (Search Autocomplete) */
+                <div className="relative" ref={itemSearchRef}>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300">
+                      Pilih Material / Barang <span className="text-rose-500">*</span>
+                    </label>
+                    {currentPhysicalMaterial && (
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        Stok Fisik Gudang: <b className="text-slate-700 dark:text-slate-200">{currentStock} {currentPhysicalMaterial.satuan}</b>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Tampilan Material Terpilih */}
+                  {currentPhysicalMaterial && !isItemSearchOpen ? (
+                    <div className={`p-3 rounded-xl border transition-colors ${
+                      mutationType === 'MASUK'
+                        ? 'border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/30'
+                        : 'border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/30'
+                    }`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                              {currentPhysicalMaterial.nama_barang}
+                            </span>
+                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-semibold uppercase ${
+                              mutationType === 'MASUK'
+                                ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                                : 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
+                            }`}>
+                              {mutationType === 'MASUK' ? 'Penerimaan Fisik Terpadu' : 'Material Fisik Gudang'}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-2 mt-1">
+                            <span>Satuan: <b className="text-slate-700 dark:text-slate-300">{currentPhysicalMaterial.satuan}</b></span>
+                            <span>·</span>
+                            <span>Saldo Fisik Saat Ini: <b className={currentStock > 0 ? "text-emerald-600 dark:text-emerald-400 font-mono" : "text-rose-600 dark:text-rose-400 font-mono"}>{currentStock} {currentPhysicalMaterial.satuan}</b></span>
+                            <span>·</span>
+                            <span>Total Kebutuhan Proyek: <b className="text-blue-600 dark:text-blue-400 font-mono">{currentPhysicalMaterial.total_qty_boq.toLocaleString('id-ID', { maximumFractionDigits: 4 })} {currentPhysicalMaterial.satuan}</b> ({currentPhysicalMaterial.budget_lines.length} Pos Alokasi BOQ)</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsItemSearchOpen(true);
+                            setItemSearchQuery('');
+                          }}
+                          className="shrink-0 px-3 py-1.5 text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 bg-white dark:bg-slate-800 rounded-lg border border-blue-200 dark:border-blue-800 shadow-2xs hover:bg-blue-50 dark:hover:bg-slate-700 transition-colors"
+                        >
+                          Ganti Material
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Kolom Search Input dengan Hasil Autocomplete */
+                    <div>
+                      <div className="relative">
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="text"
+                          autoFocus
+                          placeholder="Ketik nama material fisik (cth: Pasir, Semen, Kayu, Besi, Batako)..."
+                          value={itemSearchQuery}
+                          onChange={(e) => {
+                            setItemSearchQuery(e.target.value);
+                            setIsItemSearchOpen(true);
+                          }}
+                          onFocus={() => setIsItemSearchOpen(true)}
+                          className="w-full pl-9 pr-8 py-2.5 bg-slate-50 dark:bg-slate-800 border border-blue-400 dark:border-blue-500 text-slate-900 dark:text-white rounded-xl text-xs focus:ring-2 focus:ring-blue-500/20 font-medium"
+                        />
+                        {currentPhysicalMaterial && (
+                          <button
+                            type="button"
+                            onClick={() => setIsItemSearchOpen(false)}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                            title="Tutup pencarian"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Dropdown Hasil Pencarian Autocomplete */}
+                      {isItemSearchOpen && (
+                        <div className="absolute left-0 right-0 mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl z-50 divide-y divide-slate-100 dark:divide-slate-700/60">
+                          {filteredPhysicalMaterialsForPicker.length > 0 ? (
+                            filteredPhysicalMaterialsForPicker.map((pm) => (
+                              <button
+                                key={pm.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedItemId(pm.id);
+                                  if (pm.budget_lines.length > 0) {
+                                    setSelectedAllocationItemId(pm.budget_lines[0].id);
+                                    if (mutationType === 'KELUAR') {
+                                      setPurpose(`${pm.budget_lines[0].kode_boq} - ${pm.budget_lines[0].kategori}`);
+                                    }
+                                  }
+                                  setIsItemSearchOpen(false);
+                                  setItemSearchQuery('');
+                                }}
+                                className={`w-full text-left p-2.5 transition-colors flex items-center justify-between gap-2 hover:bg-blue-50 dark:hover:bg-slate-700/60 ${
+                                  pm.id === currentPhysicalMaterial?.id ? 'bg-blue-50/80 dark:bg-slate-700/90 font-semibold' : ''
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                                    {pm.nama_barang}
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5 truncate">
+                                    <span className="font-mono text-blue-600 dark:text-blue-400 font-semibold">
+                                      {pm.budget_lines.length} Pos BOQ
+                                    </span>
+                                    <span>·</span>
+                                    <span className="truncate">
+                                      {pm.budget_lines.slice(0, 2).map((bl) => bl.kode_boq).join(', ')}
+                                      {pm.budget_lines.length > 2 ? '...' : ''}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <div className="text-[10px] font-mono font-bold text-slate-700 dark:text-slate-300">
+                                    Stok Fisik: {pm.stok_fisik} {pm.satuan}
+                                  </div>
+                                  <div className="text-[9px] text-slate-400">
+                                    Total Rencana: {pm.total_qty_boq.toLocaleString('id-ID')} {pm.satuan}
+                                  </div>
+                                </div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="p-4 text-center text-xs text-slate-400">
+                              Tidak ditemukan material fisik dengan kata kunci "{itemSearchQuery}".
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* KHUSUS PENGELUARAN BOQ: Rincian Alokasi Pos BOQ (Pengeluaran Dirincikan) */}
+              {!isCustomMode && mutationType === 'KELUAR' && currentPhysicalMaterial && (
                 <div className="p-3 rounded-xl border border-amber-300 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20 space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
@@ -911,12 +1075,81 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     <div className="text-[10px] text-amber-700 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-900/40 p-2 rounded-lg flex items-center gap-1.5">
                       <span>⚠️</span>
                       <span>
-                        Kuantitas keluar ({qty} {currentPhysicalMaterial.satuan}) melebihi sisa anggaran pos ini ({selectedBudgetLine.sisa_anggaran.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}). Dokumen tetap dapat diterbitkan dan memerlukan otorisasi pengawas.
+                        Kuantitas keluar ({qty} {currentPhysicalMaterial.satuan}) melebihi sisa anggaran pos ini ({selectedBudgetLine.sisa_anggaran.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}).
                       </span>
                     </div>
                   )}
                 </div>
               )}
+
+              {/* Alokasi Beban Pembiayaan (3 Pilihan) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300">
+                    Beban Pembiayaan (Alokasi Biaya) <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400">Pilih penanggung beban</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {/* Opsi 1: KLIEN */}
+                  <button
+                    type="button"
+                    onClick={() => setBebanBiaya('KLIEN')}
+                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                      bebanBiaya === 'KLIEN'
+                        ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40 ring-1 ring-emerald-500 shadow-xs'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-emerald-700 dark:text-emerald-400">
+                      <Coins className="w-3.5 h-3.5" />
+                      <span>Tagihan Klien (VO)</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-tight">
+                      Permintaan Owner / pekerjaan tambah (invoiceable).
+                    </p>
+                  </button>
+
+                  {/* Opsi 2: KONTRAKTOR */}
+                  <button
+                    type="button"
+                    onClick={() => setBebanBiaya('KONTRAKTOR')}
+                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                      bebanBiaya === 'KONTRAKTOR'
+                        ? 'border-amber-500 bg-amber-50/70 dark:bg-amber-950/40 ring-1 ring-amber-500 shadow-xs'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-amber-700 dark:text-amber-400">
+                      <Building2 className="w-3.5 h-3.5" />
+                      <span>Beban Kontraktor</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-tight">
+                      CV Menara Megah (bonus mutu, perkuatan, toleransi).
+                    </p>
+                  </button>
+
+                  {/* Opsi 3: OPERASIONAL */}
+                  <button
+                    type="button"
+                    onClick={() => setBebanBiaya('OPERASIONAL')}
+                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                      bebanBiaya === 'OPERASIONAL'
+                        ? 'border-sky-500 bg-sky-50/70 dark:bg-sky-950/40 ring-1 ring-sky-500 shadow-xs'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-sky-700 dark:text-sky-400">
+                      <Truck className="w-3.5 h-3.5" />
+                      <span>Operasional Lapangan</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-tight">
+                      Logistik non-BOQ (makan tukang, genset, bedeng camp).
+                    </p>
+                  </button>
+                </div>
+              </div>
 
               {/* Tanggal Mutasi & Jumlah Kuantitas */}
               <div className="grid grid-cols-2 gap-3">
@@ -935,7 +1168,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Jumlah ({currentPhysicalMaterial?.satuan || 'Unit'}) <span className="text-rose-500">*</span>
+                    Jumlah ({isCustomMode ? (customItemUom || 'Unit') : (currentPhysicalMaterial?.satuan || 'Unit')}) <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="number"
@@ -949,45 +1182,95 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 </div>
               </div>
 
-              {/* Ringkasan Proyeksi Sisa Stok Fisik Gudang */}
-              <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Proyeksi Saldo Fisik Gudang</span>
-                  <div className="text-xs font-bold text-slate-900 dark:text-white font-mono mt-0.5">
-                    {currentStock} →{' '}
-                    <span
-                      className={
-                        mutationType === 'MASUK' ? 'text-emerald-500 font-extrabold' : 'text-rose-500 font-extrabold'
-                      }
-                    >
-                      {projectedStock}
-                    </span>{' '}
-                    {currentPhysicalMaterial?.satuan}
+              {/* Ringkasan Proyeksi Sisa Stok Fisik Gudang / Info Non-BOQ */}
+              {isCustomMode ? (
+                <div className="bg-purple-50/60 dark:bg-purple-950/30 p-3 rounded-xl border border-purple-200 dark:border-purple-900/60 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="text-[10px] text-purple-600 dark:text-purple-400 uppercase font-semibold block">Jenis Item Non-BOQ</span>
+                    <span className="font-bold text-slate-900 dark:text-white">Pencatatan Mandiri di luar Kontrak Utama</span>
                   </div>
-                </div>
-                {currentPhysicalMaterial && (
                   <div className="text-right">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Kebutuhan Proyek</span>
-                    <span className="text-xs font-mono font-semibold text-blue-600 dark:text-blue-400">
-                      {currentPhysicalMaterial.total_qty_boq.toLocaleString('id-ID', { maximumFractionDigits: 4 })}{' '}
-                      {currentPhysicalMaterial.satuan}
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Alokasi Biaya</span>
+                    <span className="font-bold font-mono text-purple-700 dark:text-purple-300">
+                      {bebanBiaya === 'KLIEN' ? 'Tagihan Klien (VO)' : bebanBiaya === 'OPERASIONAL' ? 'Operasional Lapangan' : 'Beban CV Menara Megah'}
                     </span>
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Proyeksi Saldo Fisik Gudang</span>
+                    <div className="text-xs font-bold text-slate-900 dark:text-white font-mono mt-0.5">
+                      {currentStock} →{' '}
+                      <span
+                        className={
+                          mutationType === 'MASUK' ? 'text-emerald-500 font-extrabold' : 'text-rose-500 font-extrabold'
+                        }
+                      >
+                        {projectedStock}
+                      </span>{' '}
+                      {currentPhysicalMaterial?.satuan}
+                    </div>
+                  </div>
+                  {currentPhysicalMaterial && (
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Kebutuhan Proyek</span>
+                      <span className="text-xs font-mono font-semibold text-blue-600 dark:text-blue-400">
+                        {currentPhysicalMaterial.total_qty_boq.toLocaleString('id-ID', { maximumFractionDigits: 4 })}{' '}
+                        {currentPhysicalMaterial.satuan}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Tujuan & Keperluan <span className="text-rose-500">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300">
+                    Tujuan & Keperluan <span className="text-rose-500">*</span>
+                  </label>
+                  {!isCustomMode && mutationType === 'MASUK' && (
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                      Otomatis: Penyediaan Material Kontrak BOQ
+                    </span>
+                  )}
+                </div>
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: Pengecoran sloof kolom zona A..."
+                  placeholder={
+                    isCustomMode
+                      ? 'Contoh: Konsumsi tukang minggu ke-3, Balok bedeng pekerja camp...'
+                      : mutationType === 'MASUK'
+                      ? 'Penyediaan Material Kontrak BOQ'
+                      : 'Contoh: Pengecoran sloof kolom zona A...'
+                  }
                   value={purpose}
                   onChange={(e) => setPurpose(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl"
                 />
+
+                {/* Chip saran cepat keperluan */}
+                <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                  <span className="text-[10px] text-slate-400">Saran:</span>
+                  {(isCustomMode
+                    ? ['Konsumsi & Logistik Tukang', 'Pembangunan Bedeng / Camp', 'Bahan Bakar Genset', 'Permintaan Tambahan Klien (VO)', 'Kebutuhan Tambal Sulam Lapangan']
+                    : mutationType === 'MASUK'
+                    ? ['Penyediaan Material Kontrak BOQ', 'Restok Gudang Utama', 'Pengiriman Parsial Supplier']
+                    : selectedBudgetLine
+                    ? [`${selectedBudgetLine.kode_boq} - ${selectedBudgetLine.kategori}`, 'Perkuatan Mutu Bekisting', 'Pekerjaan Tambah Klien (VO)']
+                    : ['Pengecoran Zona A', 'Pemasangan Dinding Batako', 'Perkuatan Mutu Bekisting']
+                  ).map((chip, cIdx) => (
+                    <button
+                      key={cIdx}
+                      type="button"
+                      onClick={() => setPurpose(chip)}
+                      className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

@@ -57,6 +57,7 @@ export interface PhysicalMaterialItem {
 }
 
 export type JenisMutasiBarang = 'MASUK' | 'KELUAR';
+export type BebanBiaya = 'KLIEN' | 'KONTRAKTOR' | 'OPERASIONAL';
 
 export interface MutasiBarang {
   id: string;
@@ -77,6 +78,8 @@ export interface MutasiBarang {
   recipient_name?: string;
   owner_type?: 'KONTRAKTOR'|'IMK';
   purpose?: string;
+  beban_biaya?: BebanBiaya;
+  is_custom_item?: boolean;
   addition_id?: string;
   created_by_name?: string;
   status_dokumen?: StatusDokumenWorkflow;
