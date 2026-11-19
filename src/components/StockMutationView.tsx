@@ -279,6 +279,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       ? `${selectedBudgetLine.kode_boq} - ${selectedBudgetLine.kategori}`
       : 'Pemakaian material proyek';
 
+    const finalPurpose = isCustomMode ? (purpose.trim() || defaultPurpose) : defaultPurpose;
+    const finalBeban = isCustomMode ? bebanBiaya : 'KONTRAKTOR';
+
     try {
       const res = await addStockMutation({
         barang_id: targetItemId,
@@ -286,7 +289,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         jenis: mutationType,
         jumlah: qty,
         satuan: itemSatuan,
-        tujuan_keperluan: purpose || defaultPurpose,
+        tujuan_keperluan: finalPurpose,
         pic_penerima_penyerah: pic,
         nomor_surat_jalan: suratJalan || undefined,
         tanggal: new Date(mutationDate).toISOString(),
@@ -295,8 +298,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         destination_name: destinationName || undefined,
         recipient_name: pic || undefined,
         owner_type: ownerType,
-        purpose: purpose || defaultPurpose,
-        beban_biaya: bebanBiaya,
+        purpose: finalPurpose,
+        beban_biaya: finalBeban,
         is_custom_item: isCustomMode
       });
 
@@ -963,51 +966,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 </div>
               )}
 
-              {/* Baris 3: Beban Pembiayaan (3 Tombol Ramping Sebaris) */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Beban Pembiayaan <span className="text-rose-500">*</span>
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setBebanBiaya('KONTRAKTOR')}
-                    className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
-                      bebanBiaya === 'KONTRAKTOR'
-                        ? 'border-amber-500 bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 ring-1 ring-amber-500'
-                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
-                    }`}
-                  >
-                    Beban Kontraktor
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setBebanBiaya('KLIEN')}
-                    className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
-                      bebanBiaya === 'KLIEN'
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 ring-1 ring-emerald-500'
-                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
-                    }`}
-                  >
-                    Tagihan Klien (VO)
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setBebanBiaya('OPERASIONAL')}
-                    className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
-                      bebanBiaya === 'OPERASIONAL'
-                        ? 'border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 ring-1 ring-sky-500'
-                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
-                    }`}
-                  >
-                    Operasional
-                  </button>
-                </div>
-              </div>
-
-              {/* Baris 4: Tanggal Mutasi & Jumlah Kuantitas */}
+              {/* Baris 3: Tanggal Mutasi & Jumlah Kuantitas */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -1045,26 +1004,69 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 </div>
               </div>
 
-              {/* Baris 5: Tujuan & Keperluan */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Tujuan & Keperluan <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder={
-                    isCustomMode
-                      ? 'Contoh: Konsumsi tukang minggu ke-3, Bahan bedeng camp...'
-                      : mutationType === 'MASUK'
-                      ? 'Penyediaan Material Kontrak BOQ'
-                      : 'Contoh: Pengecoran sloof kolom zona A...'
-                  }
-                  value={purpose}
-                  onChange={(e) => setPurpose(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
+              {/* KHUSUS MODE CUSTOM / NON-BOQ: Ditampilkan saat klerk menekan tombol kustom */}
+              {isCustomMode && (
+                <>
+                  {/* Beban Pembiayaan Khusus Custom */}
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Beban Pembiayaan <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setBebanBiaya('OPERASIONAL')}
+                        className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
+                          bebanBiaya === 'OPERASIONAL'
+                            ? 'border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 ring-1 ring-sky-500'
+                            : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        Operasional
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setBebanBiaya('KLIEN')}
+                        className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
+                          bebanBiaya === 'KLIEN'
+                            ? 'border-emerald-500 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 ring-1 ring-emerald-500'
+                            : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        Tagihan Klien (VO)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setBebanBiaya('KONTRAKTOR')}
+                        className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
+                          bebanBiaya === 'KONTRAKTOR'
+                            ? 'border-amber-500 bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 ring-1 ring-amber-500'
+                            : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        Beban Kontraktor
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Tujuan & Keperluan Khusus Custom */}
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Tujuan & Keperluan <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Contoh: Konsumsi tukang minggu ke-3, Bahan bedeng camp..."
+                      value={purpose}
+                      onChange={(e) => setPurpose(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+                </>
+              )}
 
               {/* Baris 6: PIC & No. Surat Jalan */}
               <div className="grid grid-cols-2 gap-3">
