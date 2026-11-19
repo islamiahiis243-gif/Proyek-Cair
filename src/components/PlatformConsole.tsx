@@ -1,59 +1,844 @@
-import React,{useCallback,useEffect,useMemo,useState} from 'react';
-import {Activity,AlertCircle,Building2,CheckCircle2,Clock3,FileCheck2,LayoutDashboard,LockKeyhole,RefreshCw,Search,ShieldCheck,Users,XCircle} from 'lucide-react';
-import {getSupabaseClient,resolveMyActiveContext} from '../lib/supabase';
-type Req={id:string;legal_name:string;npwp_last4:string;super_admin_email:string;status:string;created_at:string;review_notes:string|null};
-type ProfileChange={id:string;company_id:string;proposed_legal_name:string|null;change_npwp:boolean;proposed_npwp_last4:string|null;reason:string;status:string;created_at:string;review_notes:string|null};
-type Snap={requests:Req[];companies:any[];seats:any[];audit:any[];projects:number;profileChanges:ProfileChange[]};
-type RoleRow={role_code:string;display_name:string;description:string};
-type PermissionRow={permission_code:string;module:string;action:string;requires_authority_check:boolean;description:string};
-const empty:Snap={requests:[],companies:[],seats:[],audit:[],projects:0,profileChanges:[]};
-const fmt=(v:string)=>new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short'}).format(new Date(v));
-const labels:Record<string,string>={PENDING:'Menunggu review',ACCEPTED:'Diterima',REJECTED:'Ditolak',CLAIM_PENDING:'Menunggu klaim',UNCLAIMED:'Belum diklaim',ACTIVE:'Aktif',CLAIMED:'Diklaim'};
-export const PlatformConsole:React.FC=()=>{
- const db=getSupabaseClient();const [authorized,setAuthorized]=useState<boolean|null>(null);const [data,setData]=useState<Snap>(empty);
- const [loading,setLoading]=useState(true);const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');
- const [roles,setRoles]=useState<RoleRow[]>([]);const [permissions,setPermissions]=useState<PermissionRow[]>([]);const [roleMappings,setRoleMappings]=useState<{role_code:string;permission_code:string;active:boolean}[]>([]);const [mappingReason,setMappingReason]=useState('');
- const [search,setSearch]=useState('');const [filter,setFilter]=useState('PENDING');const [profileChangeNotes,setProfileChangeNotes]=useState('');const [selected,setSelected]=useState<Req|null>(null);const [reason,setReason]=useState('');const [issuedCode,setIssuedCode]=useState('');const [issuedRecipient,setIssuedRecipient]=useState('');const [issuedCompany,setIssuedCompany]=useState('');const [copyState,setCopyState]=useState('');const [pendingRfinA,setPendingRfinA]=useState<{companyId:string;email:string;companyName:string}|null>(null);
- const refresh=useCallback(async()=>{setLoading(true);setError('');try{
-  const ctx=await resolveMyActiveContext();if(!ctx.is_platform_super_admin){setAuthorized(false);setData(empty);return;}setAuthorized(true);
-  const [r,c,s,a,p,roleResult,permissionResult,mappingResult,profileChangeResult]=await Promise.all([
-   db.from('company_registration_requests').select('id,legal_name,npwp_last4,super_admin_email,status,created_at,review_notes').order('created_at',{ascending:false}).limit(100),
-   db.from('companies').select('id,legal_name,registration_status,created_at').order('created_at',{ascending:false}).limit(100),
-   db.from('company_admin_seats').select('company_id,recipient_email,seat_status').limit(100),
-   db.from('audit_logs').select('id,actor_id,action,entity_type,entity_id,details,created_at').order('created_at',{ascending:false}).limit(8),
-   db.from('projects').select('id',{count:'exact',head:true}),
-   db.from('role_catalog').select('role_code,display_name,description').eq('active',true).order('sort_order'),
-   db.from('project_permission_catalog').select('permission_code,module,action,requires_authority_check,description').eq('active',true).order('module').order('permission_code'),
-   db.from('role_permission_catalog').select('role_code,permission_code,active').eq('active',true),
-   db.from('company_profile_change_requests').select('id,company_id,proposed_legal_name,change_npwp,proposed_npwp_last4,reason,status,created_at,review_notes').order('created_at',{ascending:false}).limit(100)
-  ]);for(const x of [r,c,s,a,p,roleResult,permissionResult,mappingResult,profileChangeResult])if(x.error)throw x.error;
-  setData({requests:r.data||[],companies:c.data||[],seats:s.data||[],audit:a.data||[],projects:p.count||0,profileChanges:profileChangeResult.data||[]});setRoles(roleResult.data||[]);setPermissions(permissionResult.data||[]);setRoleMappings(mappingResult.data||[]);
- }catch(e:any){setError(e?.message||'Data Platform Console gagal dimuat.');}finally{setLoading(false);}},[db]);
- useEffect(()=>{void refresh();},[refresh]);
- const pending=data.requests.filter(x=>x.status==='PENDING').length,claimPending=data.companies.filter(x=>x.registration_status==='CLAIM_PENDING').length;
- const rows=useMemo(()=>data.requests.filter(x=>(filter==='ALL'||x.status===filter)&&(!search||x.legal_name.toLowerCase().includes(search.toLowerCase())||x.super_admin_email.toLowerCase().includes(search.toLowerCase())||x.id.toLowerCase().includes(search.toLowerCase()))),[data.requests,filter,search]);
- const issueRfinA=async(companyId:string,email:string,companyName:string)=>{if(busy)return;setBusy(true);setError('');setNotice('');setCopyState('');try{const {data:code,error:e}=await db.rpc('issue_rfin_a',{p_company_id:companyId,p_recipient_email:email,p_expires_in:'7 days'});if(e)throw e;if(typeof code!=='string'||!code.startsWith('RFA-'))throw new Error('Server tidak mengembalikan credential RFIN-A yang valid.');setPendingRfinA(null);setIssuedCode(code);setIssuedRecipient(email);setIssuedCompany(companyName);setNotice('RFIN-A diterbitkan. Kode hanya tersedia pada dialog ini; salin dan kirim melalui kanal aman.');await refresh();}catch(e:any){setError(e?.message||'Penerbitan RFIN-A gagal. Periksa status token sebelum mencoba ulang.');}finally{setBusy(false);}};const copyRfinA=async()=>{try{await navigator.clipboard.writeText(issuedCode);setCopyState('Kode berhasil disalin. Kirim hanya kepada email penerima yang ditetapkan.');}catch{setCopyState('Clipboard tidak tersedia. Pilih dan salin kode secara manual.');}};
- const updateRoleMapping=async(roleCode:string,permissionCode:string,active:boolean)=>{if(busy)return;if(mappingReason.trim().length<8){setError('Alasan perubahan mapping Role-Permission wajib minimal 8 karakter.');return;}setBusy(true);setError('');setNotice('');try{const {error:e}=await db.rpc('set_role_permission_mapping',{p_role_code:roleCode,p_permission_code:permissionCode,p_active:active,p_reason:mappingReason.trim()});if(e)throw e;setRoleMappings(current=>active?[...current.filter(x=>!(x.role_code===roleCode&&x.permission_code===permissionCode)),{role_code:roleCode,permission_code:permissionCode,active:true}]:current.filter(x=>!(x.role_code===roleCode&&x.permission_code===permissionCode)));setNotice('Mapping '+roleCode+' → '+permissionCode+' '+(active?'diaktifkan':'dinonaktifkan')+'. Perubahan tercatat dan langsung memengaruhi effective access.');}catch(e:any){setError(e?.message||'Mapping Role-Permission gagal disimpan.');}finally{setBusy(false);}};
- const decideProfileChange=async(requestId:string,decision:'APPROVE'|'REJECT')=>{if(busy)return;setBusy(true);setError('');setNotice('');try{const {data:result,error:e}=await db.rpc('review_company_profile_change',{p_request_id:requestId,p_decision:decision,p_review_notes:profileChangeNotes.trim()||null});if(e)throw e;if(!result?.ok)throw new Error(result?.error||'Keputusan perubahan profil gagal.');setProfileChangeNotes('');setNotice('Permohonan perubahan profil '+(decision==='APPROVE'?'disetujui':'ditolak')+'.');await refresh();}catch(e:any){setError(e?.message||'Keputusan perubahan profil gagal.');}finally{setBusy(false);}};
- const decide=async(decision:'ACCEPTED'|'REJECTED')=>{if(!selected||busy)return;if(reason.trim().length<10){setError('Alasan keputusan wajib minimal 10 karakter.');return;}
-  setBusy(true);setError('');setNotice('');try{const {error:e}=await db.rpc('review_company_registration',{p_request_id:selected.id,p_decision:decision,p_review_notes:reason.trim()});if(e)throw e;
-   setNotice('Keputusan tersimpan. Referensi '+selected.id.slice(0,8).toUpperCase()+'.');setSelected(null);setReason('');await refresh();
-  }catch(e:any){setError(e?.message||'Status keputusan belum pasti. Segarkan daftar sebelum mencoba lagi.');}finally{setBusy(false);}};
- if(authorized===false)return <div className="min-h-screen grid place-items-center bg-slate-950 p-6 text-slate-100"><div className="max-w-md rounded-2xl border border-rose-900 bg-slate-900 p-8 text-center"><LockKeyhole className="mx-auto mb-4 h-10 w-10 text-rose-400"/><h1 className="text-xl font-bold">Akses Platform Console ditolak</h1><p className="mt-2 text-sm text-slate-400">Identitas ini tidak memiliki otoritas Platform Super Admin. Data administratif tidak dimuat.</p><a href="/" className="mt-6 inline-block rounded-lg bg-slate-700 px-4 py-2 text-sm">Kembali</a></div></div>;
- return <div className="min-h-screen bg-slate-950 text-slate-100"><div className="flex min-h-screen">
- <aside className="hidden w-64 shrink-0 border-r border-slate-800 bg-slate-900 p-5 lg:flex lg:flex-col"><a href="/platform" className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-600"><ShieldCheck/></span><span><small className="block text-[10px] tracking-[.2em] text-blue-300">PROYEK CAIR</small><b>Platform Control</b></span></a><nav className="mt-10 space-y-2 text-sm">{[['overview','Ringkasan'],['registrations','Registrasi perusahaan'],['companies','Tenant & kursi admin'],['profile-changes','Perubahan profil'],['role-access','Role & Permission Catalog'],['audit','Audit & keamanan']].map(([id,label])=><a key={id} href={'#'+id} className="block rounded-lg px-3 py-2.5 text-slate-300 hover:bg-slate-800">{label}{id==='registrations'&&pending>0?' · '+pending:''}</a>)}</nav><div className="mt-auto rounded-xl border border-emerald-900 bg-emerald-950/30 p-3 text-xs text-emerald-200"><CheckCircle2 className="mr-1 inline h-4 w-4"/>Server-authorized session<p className="mt-1 text-slate-500">RLS dan RPC memvalidasi ulang otoritas.</p></div><a href="/" className="mt-4 text-xs text-slate-400">Kembali ke Workspace Center ↗</a></aside>
- <main className="min-w-0 flex-1"><header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/95 px-4 py-4 backdrop-blur sm:px-7"><div className="mx-auto flex max-w-7xl items-center justify-between"><div><p className="text-[10px] uppercase tracking-[.2em] text-blue-300 lg:hidden">PROYEK CAIR · PLATFORM</p><h1 className="text-xl font-bold">Platform Administration</h1><p className="text-xs text-slate-500">Global control plane · terpisah dari Company Console dan aplikasi operasional</p></div><button disabled={loading} onClick={()=>void refresh()} className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs"><RefreshCw className="h-4 w-4"/>Perbarui data</button></div></header>
- <div className="mx-auto max-w-7xl space-y-7 p-4 sm:p-7">{error&&<div role="alert" className="rounded-xl border border-rose-900 bg-rose-950/40 p-4 text-sm text-rose-200"><AlertCircle className="mr-2 inline h-4 w-4"/>{error}</div>}{notice&&<div role="status" className="rounded-xl border border-emerald-900 bg-emerald-950/40 p-4 text-sm text-emerald-200"><CheckCircle2 className="mr-2 inline h-4 w-4"/>{notice}</div>}
- {loading?<div className="grid min-h-64 place-items-center text-sm text-slate-400"><RefreshCw className="mr-2 inline h-5 w-5 animate-spin"/>Memverifikasi otoritas dan memuat data Production…</div>:authorized&&<>
- <section id="overview" className="scroll-mt-28"><div className="mb-5"><p className="text-xs uppercase tracking-widest text-blue-300">Platform overview · live data</p><h2 className="mt-1 text-2xl font-bold">Ringkasan operasional</h2><p className="text-sm text-slate-500">Angka dibaca langsung dari Supabase Production.</p></div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[['Permohonan menunggu',pending,Clock3],['Company terdaftar',data.companies.length,Building2],['Kursi admin menunggu klaim',claimPending,Users],['Project registry',data.projects,LayoutDashboard]].map(([label,value,Icon]:any)=><div key={label} className="rounded-xl border border-slate-800 bg-slate-900 p-4"><div className="flex justify-between text-xs text-slate-500">{label}<Icon className="h-4 w-4 text-blue-300"/></div><div className="mt-3 text-3xl font-bold">{value}</div></div>)}</div></section>
- <section id="registrations" className="scroll-mt-28 rounded-2xl border border-slate-800 bg-slate-900/60"><div className="border-b border-slate-800 p-5"><h2 className="flex items-center gap-2 text-lg font-bold"><FileCheck2 className="h-5 w-5 text-blue-300"/>Review registrasi perusahaan</h2><p className="mt-1 text-sm text-slate-500">Keputusan eksplisit · penerimaan memulai provisioning CLAIM_PENDING.</p></div><div className="flex flex-col gap-3 border-b border-slate-800 p-4 sm:flex-row"><label className="relative flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-500"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari nama, email atau referensi…" className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2.5 pl-9 pr-3 text-sm"/></label><select value={filter} onChange={e=>setFilter(e.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm"><option value="PENDING">Menunggu review</option><option value="ACCEPTED">Diterima</option><option value="REJECTED">Ditolak</option><option value="ALL">Semua status</option></select></div>{rows.length?rows.map(r=><div key={r.id} className="flex flex-col gap-3 border-b border-slate-800 p-4 last:border-0 sm:flex-row sm:items-center sm:justify-between"><div><b>{r.legal_name}</b><div className="mt-1 text-xs text-slate-500">Ref {r.id.slice(0,8).toUpperCase()} · NPWP berakhir {r.npwp_last4} · {fmt(r.created_at)}</div><div className="mt-1 text-xs text-slate-400">{r.super_admin_email}</div></div><div className="flex items-center gap-3"><span className="rounded-full bg-slate-800 px-2 py-1 text-[10px]">{labels[r.status]||r.status}</span><button onClick={()=>{setSelected(r);setReason(r.review_notes||'');setError('');}} className="rounded-lg border border-slate-700 px-3 py-2 text-xs">Detail & review</button></div></div>):<div className="p-10 text-center text-sm text-slate-500">Tidak ada permohonan pada filter ini.</div>}</section>
- <section id="companies" className="scroll-mt-28 rounded-2xl border border-slate-800 bg-slate-900/60"><div className="border-b border-slate-800 p-5"><h2 className="font-bold"><Building2 className="mr-2 inline h-5 w-5 text-blue-300"/>Tenant & Company Admin Seat</h2><p className="mt-1 text-sm text-slate-500">Status tenant dipisahkan dari status klaim administrator.</p></div>{data.companies.length?data.companies.map(c=>{const seat=data.seats.find(s=>s.company_id===c.id);return <div key={c.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 p-4"><div><b>{c.legal_name}</b><p className="text-xs text-slate-500">{seat?.recipient_email||'Belum ada kursi admin'}</p><p className="mt-1 text-xs text-slate-400">{labels[c.registration_status]||c.registration_status} · {labels[seat?.seat_status]||seat?.seat_status||'Kursi belum tersedia'}</p></div>{seat?.seat_status==='UNCLAIMED'&&c.registration_status==='CLAIM_PENDING'?<button disabled={busy} onClick={()=>setPendingRfinA({companyId:c.id,email:seat.recipient_email,companyName:c.legal_name})} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Terbitkan RFIN-A</button>:seat?.seat_status==='CLAIMED'?<span className="rounded-full bg-emerald-950 px-3 py-1 text-xs text-emerald-300">Kursi diklaim</span>:null}</div>}):<p className="p-8 text-center text-sm text-slate-500">Belum ada Company yang diprovisioning.</p>}</section>
- <section id="profile-changes" className="scroll-mt-28 rounded-2xl border border-slate-800 bg-slate-900/60"><div className="border-b border-slate-800 p-5"><h2 className="font-bold"><FileCheck2 className="mr-2 inline h-5 w-5 text-blue-300"/>Review perubahan profil Company</h2><p className="mt-1 text-sm text-slate-500">Perubahan nama legal dan NPWP hanya berlaku setelah keputusan Platform Super Admin. NPWP ditampilkan terbatas pada empat digit terakhir.</p></div><div className="border-b border-slate-800 p-4"><label className="block text-xs font-semibold">Catatan review (opsional, maksimal 1000 karakter)<textarea value={profileChangeNotes} onChange={e=>setProfileChangeNotes(e.target.value)} maxLength={1000} rows={2} className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-sm"/></label></div>{data.profileChanges.length?data.profileChanges.map(item=><article key={item.id} className="border-b border-slate-800 p-4 last:border-0"><div className="flex flex-wrap items-start justify-between gap-3"><div><b>{data.companies.find(x=>x.id===item.company_id)?.legal_name||item.company_id}</b><p className="mt-1 text-sm">{item.proposed_legal_name?'Nama legal baru: '+item.proposed_legal_name:'Nama legal tidak berubah'}</p>{item.change_npwp&&<p className="text-sm">NPWP baru berakhir <b>{item.proposed_npwp_last4}</b></p>}<p className="mt-2 text-xs text-slate-400">Alasan: {item.reason}</p><p className="mt-1 text-[10px] text-slate-500">Ref {item.id.slice(0,8).toUpperCase()} · {fmt(item.created_at)}{item.review_notes?' · Catatan: '+item.review_notes:''}</p></div><div className="flex items-center gap-2"><span className="rounded-full bg-slate-800 px-2 py-1 text-[10px]">{labels[item.status]||item.status}</span>{item.status==='PENDING'&&<><button disabled={busy} onClick={()=>void decideProfileChange(item.id,'REJECT')} className="rounded-lg border border-rose-800 px-3 py-2 text-xs text-rose-200 disabled:opacity-40">Tolak</button><button disabled={busy} onClick={()=>void decideProfileChange(item.id,'APPROVE')} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold disabled:opacity-40">Setujui</button></>}</div></div></article>):<p className="p-8 text-center text-sm text-slate-500">Tidak ada permohonan perubahan profil.</p>}</section>
- <section id="role-access" className="scroll-mt-28 rounded-2xl border border-slate-800 bg-slate-900/60"><div className="border-b border-slate-800 p-5"><h2 className="font-bold"><ShieldCheck className="mr-2 inline h-5 w-5 text-blue-300"/>Role & Permission Catalog</h2><p className="mt-1 text-sm text-slate-500">Platform Super Admin menetapkan bundel rekomendasi Role. Perubahan memengaruhi effective access seluruh anggota yang memiliki Role tersebut; tinjau dengan hati-hati.</p></div><div className="border-b border-slate-800 p-4"><label className="block text-xs font-semibold">Alasan perubahan (wajib)<input value={mappingReason} onChange={e=>setMappingReason(e.target.value)} minLength={8} maxLength={500} placeholder="Dasar persetujuan mapping role-permission" className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-sm"/></label></div><div className="space-y-4 p-4">{roles.map(role=><details key={role.role_code} className="rounded-xl border border-slate-800 bg-slate-950/50 p-4"><summary className="cursor-pointer list-none"><b>{role.display_name}</b><span className="ml-2 text-xs text-slate-500">{role.role_code} · {roleMappings.filter(m=>m.role_code===role.role_code&&m.active).length} permission aktif</span><p className="mt-1 text-xs text-slate-500">{role.description}</p></summary><div className="mt-4 grid gap-2 md:grid-cols-2">{permissions.map(permission=>{const active=roleMappings.some(m=>m.role_code===role.role_code&&m.permission_code===permission.permission_code&&m.active);return <label key={permission.permission_code} className="flex items-start gap-2 rounded-lg border border-slate-800 p-2 text-xs"><input type="checkbox" checked={active} disabled={busy||mappingReason.trim().length<8} onChange={e=>void updateRoleMapping(role.role_code,permission.permission_code,e.target.checked)}/><span><b>{permission.permission_code}</b><span className="block text-slate-500">{permission.description}</span>{permission.requires_authority_check&&<span className="text-amber-300"> · Memerlukan Authority</span>}</span></label>})}</div></details>)}</div><p className="px-5 pb-5 text-xs leading-5 text-amber-300">Tidak ada bundle default yang ditebak oleh aplikasi. Role hanya menghasilkan permission setelah mapping disahkan di sini. Permission berisiko tetap memerlukan Authority, project scope, workflow state, dan pemeriksaan server.</p></section>
- <section id="audit" className="scroll-mt-28 rounded-2xl border border-slate-800 bg-slate-900/60"><div className="border-b border-slate-800 p-5"><h2 className="font-bold"><Activity className="mr-2 inline h-5 w-5 text-blue-300"/>Aktivitas administratif terbaru</h2><p className="mt-1 text-sm text-slate-500">Delapan event terbaru dari audit_logs.</p></div>{data.audit.length?data.audit.map(e=><div key={e.id} className="flex flex-wrap justify-between gap-2 border-b border-slate-800 p-4"><div><b className="text-sm">{e.action}</b><p className="text-xs text-slate-500">{e.entity_type} · {e.entity_id||'—'} · actor {e.actor_id?.slice(0,8)||'system'}</p>{e.details?.review_notes&&<p className="mt-1 text-xs text-slate-400">Alasan: {e.details.review_notes}</p>}</div><time className="text-xs text-slate-500">{fmt(e.created_at)}</time></div>):<p className="p-8 text-center text-sm text-slate-500">Belum ada event administratif.</p>}</section>
- </>}</div></main></div>
- {pendingRfinA&&authorized&&<div className="fixed inset-0 z-40 grid place-items-center bg-black/80 p-4"><section role="dialog" aria-modal="true" aria-labelledby="rfin-confirm-title" className="w-full max-w-xl rounded-2xl border border-amber-800 bg-slate-900 p-6 shadow-2xl"><p className="text-xs font-semibold uppercase tracking-widest text-amber-300">Konfirmasi tindakan administratif</p><h2 id="rfin-confirm-title" className="mt-2 text-xl font-bold">Terbitkan RFIN-A?</h2><p className="mt-3 text-sm text-slate-300">Company: <b>{pendingRfinA.companyName}</b><br/>Penerima yang ditetapkan: <b className="break-all">{pendingRfinA.email}</b></p><div className="mt-4 rounded-lg border border-amber-900 bg-amber-950/30 p-3 text-xs leading-5 text-amber-100">Credential hanya tampil satu kali, berlaku 7 hari, tidak dikirim otomatis melalui email, dan penerbitan baru mencabut token lama yang belum digunakan. Setelah diterbitkan, salin kode dan kirim hanya kepada alamat penerima melalui kanal aman.</div><div className="mt-5 flex justify-end gap-2"><button type="button" disabled={busy} onClick={()=>setPendingRfinA(null)} className="rounded-lg border border-slate-700 px-4 py-2.5 text-sm">Batal</button><button type="button" disabled={busy} onClick={()=>void issueRfinA(pendingRfinA.companyId,pendingRfinA.email,pendingRfinA.companyName)} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold disabled:opacity-50">{busy?'Menerbitkan…':'Ya, terbitkan RFIN-A'}</button></div></section></div>}
- {issuedCode&&authorized&&<div className="fixed inset-0 z-40 grid place-items-center bg-black/80 p-4"><section role="dialog" aria-modal="true" aria-labelledby="rfin-title" className="w-full max-w-xl rounded-2xl border border-amber-800 bg-slate-900 p-6 shadow-2xl"><p className="text-xs font-semibold uppercase tracking-widest text-amber-300">Credential rahasia · tampil satu kali</p><h2 id="rfin-title" className="mt-2 text-xl font-bold">RFIN-A diterbitkan</h2><p className="mt-2 text-sm text-slate-300">Perusahaan: <b>{issuedCompany}</b><br/>Penerima: <b className="break-all">{issuedRecipient}</b><br/>Masa berlaku: 7 hari sejak diterbitkan.</p><div className="mt-5 rounded-xl border border-slate-700 bg-slate-950 p-4"><label htmlFor="rfin-one-time" className="text-xs text-slate-400">Kode RFIN-A — jangan bagikan ke pihak lain</label><input id="rfin-one-time" readOnly value={issuedCode} onFocus={e=>e.currentTarget.select()} className="mt-2 w-full select-all rounded-lg border border-slate-700 bg-slate-900 p-3 font-mono text-sm tracking-wide text-amber-200"/></div><div className="mt-3 rounded-lg border border-amber-900 bg-amber-950/30 p-3 text-xs leading-5 text-amber-100">Kode tidak dikirim otomatis melalui email. Salin dan sampaikan hanya kepada alamat penerima yang ditunjuk melalui kanal aman. Jangan masukkan kode ke tiket, chat grup, atau audit note. Setelah dialog ditutup, kode tidak dapat ditampilkan kembali; terbitkan ulang bila hilang (token sebelumnya akan dicabut).</div>{copyState&&<p role="status" className="mt-3 text-sm text-emerald-300">{copyState}</p>}<div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button onClick={()=>void copyRfinA()} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold">Salin kode</button><button onClick={()=>{setIssuedCode('');setIssuedRecipient('');setIssuedCompany('');setCopyState('');}} className="rounded-lg border border-slate-700 px-4 py-2.5 text-sm">Tutup & hapus dari layar</button></div></section></div>}
- {selected&&authorized&&<div className="fixed inset-0 z-30 flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-5"><section role="dialog" aria-modal="true" aria-labelledby="review-title" className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-slate-700 bg-slate-900 p-5 sm:rounded-2xl sm:p-7"><div className="flex justify-between"><div><p className="text-xs uppercase tracking-widest text-blue-300">Company identity application</p><h2 id="review-title" className="text-xl font-bold">Review permohonan</h2></div><button aria-label="Tutup" disabled={busy} onClick={()=>setSelected(null)}><XCircle/></button></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><div className="rounded-lg bg-slate-950 p-3"><small className="text-slate-500">Nama legal</small><p className="font-semibold">{selected.legal_name}</p></div><div className="rounded-lg bg-slate-950 p-3"><small className="text-slate-500">NPWP masked</small><p className="font-semibold">•••• •••• •••• {selected.npwp_last4}</p></div><div className="rounded-lg bg-slate-950 p-3"><small className="text-slate-500">Calon Company Super Admin</small><p className="break-all text-sm">{selected.super_admin_email}</p></div><div className="rounded-lg bg-slate-950 p-3"><small className="text-slate-500">Tanggal pengajuan</small><p>{fmt(selected.created_at)}</p></div></div><label className="mt-5 block text-sm font-semibold">Alasan keputusan (wajib, minimal 10 karakter)<textarea value={reason} onChange={e=>setReason(e.target.value)} maxLength={2000} rows={4} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm" placeholder="Catatan yang akan disimpan ke audit trail…"/></label><p className="mt-3 rounded-lg border border-amber-900 bg-amber-950/30 p-3 text-xs leading-5 text-amber-100">Penerimaan membuat Company, Company Workspace dan satu kursi admin UNCLAIMED. Tenant belum aktif sebelum kursi diklaim melalui RFIN-A. Review bukan verifikasi legal independen atau KYC.</p>{selected.status==='PENDING'&&<div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button disabled={busy} onClick={()=>void decide('REJECTED')} className="rounded-lg border border-rose-800 px-4 py-2.5 text-sm text-rose-200">Tolak permohonan</button><button disabled={busy} onClick={()=>void decide('ACCEPTED')} className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold disabled:opacity-50">{busy?'Menyimpan…':'Terima & siapkan klaim'}</button></div>}</section></div>}
- </div>;
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Activity, AlertCircle, Building2, CheckCircle2, Clock3,
+  Copy, FileCheck2, LayoutDashboard, LockKeyhole, RefreshCw,
+  Search, ShieldCheck, Users, XCircle, ChevronDown, ChevronRight
+} from 'lucide-react';
+import { getSupabaseClient, resolveMyActiveContext } from '../lib/supabase';
+
+// ─── Tipe ─────────────────────────────────────────────────────────────────────
+type Permohonan = {
+  id: string;
+  legal_name: string;
+  npwp_last4: string;
+  super_admin_email: string;
+  status: string;
+  created_at: string;
+  review_notes: string | null;
+  notes: string | null;
+};
+type Company = { id: string; legal_name: string; registration_status?: string; created_at: string };
+type Seat = { company_id: string; recipient_email: string; seat_status: string };
+type AuditRow = { id: string; actor_id: string; action: string; entity_type: string; entity_id: string; details: any; created_at: string };
+type ProfileChange = {
+  id: string; company_id: string; proposed_legal_name: string | null;
+  change_npwp: boolean; proposed_npwp_last4: string | null;
+  reason: string; status: string; created_at: string; review_notes: string | null;
+};
+type RoleRow = { role_code: string; display_name: string; description: string; sort_order: number };
+type PermRow = { permission_code: string; display_name: string; module: string; action: string; requires_authority_check: boolean; description: string };
+type Mapping = { role_code: string; permission_code: string; active: boolean };
+type Snap = {
+  permohonan: Permohonan[]; companies: Company[]; seats: Seat[];
+  audit: AuditRow[]; totalProject: number; profileChanges: ProfileChange[];
+};
+
+const EMPTY: Snap = { permohonan: [], companies: [], seats: [], audit: [], totalProject: 0, profileChanges: [] };
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const tgl = (v: string) =>
+  new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(v));
+
+const BADGE: Record<string, string> = {
+  PENDING:        'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+  ACCEPTED:       'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+  APPROVED:       'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+  REJECTED:       'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300',
+  UNCLAIMED:      'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
+  CLAIMED:        'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+  CLAIM_PENDING:  'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+  ACTIVE:         'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+};
+const LABEL: Record<string, string> = {
+  PENDING: 'Menunggu', ACCEPTED: 'Diterima', APPROVED: 'Disetujui',
+  REJECTED: 'Ditolak', UNCLAIMED: 'Belum diklaim', CLAIMED: 'Diklaim',
+  CLAIM_PENDING: 'Menunggu klaim', ACTIVE: 'Aktif',
+};
+const Badge = ({ status }: { status: string }) => (
+  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${BADGE[status] ?? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>
+    {LABEL[status] ?? status}
+  </span>
+);
+
+// ─── Kartu Statistik ──────────────────────────────────────────────────────────
+const KartuStat = ({ label, nilai, icon: Icon, warna }: { label: string; nilai: number; icon: any; warna: string }) => (
+  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <div className="flex items-center justify-between">
+      <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
+      <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${warna}`}>
+        <Icon className="h-4 w-4" />
+      </div>
+    </div>
+    <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{nilai}</p>
+  </div>
+);
+
+// ─── Komponen Utama ───────────────────────────────────────────────────────────
+export const PlatformConsole: React.FC = () => {
+  const db = getSupabaseClient();
+
+  // State utama
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
+  const [data, setData] = useState<Snap>(EMPTY);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  // Role-Permission
+  const [roles, setRoles] = useState<RoleRow[]>([]);
+  const [perms, setPerms] = useState<PermRow[]>([]);
+  const [mappings, setMappings] = useState<Mapping[]>([]);
+  const [alasanMapping, setAlasanMapping] = useState('');
+
+  // Filter & cari permohonan
+  const [cari, setCari] = useState('');
+  const [filter, setFilter] = useState('PENDING');
+
+  // Review permohonan
+  const [terpilih, setTerpilih] = useState<Permohonan | null>(null);
+  const [alasanReview, setAlasanReview] = useState('');
+
+  // Penerbitan RFIN-A
+  const [konfirmasiRfin, setKonfirmasiRfin] = useState<{ companyId: string; email: string; nama: string } | null>(null);
+  const [kodeTerbit, setKodeTerbit] = useState('');
+  const [emailTerbit, setEmailTerbit] = useState('');
+  const [namaTerbit, setNamaTerbit] = useState('');
+  const [statusSalin, setStatusSalin] = useState('');
+
+  // Review perubahan profil
+  const [catatanProfil, setCatatanProfil] = useState('');
+
+  // Navigasi tab
+  const [tab, setTab] = useState<'permohonan' | 'tenant' | 'profil' | 'role' | 'audit'>('permohonan');
+
+  // ─── Muat data ──────────────────────────────────────────────────────────────
+  const muat = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const ctx = await resolveMyActiveContext();
+      if (!ctx?.is_platform_super_admin) { setAuthorized(false); return; }
+      setAuthorized(true);
+
+      const [rPerm, rComp, rSeat, rAudit, rProj, rRole, rPermCat, rMap, rProfil] = await Promise.all([
+        db.from('company_registration_requests')
+          .select('id,legal_name,npwp_last4,super_admin_email,status,created_at,review_notes,notes')
+          .order('created_at', { ascending: false }).limit(100),
+        db.from('companies')
+          .select('id,legal_name,registration_status,created_at')
+          .order('created_at', { ascending: false }).limit(100),
+        db.from('company_admin_seats').select('company_id,recipient_email,seat_status').limit(100),
+        db.from('audit_logs')
+          .select('id,actor_id,action,entity_type,entity_id,details,created_at')
+          .order('created_at', { ascending: false }).limit(10),
+        db.from('projects').select('id', { count: 'exact', head: true }),
+        db.from('role_catalog').select('role_code,display_name,description,sort_order')
+          .eq('active', true).order('sort_order'),
+        db.from('project_permission_catalog')
+          .select('permission_code,display_name,module,action,requires_authority_check,description')
+          .eq('active', true).order('module').order('permission_code'),
+        db.from('role_permission_catalog')
+          .select('role_code,permission_code,active').eq('active', true),
+        db.from('company_profile_change_requests')
+          .select('id,company_id,proposed_legal_name,change_npwp,proposed_npwp_last4,reason,status,created_at,review_notes')
+          .order('created_at', { ascending: false }).limit(100),
+      ]);
+
+      for (const r of [rPerm, rComp, rSeat, rAudit, rProj, rRole, rPermCat, rMap, rProfil]) {
+        if (r.error) throw r.error;
+      }
+
+      setData({
+        permohonan: rPerm.data ?? [],
+        companies: rComp.data ?? [],
+        seats: rSeat.data ?? [],
+        audit: rAudit.data ?? [],
+        totalProject: rProj.count ?? 0,
+        profileChanges: rProfil.data ?? [],
+      });
+      setRoles(rRole.data ?? []);
+      setPerms(rPermCat.data ?? []);
+      setMappings(rMap.data ?? []);
+    } catch (e: any) {
+      setError(e?.message ?? 'Gagal memuat data Platform Console.');
+    } finally {
+      setLoading(false);
+    }
+  }, [db]);
+
+  useEffect(() => { void muat(); }, [muat]);
+
+  // ─── Statistik ──────────────────────────────────────────────────────────────
+  const jmlPending = data.permohonan.filter(x => x.status === 'PENDING').length;
+  const jmlKlaimPending = data.seats.filter(x => x.seat_status === 'UNCLAIMED').length;
+
+  // ─── Filter permohonan ──────────────────────────────────────────────────────
+  const barisPermohonan = useMemo(() =>
+    data.permohonan.filter(x =>
+      (filter === 'ALL' || x.status === filter) &&
+      (!cari || x.legal_name.toLowerCase().includes(cari.toLowerCase()) ||
+        x.super_admin_email.toLowerCase().includes(cari.toLowerCase()) ||
+        x.id.toLowerCase().includes(cari.toLowerCase()))
+    ),
+    [data.permohonan, filter, cari]
+  );
+
+  // ─── Aksi: Review permohonan ─────────────────────────────────────────────
+  const putuskan = async (keputusan: 'ACCEPTED' | 'REJECTED') => {
+    if (!terpilih || busy) return;
+    if (alasanReview.trim().length < 10) { setError('Alasan keputusan wajib minimal 10 karakter.'); return; }
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const { error: e } = await db.rpc('review_company_registration', {
+        p_request_id: terpilih.id,
+        p_decision: keputusan,
+        p_review_notes: alasanReview.trim(),
+      });
+      if (e) throw e;
+      setNotice(`Keputusan tersimpan — ${terpilih.legal_name} ${keputusan === 'ACCEPTED' ? 'diterima' : 'ditolak'}.`);
+      setTerpilih(null); setAlasanReview('');
+      await muat();
+    } catch (e: any) {
+      setError(e?.message ?? 'Keputusan gagal disimpan. Segarkan dan coba lagi.');
+    } finally { setBusy(false); }
+  };
+
+  // ─── Aksi: Terbitkan RFIN-A ─────────────────────────────────────────────
+  const terbitkanRfinA = async (companyId: string, email: string, nama: string) => {
+    if (busy) return;
+    setBusy(true); setError(''); setNotice(''); setStatusSalin('');
+    try {
+      const { data: kode, error: e } = await db.rpc('issue_rfin_a', {
+        p_company_id: companyId,
+        p_recipient_email: email,
+        p_expires_in: '7 days',
+      });
+      if (e) throw e;
+      if (typeof kode !== 'string' || !kode.startsWith('RFA-'))
+        throw new Error('Server tidak mengembalikan kode RFIN-A yang valid.');
+      setKonfirmasiRfin(null);
+      setKodeTerbit(kode);
+      setEmailTerbit(email);
+      setNamaTerbit(nama);
+      setNotice('RFIN-A diterbitkan. Kode hanya tampil sekali — salin sekarang.');
+      await muat();
+    } catch (e: any) {
+      setError(e?.message ?? 'Penerbitan RFIN-A gagal.');
+    } finally { setBusy(false); }
+  };
+
+  const salinKode = async () => {
+    try {
+      await navigator.clipboard.writeText(kodeTerbit);
+      setStatusSalin('Kode berhasil disalin. Kirim hanya kepada penerima melalui kanal aman.');
+    } catch {
+      setStatusSalin('Clipboard tidak tersedia — pilih dan salin kode secara manual.');
+    }
+  };
+
+  // ─── Aksi: Review perubahan profil ─────────────────────────────────────
+  const putuskanProfil = async (id: string, keputusan: 'APPROVE' | 'REJECT') => {
+    if (busy) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const { data: hasil, error: e } = await db.rpc('review_company_profile_change', {
+        p_request_id: id,
+        p_decision: keputusan,
+        p_review_notes: catatanProfil.trim() || null,
+      });
+      if (e) throw e;
+      if (!hasil?.ok) throw new Error(hasil?.error ?? 'Keputusan gagal.');
+      setCatatanProfil('');
+      setNotice('Perubahan profil ' + (keputusan === 'APPROVE' ? 'disetujui.' : 'ditolak.'));
+      await muat();
+    } catch (e: any) {
+      setError(e?.message ?? 'Keputusan perubahan profil gagal.');
+    } finally { setBusy(false); }
+  };
+
+  // ─── Aksi: Mapping Role-Permission ─────────────────────────────────────
+  const ubahMapping = async (roleCode: string, permCode: string, aktif: boolean) => {
+    if (busy) return;
+    if (alasanMapping.trim().length < 8) { setError('Alasan perubahan mapping wajib minimal 8 karakter.'); return; }
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const { error: e } = await db.rpc('set_role_permission_mapping', {
+        p_role_code: roleCode,
+        p_permission_code: permCode,
+        p_active: aktif,
+        p_reason: alasanMapping.trim(),
+      });
+      if (e) throw e;
+      setMappings(prev => aktif
+        ? [...prev.filter(x => !(x.role_code === roleCode && x.permission_code === permCode)),
+            { role_code: roleCode, permission_code: permCode, active: true }]
+        : prev.filter(x => !(x.role_code === roleCode && x.permission_code === permCode))
+      );
+      setNotice(`Mapping ${roleCode} → ${permCode} ${aktif ? 'diaktifkan' : 'dinonaktifkan'}.`);
+    } catch (e: any) {
+      setError(e?.message ?? 'Mapping gagal disimpan.');
+    } finally { setBusy(false); }
+  };
+
+  // ─── Render: Akses ditolak ──────────────────────────────────────────────
+  if (authorized === false) return (
+    <div className="flex min-h-96 items-center justify-center p-6">
+      <div className="max-w-sm rounded-2xl border border-rose-200 bg-white p-8 text-center shadow-sm dark:border-rose-900 dark:bg-slate-900">
+        <LockKeyhole className="mx-auto mb-4 h-10 w-10 text-rose-500" />
+        <h2 className="text-lg font-bold text-slate-900 dark:text-white">Akses Ditolak</h2>
+        <p className="mt-2 text-sm text-slate-500">
+          Identitas ini bukan Platform Super Admin. Halaman ini tidak dapat dimuat.
+        </p>
+      </div>
+    </div>
+  );
+
+  // ─── Tab nav ────────────────────────────────────────────────────────────────
+  const tabs: { id: typeof tab; label: string; badge?: number }[] = [
+    { id: 'permohonan', label: 'Permohonan RFIN-A', badge: jmlPending },
+    { id: 'tenant',     label: 'Tenant & Kursi Admin' },
+    { id: 'profil',     label: 'Perubahan Profil' },
+    { id: 'role',       label: 'Role & Permission' },
+    { id: 'audit',      label: 'Jejak Aktivitas' },
+  ];
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-6">
+
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 dark:text-white">Platform Console</h1>
+            <p className="text-xs text-slate-500">Control plane global · PSA only</p>
+          </div>
+        </div>
+        <button
+          disabled={loading}
+          onClick={() => void muat()}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+          Segarkan
+        </button>
+      </div>
+
+      {/* Pesan error/notice */}
+      {error && (
+        <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span>
+        </div>
+      )}
+      {notice && (
+        <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /><span>{notice}</span>
+        </div>
+      )}
+
+      {/* Kartu statistik */}
+      {!loading && authorized && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <KartuStat label="Menunggu review" nilai={jmlPending} icon={Clock3}
+            warna="bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" />
+          <KartuStat label="Tenant terdaftar" nilai={data.companies.length} icon={Building2}
+            warna="bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" />
+          <KartuStat label="Kursi admin belum diklaim" nilai={jmlKlaimPending} icon={Users}
+            warna="bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300" />
+          <KartuStat label="Total proyek" nilai={data.totalProject} icon={LayoutDashboard}
+            warna="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" />
+        </div>
+      )}
+
+      {/* Tab navigasi */}
+      {!loading && authorized && (
+        <>
+          <div className="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-900">
+            {tabs.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+                  tab === t.id
+                    ? 'bg-white shadow-sm text-slate-900 dark:bg-slate-800 dark:text-white'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                }`}
+              >
+                {t.label}
+                {t.badge !== undefined && t.badge > 0 && (
+                  <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white leading-none">
+                    {t.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Tab: Permohonan RFIN-A ───────────────────────────────────── */}
+          {tab === 'permohonan' && (
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="border-b border-slate-100 p-5 dark:border-slate-800">
+                <h2 className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
+                  <FileCheck2 className="h-4 w-4 text-blue-600" />
+                  Daftar Permohonan Registrasi Perusahaan
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Penerimaan memulai provisioning Company + Workspace + Kursi CSA. Tolak untuk mencegah pembuatan tenant.
+                </p>
+              </div>
+
+              {/* Filter & cari */}
+              <div className="flex flex-col gap-2 border-b border-slate-100 p-4 sm:flex-row dark:border-slate-800">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={cari} onChange={e => setCari(e.target.value)}
+                    placeholder="Cari nama perusahaan, email, atau ID…"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm dark:border-slate-700 dark:bg-slate-950"
+                  />
+                </div>
+                <select
+                  value={filter} onChange={e => setFilter(e.target.value)}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+                >
+                  <option value="PENDING">Menunggu review</option>
+                  <option value="ACCEPTED">Diterima</option>
+                  <option value="REJECTED">Ditolak</option>
+                  <option value="ALL">Semua status</option>
+                </select>
+              </div>
+
+              {/* Tabel permohonan */}
+              {barisPermohonan.length > 0 ? (
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {barisPermohonan.map(r => (
+                    <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900 dark:text-white">{r.legal_name}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          Ref {r.id.slice(0, 8).toUpperCase()} · NPWP ****{r.npwp_last4} · {tgl(r.created_at)}
+                        </p>
+                        <p className="text-xs text-slate-500">{r.super_admin_email}</p>
+                        {r.review_notes && (
+                          <p className="mt-1 text-xs italic text-slate-500">Catatan PSA: {r.review_notes}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge status={r.status} />
+                        <button
+                          onClick={() => { setTerpilih(r); setAlasanReview(r.review_notes ?? ''); setError(''); setNotice(''); }}
+                          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                        >
+                          Detail & review
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="py-12 text-center text-sm text-slate-400">
+                  Tidak ada permohonan pada filter ini.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── Tab: Tenant & Kursi Admin ────────────────────────────────── */}
+          {tab === 'tenant' && (
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="border-b border-slate-100 p-5 dark:border-slate-800">
+                <h2 className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
+                  <Building2 className="h-4 w-4 text-blue-600" />
+                  Tenant Terdaftar & Kursi Company Super Admin
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Terbitkan RFIN-A ke calon CSA yang belum klaim kursinya.
+                </p>
+              </div>
+              {data.companies.length > 0 ? (
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {data.companies.map(c => {
+                    const kursi = data.seats.find(s => s.company_id === c.id);
+                    return (
+                      <div key={c.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                        <div>
+                          <p className="font-semibold text-slate-900 dark:text-white">{c.legal_name}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {kursi ? kursi.recipient_email : 'Belum ada kursi admin'} · {tgl(c.created_at)}
+                          </p>
+                          <div className="mt-1 flex gap-2">
+                            {c.registration_status && <Badge status={c.registration_status} />}
+                            {kursi && <Badge status={kursi.seat_status} />}
+                          </div>
+                        </div>
+                        {kursi?.seat_status === 'UNCLAIMED' && (
+                          <button
+                            disabled={busy}
+                            onClick={() => setKonfirmasiRfin({ companyId: c.id, email: kursi.recipient_email, nama: c.legal_name })}
+                            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            Terbitkan RFIN-A
+                          </button>
+                        )}
+                        {kursi?.seat_status === 'CLAIMED' && (
+                          <span className="text-xs text-emerald-600 dark:text-emerald-400">✓ CSA sudah aktif</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="py-12 text-center text-sm text-slate-400">
+                  Belum ada tenant yang diprovisioning.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── Tab: Perubahan Profil ─────────────────────────────────────── */}
+          {tab === 'profil' && (
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="border-b border-slate-100 p-5 dark:border-slate-800">
+                <h2 className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
+                  <FileCheck2 className="h-4 w-4 text-blue-600" />
+                  Review Permohonan Perubahan Profil Perusahaan
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Perubahan nama legal atau NPWP hanya berlaku setelah PSA menyetujuinya.
+                </p>
+              </div>
+              <div className="border-b border-slate-100 p-4 dark:border-slate-800">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Catatan review (opsional)
+                  <textarea
+                    value={catatanProfil}
+                    onChange={e => setCatatanProfil(e.target.value)}
+                    rows={2} maxLength={1000}
+                    className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"
+                  />
+                </label>
+              </div>
+              {data.profileChanges.length > 0 ? (
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {data.profileChanges.map(item => {
+                    const namaComp = data.companies.find(c => c.id === item.company_id)?.legal_name ?? item.company_id;
+                    return (
+                      <div key={item.id} className="flex flex-wrap items-start justify-between gap-3 p-4">
+                        <div>
+                          <p className="font-semibold text-slate-900 dark:text-white">{namaComp}</p>
+                          {item.proposed_legal_name && (
+                            <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">
+                              Nama baru: <b>{item.proposed_legal_name}</b>
+                            </p>
+                          )}
+                          {item.change_npwp && (
+                            <p className="text-sm text-slate-700 dark:text-slate-300">
+                              NPWP baru berakhir <b>{item.proposed_npwp_last4}</b>
+                            </p>
+                          )}
+                          <p className="mt-1 text-xs text-slate-500">Alasan: {item.reason}</p>
+                          <p className="text-[11px] text-slate-400">
+                            Ref {item.id.slice(0, 8).toUpperCase()} · {tgl(item.created_at)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge status={item.status} />
+                          {item.status === 'PENDING' && (
+                            <>
+                              <button disabled={busy} onClick={() => void putuskanProfil(item.id, 'REJECT')}
+                                className="rounded-lg border border-rose-300 px-3 py-1.5 text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-40 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/30">
+                                Tolak
+                              </button>
+                              <button disabled={busy} onClick={() => void putuskanProfil(item.id, 'APPROVE')}
+                                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">
+                                Setujui
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="py-12 text-center text-sm text-slate-400">
+                  Tidak ada permohonan perubahan profil.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── Tab: Role & Permission ─────────────────────────────────────── */}
+          {tab === 'role' && (
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="border-b border-slate-100 p-5 dark:border-slate-800">
+                <h2 className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
+                  <ShieldCheck className="h-4 w-4 text-blue-600" />
+                  Katalog Role & Mapping Permission
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  PSA menetapkan bundle permission per role. Perubahan langsung memengaruhi effective access semua anggota dengan role tersebut.
+                </p>
+              </div>
+              <div className="border-b border-slate-100 p-4 dark:border-slate-800">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Alasan perubahan mapping (wajib, minimal 8 karakter)
+                  <input
+                    value={alasanMapping}
+                    onChange={e => setAlasanMapping(e.target.value)}
+                    minLength={8} maxLength={500}
+                    placeholder="Dasar kebijakan perubahan mapping role-permission…"
+                    className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"
+                  />
+                </label>
+              </div>
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {roles.map(role => {
+                  const jmlAktif = mappings.filter(m => m.role_code === role.role_code && m.active).length;
+                  const permPerModul = perms.reduce<Record<string, PermRow[]>>((acc, p) => {
+                    (acc[p.module] = acc[p.module] ?? []).push(p); return acc;
+                  }, {});
+                  return (
+                    <details key={role.role_code} className="group p-4">
+                      <summary className="flex cursor-pointer list-none items-center justify-between">
+                        <div>
+                          <span className="font-semibold text-slate-900 dark:text-white">{role.display_name}</span>
+                          <span className="ml-2 text-xs text-slate-500">{role.role_code} · {jmlAktif} permission aktif</span>
+                          <p className="mt-0.5 text-xs text-slate-400">{role.description}</p>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-slate-400 transition-transform group-open:rotate-90" />
+                      </summary>
+                      <div className="mt-4 space-y-4">
+                        {Object.entries(permPerModul).map(([modul, daftarPerm]) => (
+                          <div key={modul}>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400">{modul}</p>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {daftarPerm.map(p => {
+                                const aktif = mappings.some(m => m.role_code === role.role_code && m.permission_code === p.permission_code && m.active);
+                                return (
+                                  <label key={p.permission_code} className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-xs cursor-pointer transition-colors ${
+                                    aktif ? 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30' : 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950'
+                                  }`}>
+                                    <input
+                                      type="checkbox"
+                                      checked={aktif}
+                                      disabled={busy || alasanMapping.trim().length < 8}
+                                      onChange={e => void ubahMapping(role.role_code, p.permission_code, e.target.checked)}
+                                      className="mt-0.5 rounded text-blue-600"
+                                    />
+                                    <span>
+                                      <b className="text-slate-900 dark:text-white">{p.display_name}</b>
+                                      <span className="mt-0.5 block text-slate-500">{p.description}</span>
+                                      {p.requires_authority_check && (
+                                        <span className="mt-1 block text-amber-600 dark:text-amber-400">⚠ Memerlukan Authority</span>
+                                      )}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  );
+                })}
+              </div>
+              <p className="border-t border-slate-100 p-4 text-xs text-amber-600 dark:border-slate-800 dark:text-amber-400">
+                ⚠ Tidak ada bundle default yang ditebak otomatis. Role hanya menghasilkan akses setelah mapping disahkan di sini.
+                Permission berlabel "Memerlukan Authority" tetap memerlukan verifikasi konteks, project scope, dan state workflow.
+              </p>
+            </div>
+          )}
+
+          {/* ── Tab: Jejak Aktivitas ─────────────────────────────────────── */}
+          {tab === 'audit' && (
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="border-b border-slate-100 p-5 dark:border-slate-800">
+                <h2 className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
+                  <Activity className="h-4 w-4 text-blue-600" />
+                  Jejak Aktivitas Administratif
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">10 event terbaru dari audit_logs.</p>
+              </div>
+              {data.audit.length > 0 ? (
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {data.audit.map(e => (
+                    <div key={e.id} className="flex flex-wrap items-start justify-between gap-2 p-4">
+                      <div>
+                        <p className="font-semibold text-sm text-slate-900 dark:text-white">{e.action}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {e.entity_type} · {e.entity_id?.slice(0, 8) ?? '—'} · aktor {e.actor_id?.slice(0, 8) ?? 'sistem'}
+                        </p>
+                        {e.details?.review_notes && (
+                          <p className="mt-1 text-xs italic text-slate-400">"{e.details.review_notes}"</p>
+                        )}
+                      </div>
+                      <time className="text-xs text-slate-400">{tgl(e.created_at)}</time>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="py-12 text-center text-sm text-slate-400">Belum ada event administratif tercatat.</p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Loading state */}
+      {loading && (
+        <div className="flex min-h-64 items-center justify-center">
+          <div className="text-center text-sm text-slate-500">
+            <RefreshCw className="mx-auto mb-2 h-6 w-6 animate-spin text-blue-500" />
+            Memverifikasi otoritas dan memuat data…
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Konfirmasi Terbitkan RFIN-A ──────────────────────────── */}
+      {konfirmasiRfin && (
+        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 p-4 sm:items-center">
+          <div className="w-full max-w-lg rounded-2xl border border-amber-200 bg-white p-6 shadow-2xl dark:border-amber-800 dark:bg-slate-900">
+            <p className="text-xs font-semibold uppercase tracking-widest text-amber-600 dark:text-amber-400">Konfirmasi tindakan administratif</p>
+            <h2 className="mt-2 text-lg font-bold text-slate-900 dark:text-white">Terbitkan RFIN-A?</h2>
+            <div className="mt-3 space-y-1 text-sm text-slate-700 dark:text-slate-300">
+              <p>Perusahaan: <b>{konfirmasiRfin.nama}</b></p>
+              <p>Penerima: <b className="break-all">{konfirmasiRfin.email}</b></p>
+            </div>
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+              Kode hanya tampil satu kali dan berlaku 7 hari. Penerbitan baru mencabut token lama yang belum digunakan.
+              Salin kode dan kirim <b>hanya</b> kepada penerima melalui kanal aman.
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button disabled={busy} onClick={() => setKonfirmasiRfin(null)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700">
+                Batal
+              </button>
+              <button disabled={busy}
+                onClick={() => void terbitkanRfinA(konfirmasiRfin.companyId, konfirmasiRfin.email, konfirmasiRfin.nama)}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                {busy ? 'Menerbitkan…' : 'Ya, terbitkan RFIN-A'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Tampilkan Kode RFIN-A ────────────────────────────────── */}
+      {kodeTerbit && (
+        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 p-4 sm:items-center">
+          <div className="w-full max-w-lg rounded-2xl border border-amber-200 bg-white p-6 shadow-2xl dark:border-amber-800 dark:bg-slate-900">
+            <p className="text-xs font-semibold uppercase tracking-widest text-amber-600 dark:text-amber-400">Credential rahasia · tampil satu kali</p>
+            <h2 className="mt-2 text-lg font-bold text-slate-900 dark:text-white">RFIN-A Diterbitkan</h2>
+            <div className="mt-2 space-y-0.5 text-sm text-slate-700 dark:text-slate-300">
+              <p>Perusahaan: <b>{namaTerbit}</b></p>
+              <p>Penerima: <b className="break-all">{emailTerbit}</b></p>
+              <p className="text-xs text-slate-400">Berlaku 7 hari sejak diterbitkan.</p>
+            </div>
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950">
+              <label className="text-xs text-slate-500">Kode RFIN-A — jangan bagikan ke pihak lain</label>
+              <input
+                readOnly value={kodeTerbit}
+                onFocus={e => e.currentTarget.select()}
+                className="mt-2 w-full select-all rounded-lg border border-slate-300 bg-white p-3 font-mono text-sm tracking-widest text-amber-700 dark:border-slate-700 dark:bg-slate-900 dark:text-amber-300"
+              />
+            </div>
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+              Kode <b>tidak</b> dikirim otomatis melalui email. Salin dan sampaikan hanya kepada penerima yang ditunjuk.
+              Jangan masukkan ke tiket, chat grup, atau catatan audit. Setelah dialog ditutup, kode tidak dapat ditampilkan lagi.
+            </div>
+            {statusSalin && (
+              <p className="mt-3 text-sm text-emerald-700 dark:text-emerald-400">{statusSalin}</p>
+            )}
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button onClick={() => { setKodeTerbit(''); setEmailTerbit(''); setNamaTerbit(''); setStatusSalin(''); }}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700">
+                Tutup & hapus dari layar
+              </button>
+              <button onClick={() => void salinKode()}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+                <Copy className="h-4 w-4" /> Salin kode
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Review Permohonan ─────────────────────────────────────── */}
+      {terpilih && (
+        <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-5">
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:rounded-2xl sm:p-7">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-widest text-blue-600 dark:text-blue-400">Review Permohonan</p>
+                <h2 className="mt-1 text-lg font-bold text-slate-900 dark:text-white">{terpilih.legal_name}</h2>
+              </div>
+              <button disabled={busy} onClick={() => setTerpilih(null)} aria-label="Tutup">
+                <XCircle className="h-5 w-5 text-slate-400 hover:text-slate-600" />
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              {[
+                ['Nama Legal', terpilih.legal_name],
+                ['NPWP Masked', `•••• •••• •••• ${terpilih.npwp_last4}`],
+                ['Calon CSA', terpilih.super_admin_email],
+                ['Tanggal Ajukan', tgl(terpilih.created_at)],
+              ].map(([k, v]) => (
+                <div key={k} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-950">
+                  <p className="text-[11px] text-slate-400">{k}</p>
+                  <p className="mt-0.5 break-all text-sm font-semibold text-slate-900 dark:text-white">{v}</p>
+                </div>
+              ))}
+            </div>
+
+            {terpilih.notes && (
+              <div className="mt-3 rounded-lg bg-slate-50 p-3 dark:bg-slate-950">
+                <p className="text-[11px] text-slate-400">Catatan dari pemohon</p>
+                <p className="mt-0.5 text-sm text-slate-700 dark:text-slate-300 whitespace-pre-line">{terpilih.notes}</p>
+              </div>
+            )}
+
+            <label className="mt-4 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+              Alasan keputusan <span className="text-rose-500">*</span> (minimal 10 karakter)
+              <textarea
+                value={alasanReview}
+                onChange={e => setAlasanReview(e.target.value)}
+                maxLength={2000} rows={3}
+                placeholder="Catatan yang akan tersimpan di audit trail…"
+                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-950"
+              />
+            </label>
+
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+              Penerimaan secara otomatis membuat <b>Company</b>, <b>Company Workspace</b>, dan satu <b>Kursi CSA (UNCLAIMED)</b>.
+              Tenant belum aktif operasional sebelum kursi diklaim melalui kode RFIN-A.
+            </div>
+
+            {terpilih.status === 'PENDING' && (
+              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button disabled={busy} onClick={() => void putuskan('REJECTED')}
+                  className="rounded-lg border border-rose-300 px-4 py-2.5 text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-40 dark:border-rose-800 dark:text-rose-300">
+                  Tolak Permohonan
+                </button>
+                <button disabled={busy} onClick={() => void putuskan('ACCEPTED')}
+                  className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+                  {busy ? 'Menyimpan…' : 'Terima & Siapkan Klaim'}
+                </button>
+              </div>
+            )}
+            {terpilih.status !== 'PENDING' && (
+              <p className="mt-4 text-center text-sm text-slate-400">
+                Permohonan ini sudah diproses — <Badge status={terpilih.status} />
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };
