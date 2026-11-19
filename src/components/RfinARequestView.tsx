@@ -43,15 +43,49 @@ export const RfinARequestView: React.FC = () => {
       setMessageTone('error');
       return;
     }
+
+    const cleanNpwp = companyNpwp.replace(/\D/g, '');
+    if (cleanNpwp.length !== 16) {
+      setMessage('Format NPWP wajib tepat 16 digit angka demi keseragaman dan keabsahan identitas.');
+      setMessageTone('error');
+      return;
+    }
+
     setBusy(true);
-    setMessage('Mengirim permohonan pendaftaran tenant baru...');
+    setMessage('Memeriksa kelayakan dan mendaftarkan tenant baru...');
     setMessageTone('info');
 
     try {
+      // 1. Pre-flight check duplikasi di sisi klien sebelum submit
+      const cleanName = companyName.trim().toUpperCase();
+      const cleanEmail = superAdminEmail.trim().toLowerCase();
+
+      const [chkComp, chkSeats, chkReqs] = await Promise.all([
+        db.from('companies').select('legal_name,npwp').or(`npwp.eq.${cleanNpwp},legal_name.ilike.${cleanName}`).limit(1),
+        db.from('company_admin_seats').select('recipient_email').ilike('recipient_email', cleanEmail).limit(1),
+        db.from('company_registration_requests').select('legal_name,npwp,super_admin_email')
+          .eq('status', 'PENDING')
+          .or(`npwp.eq.${cleanNpwp},legal_name.ilike.${cleanName},super_admin_email.ilike.${cleanEmail}`).limit(1)
+      ]);
+
+      if (chkComp.data && chkComp.data.length > 0) {
+        const found = chkComp.data[0];
+        const reason = found.npwp === cleanNpwp ? `NPWP ${cleanNpwp}` : `Nama ${found.legal_name}`;
+        throw new Error(`Perusahaan dengan ${reason} telah terdaftar dalam sistem. Pendaftaran tenant ganda tidak diperkenankan.`);
+      }
+
+      if (chkSeats.data && chkSeats.data.length > 0) {
+        throw new Error(`Email calon CSA (${cleanEmail}) telah terdaftar sebagai pengelola perusahaan lain.`);
+      }
+
+      if (chkReqs.data && chkReqs.data.length > 0) {
+        throw new Error(`Permohonan pendaftaran untuk perusahaan / NPWP / email CSA ini sudah ada dan sedang menunggu review PSA.`);
+      }
+
       const { data, error } = await db.rpc('submit_company_registration', {
-        p_legal_name: companyName.trim(),
-        p_npwp: companyNpwp.trim(),
-        p_super_admin_email: superAdminEmail.trim().toLowerCase(),
+        p_legal_name: cleanName,
+        p_npwp: cleanNpwp,
+        p_super_admin_email: cleanEmail,
         p_business_email: businessEmail.trim().toLowerCase() || null,
         p_notes: `Pendaftaran Tenant oleh ${user.name} (${user.email}). Alamat: ${companyAddress}`,
         p_declaration_version: 'CV-COMPANY-IDENTITY-v1'
@@ -136,17 +170,22 @@ export const RfinARequestView: React.FC = () => {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-              NPWP Perusahaan (15/16 digit) <span className="text-rose-500">*</span>
+              NPWP Perusahaan (Tepat 16 Digit) <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
               required
               disabled={busy}
+              inputMode="numeric"
+              maxLength={16}
               value={companyNpwp}
-              onChange={(e) => setCompanyNpwp(e.target.value)}
-              placeholder="Contoh: 0024376584714000"
-              className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm font-mono dark:border-slate-700 dark:bg-slate-950"
+              onChange={(e) => setCompanyNpwp(e.target.value.replace(/\D/g, '').slice(0, 16))}
+              placeholder="16 digit angka (contoh: 0024376584714000)"
+              className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm font-mono tracking-wider dark:border-slate-700 dark:bg-slate-950"
             />
+            <p className="mt-1 text-[11px] text-slate-400">
+              {companyNpwp.length}/16 digit {companyNpwp.length === 16 ? '✓ Lengkap' : '(Wajib 16 digit angka)'}
+            </p>
           </div>
 
           <div className="sm:col-span-2">

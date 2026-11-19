@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity, AlertCircle, Building2, CheckCircle2, Clock3,
   Copy, FileCheck2, LayoutDashboard, LockKeyhole, RefreshCw,
-  Search, ShieldCheck, Users, XCircle, ChevronDown, ChevronRight
+  Search, ShieldCheck, Users, XCircle, ChevronDown, ChevronRight,
+  Mail, Send, ExternalLink
 } from 'lucide-react';
 import { getSupabaseClient, resolveMyActiveContext } from '../lib/supabase';
 
@@ -231,10 +232,50 @@ export const PlatformConsole: React.FC = () => {
   const salinKode = async () => {
     try {
       await navigator.clipboard.writeText(kodeTerbit);
-      setStatusSalin('Kode berhasil disalin. Kirim hanya kepada penerima melalui kanal aman.');
+      setStatusSalin('Kode RFIN-A berhasil disalin ke clipboard.');
     } catch {
       setStatusSalin('Clipboard tidak tersedia — pilih dan salin kode secara manual.');
     }
+  };
+
+  const dapatkanFormatEmail = () => {
+    return `Yth. Calon Company Super Admin,
+
+Permohonan pendaftaran tenant untuk ${namaTerbit} telah disetujui oleh Platform Super Admin (PSA).
+
+Berikut adalah Kode Akses RFIN-A resmi Anda:
+--------------------------------------------------
+PERUSAHAAN : ${namaTerbit}
+KODE RFIN-A: ${kodeTerbit}
+PENERIMA   : ${emailTerbit}
+MASA LAKU  : 7 Hari sejak diterbitkan
+--------------------------------------------------
+
+Langkah Klaim Kursi Company Super Admin:
+1. Buka aplikasi Proyek Cair: https://proyek-cair.vercel.app
+2. Masuk menggunakan akun Google Anda: ${emailTerbit}
+3. Di Dasbor Personal, masukkan kode RFIN-A di atas atau klik kartu notifikasi aktivasi untuk langsung mengklaim kursi Company Super Admin.
+
+Catatan Keamanan:
+Jangan bagikan kode ini kepada pihak lain yang tidak berhak.
+
+Salam hormat,
+Platform Super Admin (PSA) - Proyek Cair`;
+  };
+
+  const salinEmailLengkap = async () => {
+    try {
+      await navigator.clipboard.writeText(dapatkanFormatEmail());
+      setStatusSalin('Pesan email resmi lengkap berhasil disalin ke clipboard.');
+    } catch {
+      setStatusSalin('Gagal menyalin format email secara otomatis.');
+    }
+  };
+
+  const bukaEmailDefault = () => {
+    const subject = encodeURIComponent(`[RESMI] Kode Aktivasi RFIN-A Company Super Admin - ${namaTerbit}`);
+    const body = encodeURIComponent(dapatkanFormatEmail());
+    window.open(`mailto:${emailTerbit}?subject=${subject}&body=${body}`, '_blank');
   };
 
   // ─── Aksi: Review perubahan profil ─────────────────────────────────────
@@ -747,22 +788,45 @@ export const PlatformConsole: React.FC = () => {
                 className="mt-2 w-full select-all rounded-lg border border-slate-300 bg-white p-3 font-mono text-sm tracking-widest text-amber-700 dark:border-slate-700 dark:bg-slate-900 dark:text-amber-300"
               />
             </div>
-            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-              Kode <b>tidak</b> dikirim otomatis melalui email. Salin dan sampaikan hanya kepada penerima yang ditunjuk.
-              Jangan masukkan ke tiket, chat grup, atau catatan audit. Setelah dialog ditutup, kode tidak dapat ditampilkan lagi.
+            <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200 flex items-start gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+              <div>
+                <b>Tersimpan di Sistem Notifikasi Internal Proyek Cair:</b> Saat calon CSA ({emailTerbit}) masuk ke Proyek Cair, notifikasi aktivasi resmi dan tombol klaim otomatis sudah tersedia di akunnya (in-house, tanpa ketergantungan pihak ketiga).
+              </div>
             </div>
+
             {statusSalin && (
-              <p className="mt-3 text-sm text-emerald-700 dark:text-emerald-400">{statusSalin}</p>
+              <p className="mt-3 text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/40 p-2 rounded-lg">{statusSalin}</p>
             )}
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button onClick={() => { setKodeTerbit(''); setEmailTerbit(''); setNamaTerbit(''); setStatusSalin(''); }}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700">
-                Tutup & hapus dari layar
-              </button>
-              <button onClick={() => void salinKode()}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-                <Copy className="h-4 w-4" /> Salin kode
-              </button>
+
+            <div className="mt-5 space-y-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={bukaEmailDefault}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-blue-600 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-500 dark:bg-blue-950/50 dark:text-blue-300"
+                >
+                  <Mail className="h-3.5 w-3.5" /> Buka Draft Email (Mailto)
+                </button>
+                <button
+                  type="button"
+                  onClick={salinEmailLengkap}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                >
+                  <Send className="h-3.5 w-3.5" /> Salin Pesan Email Lengkap
+                </button>
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button onClick={() => { setKodeTerbit(''); setEmailTerbit(''); setNamaTerbit(''); setStatusSalin(''); }}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700">
+                  Tutup & hapus dari layar
+                </button>
+                <button onClick={() => void salinKode()}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+                  <Copy className="h-4 w-4" /> Salin kode saja
+                </button>
+              </div>
             </div>
           </div>
         </div>

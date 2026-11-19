@@ -11,6 +11,7 @@ import { RfinARequestView } from './components/RfinARequestView';
 import { RfinBInputView } from './components/RfinBInputView';
 import { PlatformConsole } from './components/PlatformConsole';
 import { CompanyConsole } from './components/CompanyConsole';
+import { NotificationBanner } from './components/NotificationBanner';
 import { AuthGate } from './components/AuthGate';
 import { ItemBarang, JenisMutasiBarang, JenisMutasiKas } from './types';
 
@@ -39,6 +40,9 @@ const MainApp: React.FC = () => {
       <div className="flex-1 flex flex-col md:flex-row">
         <Sidebar />
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto overflow-y-auto">
+          {/* Kotak Notifikasi / Undangan Resmi In-House */}
+          <NotificationBanner />
+
           {/* Mode PSA */}
           {appMode === 'PSA' && <PlatformConsole />}
 
