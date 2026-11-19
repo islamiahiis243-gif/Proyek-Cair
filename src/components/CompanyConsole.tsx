@@ -70,8 +70,12 @@ export const CompanyConsole: React.FC = () => {
     const { data: clientData, error: clientError } = await db.from('project_client_relationships')
       .select('id,project_id,client_name,relationship_type,commercial_reference,notes')
       .in('project_id', rows.map(row => row.id));
-    if (clientError) throw clientError;
-    setClients((clientData || []) as ClientRow[]);
+    if (clientError) {
+      console.warn('Gagal memuat relasi client:', clientError);
+      setClients([]);
+    } else {
+      setClients((clientData || []) as ClientRow[]);
+    }
     return rows;
   }, [db]);
 
@@ -165,14 +169,23 @@ export const CompanyConsole: React.FC = () => {
       }
       // This read only controls the UI. Every project RPC and row read is independently
       // enforced by database authorization and RLS.
-      const { data: memberships, error: membershipError } = await db.from('company_memberships')
-        .select('workspace_id,is_company_super_admin,membership_status')
-        .eq('user_id', resolved.user_id)
-        .eq('membership_status', 'ACTIVE')
-        .eq('is_company_super_admin', true);
-      if (membershipError) throw membershipError;
+      const [membershipsRes, seatsRes] = await Promise.all([
+        db.from('company_memberships')
+          .select('workspace_id,company_id,is_company_super_admin,membership_status')
+          .eq('user_id', resolved.user_id)
+          .eq('membership_status', 'ACTIVE'),
+        db.from('company_admin_seats')
+          .select('company_id')
+          .eq('claimed_by', resolved.user_id)
+          .eq('seat_status', 'CLAIMED')
+      ]);
+
+      const claimedCompanyIds = new Set((seatsRes.data || []).map((s: any) => s.company_id));
       const allowed = new Set(companyWorkspaces.map(w => w.id));
-      const adminIds = (memberships || []).map((m: any) => m.workspace_id).filter((id: string) => allowed.has(id));
+      const adminIds = (membershipsRes.data || [])
+        .filter((m: any) => m.is_company_super_admin || claimedCompanyIds.has(m.company_id))
+        .map((m: any) => m.workspace_id)
+        .filter((id: string) => allowed.has(id));
       setAdminWorkspaceIds(adminIds);
       const preferred = adminIds.includes(workspaceId) ? workspaceId : adminIds[0] || '';
       setWorkspaceId(preferred);
