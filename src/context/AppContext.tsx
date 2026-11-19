@@ -10,7 +10,9 @@ import {
   BoqSection,
   AppMode,
   ImpersonateRole,
-  StatusDokumenWorkflow
+  StatusDokumenWorkflow,
+  PhysicalMaterialItem,
+  PhysicalBudgetLine
 } from '../types';
 import {
   getStoredConfig,
@@ -60,6 +62,7 @@ interface AppContextType {
   refreshData: () => Promise<void>;
   setActiveWorkspaceId: (id: string) => void;
   items: ItemBarang[];
+  physicalMaterials: PhysicalMaterialItem[];
   boqSections: BoqSection[];
   stockMutations: MutasiBarang[];
   cashMutations: MutasiKas[];
@@ -205,6 +208,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const [items, setItems] = useState<ItemBarang[]>([]);
+  const [physicalMaterials, setPhysicalMaterials] = useState<PhysicalMaterialItem[]>([]);
   const [boqSections, setBoqSections] = useState<BoqSection[]>([]);
   const [stockMutations, setStockMutations] = useState<MutasiBarang[]>([]);
   const [cashMutations, setCashMutations] = useState<MutasiKas[]>([]);
@@ -259,36 +263,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ]);
 
     const reversedIds = new Set((reversalsRes.data || []).map((r: any) => r.original_transaction_id));
-    const balance = new Map<string, number>();
-    const received = new Map<string, number>();
-    const consumed = new Map<string, number>();
-    const stockHistory = new Set<string>((stockRes.data || []).map((t: any) => t.item_id));
+
+    // 1. Indeks Material Fisik dari data mentah boq_items
+    const rawBoq = boqRes.data || [];
+    const itemToKey = new Map<string, string>();
+    const itemById = new Map<string, any>();
+    rawBoq.forEach((b: any) => {
+      itemById.set(b.id, b);
+      const key = `${(b.description || '').trim().toLowerCase().replace(/\s+/g, ' ')}|${(b.uom || '').trim().toLowerCase()}`;
+      itemToKey.set(b.id, key);
+    });
+
+    // 2. Lacak Saldo Fisik Gudang & Serapan Terperinci Pos BOQ
+    const physicalBalance = new Map<string, number>();
+    const physicalReceived = new Map<string, number>();
+    const physicalConsumed = new Map<string, number>();
+    const boqItemConsumed = new Map<string, number>();
+    const stockHistory = new Set<string>();
 
     const stockRows: MutasiBarang[] = (stockRes.data || []).map((t: any) => {
-      const ownerKey = `${t.item_id}:${t.owner_type || 'KONTRAKTOR'}`;
-      const before = balance.get(ownerKey) || 0;
+      const targetItem = itemById.get(t.item_id);
+      const key = targetItem
+        ? itemToKey.get(t.item_id)!
+        : `${(t.nama_barang || '').trim().toLowerCase().replace(/\s+/g, ' ')}|${(t.uom || '').trim().toLowerCase()}`;
+      
+      const beforePhysical = physicalBalance.get(key) || 0;
       const incoming = ['MASUK', 'PENYESUAIAN_MASUK'].includes(t.transaction_type);
       const isVoid = t.is_batal || reversedIds.has(t.id);
       const delta = isVoid ? 0 : incoming ? Number(t.quantity) : -Number(t.quantity);
-      const after = before + delta;
+      const afterPhysical = beforePhysical + delta;
+
       if (!isVoid) {
-        balance.set(ownerKey, after);
-        if (t.transaction_type === 'MASUK') received.set(ownerKey, (received.get(ownerKey) || 0) + Number(t.quantity));
-        if (t.transaction_type === 'KELUAR') consumed.set(ownerKey, (consumed.get(ownerKey) || 0) + Number(t.quantity));
+        physicalBalance.set(key, afterPhysical);
+        if (incoming) {
+          physicalReceived.set(key, (physicalReceived.get(key) || 0) + Number(t.quantity));
+        } else {
+          physicalConsumed.set(key, (physicalConsumed.get(key) || 0) + Number(t.quantity));
+          boqItemConsumed.set(t.item_id, (boqItemConsumed.get(t.item_id) || 0) + Number(t.quantity));
+        }
+        stockHistory.add(t.item_id);
       }
+
       return {
         id: t.id,
         barang_id: t.item_id,
-        nama_barang: '',
+        nama_barang: targetItem?.description || t.nama_barang || 'Material',
         jenis: incoming ? 'MASUK' : 'KELUAR',
         jumlah: Number(t.quantity),
-        satuan: t.uom || 'Unit',
+        satuan: t.uom || targetItem?.uom || 'Unit',
         tujuan_keperluan: t.purpose || t.location || t.notes || '-',
         pic_penerima_penyerah: t.counterparty || '-',
         nomor_surat_jalan: t.reference_no || undefined,
         tanggal: t.occurred_at || t.created_at,
-        stok_sebelum: before,
-        stok_sesudah: after,
+        stok_sebelum: beforePhysical,
+        stok_sesudah: afterPhysical,
         catatan: t.notes || undefined,
         source_name: t.source_name || undefined,
         destination_name: t.destination_name || undefined,
@@ -308,15 +336,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
 
-    const mappedItems: ItemBarang[] = (boqRes.data || []).map((b: any) => {
+    // 3. Petakan Item BOQ Terperinci
+    const mappedItems: ItemBarang[] = rawBoq.map((b: any) => {
       const baseTarget = Number(b.quantity) || 0;
-      const ownerType = (b.remarks || '').toLowerCase().includes('by imk') ? 'IMK' : 'KONTRAKTOR';
-      const ownerKey = `${b.id}:${ownerType}`;
-      const masuk = received.get(ownerKey) || 0;
-      const keluar = consumed.get(ownerKey) || 0;
-      const progress = baseTarget > 0 ? (masuk / baseTarget) * 100 : 0;
+      const key = itemToKey.get(b.id)!;
+      const physicalStock = physicalBalance.get(key) || 0;
+      const masukFisik = physicalReceived.get(key) || 0;
+      const terpakaiDiPosIni = boqItemConsumed.get(b.id) || 0;
+      const sisaTargetPos = Math.max(baseTarget - terpakaiDiPosIni, 0);
+      const progress = baseTarget > 0 ? (terpakaiDiPosIni / baseTarget) * 100 : 0;
       const statusPemenuhan: ItemBarang['status_pemenuhan'] =
-        masuk > baseTarget ? 'Melebihi BOQ' : masuk >= baseTarget && baseTarget > 0 ? 'Terpenuhi' : masuk > 0 ? 'Dalam pemenuhan' : 'Belum dipenuhi';
+        terpakaiDiPosIni > baseTarget ? 'Melebihi BOQ' : terpakaiDiPosIni >= baseTarget && baseTarget > 0 ? 'Terpenuhi' : terpakaiDiPosIni > 0 ? 'Dalam pemenuhan' : 'Belum dipenuhi';
 
       return {
         id: b.id,
@@ -333,20 +363,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         qty_tambahan_disetujui: 0,
         target_kebutuhan_total: baseTarget,
         is_stock_item: Boolean(b.is_stock_item),
-        has_stock_history: stockHistory.has(b.id),
-        qty_masuk_total: masuk,
-        qty_keluar_total: keluar,
-        qty_pemenuhan_sisa: Math.max(baseTarget - masuk, 0),
+        has_stock_history: stockHistory.has(b.id) || physicalBalance.has(key),
+        qty_masuk_total: masukFisik,
+        qty_keluar_total: terpakaiDiPosIni,
+        qty_pemenuhan_sisa: sisaTargetPos,
         progress_pemenuhan: progress,
         status_pemenuhan: statusPemenuhan,
         satuan: b.uom || 'Unit',
         harga_satuan: Number(b.unit_rate || 0),
-        stok_saat_ini: balance.get(ownerKey) || 0,
+        stok_saat_ini: physicalStock,
         stok_minimum: 0,
-        status: computeItemStatus(balance.get(ownerKey) || 0, 0, stockHistory.has(b.id)),
+        status: computeItemStatus(physicalStock, 0, stockHistory.has(b.id) || physicalBalance.has(key)),
         keterangan: b.remarks || ''
       };
     });
+
+    // 4. Kelompokkan Material Fisik Terpadu (Pemasukan Disatukan, Pengeluaran Dirincikan)
+    const physicalGroupMap = new Map<string, {
+      id: string;
+      nama_barang: string;
+      satuan: string;
+      is_stock_item: boolean;
+      total_qty_boq: number;
+      budget_lines: PhysicalBudgetLine[];
+    }>();
+
+    mappedItems.forEach(item => {
+      const key = itemToKey.get(item.id)!;
+      if (!physicalGroupMap.has(key)) {
+        physicalGroupMap.set(key, {
+          id: item.id,
+          nama_barang: item.nama_barang,
+          satuan: item.satuan,
+          is_stock_item: item.is_stock_item,
+          total_qty_boq: 0,
+          budget_lines: []
+        });
+      }
+      const g = physicalGroupMap.get(key)!;
+      g.total_qty_boq += item.qty_boq;
+      if (item.is_stock_item) g.is_stock_item = true;
+      g.budget_lines.push({
+        id: item.id,
+        kode_boq: item.kode_boq,
+        kategori: item.kategori,
+        qty_boq: item.qty_boq,
+        qty_keluar_total: item.qty_keluar_total,
+        sisa_anggaran: item.qty_pemenuhan_sisa,
+        keterangan: item.keterangan
+      });
+    });
+
+    const calculatedPhysicalMaterials: PhysicalMaterialItem[] = Array.from(physicalGroupMap.entries()).map(([key, g]) => {
+      return {
+        id: g.id,
+        nama_barang: g.nama_barang,
+        satuan: g.satuan,
+        stok_fisik: physicalBalance.get(key) || 0,
+        total_qty_boq: g.total_qty_boq,
+        total_qty_masuk: physicalReceived.get(key) || 0,
+        total_qty_keluar: physicalConsumed.get(key) || 0,
+        is_stock_item: g.is_stock_item,
+        budget_lines: g.budget_lines
+      };
+    });
+
+    setPhysicalMaterials(calculatedPhysicalMaterials);
 
     const nameById = new Map(mappedItems.map(x => [x.id, x.nama_barang]));
     stockRows.forEach(x => {
@@ -703,6 +785,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         refreshData,
         setActiveWorkspaceId,
         items,
+        physicalMaterials,
         boqSections,
         stockMutations,
         cashMutations,

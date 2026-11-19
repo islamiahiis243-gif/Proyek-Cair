@@ -34,6 +34,28 @@ export interface ItemBarang {
   keterangan?: string;
 }
 
+export interface PhysicalBudgetLine {
+  id: string;
+  kode_boq: string;
+  kategori: string;
+  qty_boq: number;
+  qty_keluar_total: number;
+  sisa_anggaran: number;
+  keterangan?: string;
+}
+
+export interface PhysicalMaterialItem {
+  id: string; // ID item primer (untuk referensi transaksi masuk)
+  nama_barang: string;
+  satuan: string;
+  stok_fisik: number;
+  total_qty_boq: number;
+  total_qty_masuk: number;
+  total_qty_keluar: number;
+  is_stock_item: boolean;
+  budget_lines: PhysicalBudgetLine[];
+}
+
 export type JenisMutasiBarang = 'MASUK' | 'KELUAR';
 
 export interface MutasiBarang {

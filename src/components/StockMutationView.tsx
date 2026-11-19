@@ -35,6 +35,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 }) => {
   const {
     items,
+    physicalMaterials,
     stockMutations,
     addStockMutation,
     batalStockMutation,
@@ -53,6 +54,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
   // Form input states
   const [selectedItemId, setSelectedItemId] = useState<string>(preselectedItem ? preselectedItem.id : (items[0]?.id || ''));
+  const [selectedAllocationItemId, setSelectedAllocationItemId] = useState<string>('');
   const [mutationType, setMutationType] = useState<JenisMutasiBarang>(preselectedType || 'MASUK');
   const [mutationDate, setMutationDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [itemSearchQuery, setItemSearchQuery] = useState('');
@@ -98,29 +100,71 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     }
   }, [preselectedItem, preselectedType]);
 
-  const currentSelectedItem = useMemo(() => {
-    return items.find((it) => it.id === selectedItemId && it.is_stock_item) || items.find((it) => it.is_stock_item) || items[0];
-  }, [items, selectedItemId]);
+  // Material Fisik Terpadu yang aktif dipilih
+  const currentPhysicalMaterial = useMemo(() => {
+    if (!physicalMaterials || physicalMaterials.length === 0) return null;
+    if (selectedItemId) {
+      const found = physicalMaterials.find(
+        (pm) => pm.id === selectedItemId || pm.budget_lines.some((bl) => bl.id === selectedItemId)
+      );
+      if (found) return found;
+    }
+    return physicalMaterials.find((pm) => pm.is_stock_item) || physicalMaterials[0];
+  }, [physicalMaterials, selectedItemId]);
 
-  const filteredItemsForPicker = useMemo(() => {
-    const stockItems = items.filter((it) => it.is_stock_item);
+  // Sinkronisasi Alokasi Pos BOQ ketika material fisik berganti
+  useEffect(() => {
+    if (currentPhysicalMaterial) {
+      const lines = currentPhysicalMaterial.budget_lines;
+      const isCurrentValid = lines.some((bl) => bl.id === selectedAllocationItemId);
+      if (!isCurrentValid && lines.length > 0) {
+        // Cek jika preselectedItem cocok
+        const matchingPre = preselectedItem ? lines.find((bl) => bl.id === preselectedItem.id) : null;
+        const targetLine = matchingPre || lines[0];
+        setSelectedAllocationItemId(targetLine.id);
+        if (mutationType === 'KELUAR') {
+          setPurpose(`${targetLine.kode_boq} - ${targetLine.kategori}`);
+        }
+      }
+    }
+  }, [currentPhysicalMaterial, preselectedItem, mutationType]);
+
+  const selectedBudgetLine = useMemo(() => {
+    if (!currentPhysicalMaterial) return null;
+    return (
+      currentPhysicalMaterial.budget_lines.find((bl) => bl.id === selectedAllocationItemId) ||
+      currentPhysicalMaterial.budget_lines[0] ||
+      null
+    );
+  }, [currentPhysicalMaterial, selectedAllocationItemId]);
+
+  // Autocomplete pencarian material fisik
+  const filteredPhysicalMaterialsForPicker = useMemo(() => {
+    const list = physicalMaterials.filter((pm) => pm.is_stock_item);
     if (!itemSearchQuery.trim()) {
-      return stockItems.slice(0, 15);
+      return list.slice(0, 15);
     }
     const q = itemSearchQuery.toLowerCase();
-    return stockItems
+    return list
       .filter(
-        (it) =>
-          (it.nama_barang && it.nama_barang.toLowerCase().includes(q)) ||
-          (it.kode_boq && it.kode_boq.toLowerCase().includes(q)) ||
-          (it.kategori && it.kategori.toLowerCase().includes(q))
+        (pm) =>
+          pm.nama_barang.toLowerCase().includes(q) ||
+          pm.satuan.toLowerCase().includes(q) ||
+          pm.budget_lines.some(
+            (bl) => bl.kode_boq.toLowerCase().includes(q) || bl.kategori.toLowerCase().includes(q)
+          )
       )
       .slice(0, 25);
-  }, [items, itemSearchQuery]);
+  }, [physicalMaterials, itemSearchQuery]);
 
-  const currentStock = currentSelectedItem?.stok_saat_ini || 0;
-  const projectedStock = mutationType === 'MASUK' ? currentStock + Number(qty || 0) : Math.max(0, currentStock - Number(qty || 0));
-  const projectedStatus = currentSelectedItem ? computeItemStatus(projectedStock, currentSelectedItem.stok_minimum) : 'Tidak Tersedia';
+  const currentStock = currentPhysicalMaterial?.stok_fisik || 0;
+  const projectedStock =
+    mutationType === 'MASUK'
+      ? currentStock + Number(qty || 0)
+      : Math.max(0, currentStock - Number(qty || 0));
+  const projectedStatus = currentPhysicalMaterial
+    ? computeItemStatus(projectedStock, 0)
+    : 'Tidak Tersedia';
 
   const filteredMutations = useMemo(() => {
     return stockMutations.filter((m) => {
@@ -142,7 +186,6 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     }
     setMutationType(type);
     setQty(1);
-    setPurpose('');
     setPic(user.name);
     setSuratJalan('');
     setNotes('');
@@ -153,6 +196,17 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     setDestinationName(type === 'MASUK' ? 'Gudang Utama' : 'Area Proyek UDU');
     setOwnerType('KONTRAKTOR');
     setErrorMessage(null);
+
+    if (type === 'KELUAR' && currentPhysicalMaterial) {
+      const bl = currentPhysicalMaterial.budget_lines[0];
+      if (bl) {
+        setSelectedAllocationItemId(bl.id);
+        setPurpose(`${bl.kode_boq} - ${bl.kategori}`);
+      }
+    } else {
+      setPurpose('');
+    }
+
     setIsModalOpen(true);
   };
 
@@ -160,8 +214,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     e.preventDefault();
     if (submitting) return;
 
-    if (!selectedItemId) {
-      setErrorMessage('Pilih barang / material dari katalog.');
+    if (!currentPhysicalMaterial) {
+      setErrorMessage('Pilih material fisik dari katalog.');
       return;
     }
     if (qty <= 0) {
@@ -169,21 +223,36 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       return;
     }
     if (mutationType === 'KELUAR' && currentStock < qty) {
-      setErrorMessage(`Stok saat ini (${currentStock}) tidak mencukupi untuk pengeluaran ${qty}.`);
+      setErrorMessage(
+        `Stok fisik saat ini di gudang (${currentStock} ${currentPhysicalMaterial.satuan}) tidak mencukupi untuk pengeluaran ${qty} ${currentPhysicalMaterial.satuan}.`
+      );
       return;
     }
+
+    // Pemasukan disatukan (mengacu pada ID material fisik agregat), Pengeluaran dirincikan (mengacu pada ID pos BOQ spesifik)
+    const targetItemId =
+      mutationType === 'KELUAR'
+        ? (selectedAllocationItemId || currentPhysicalMaterial.id)
+        : currentPhysicalMaterial.id;
 
     setSubmitting(true);
     setErrorMessage(null);
 
+    const defaultPurpose =
+      mutationType === 'MASUK'
+        ? 'Penerimaan logistik masuk gudang'
+        : selectedBudgetLine
+        ? `Pemakaian: ${selectedBudgetLine.kode_boq} - ${selectedBudgetLine.kategori}`
+        : 'Pemakaian material proyek';
+
     try {
       const res = await addStockMutation({
-        barang_id: selectedItemId,
-        nama_barang: currentSelectedItem?.nama_barang || 'Material',
+        barang_id: targetItemId,
+        nama_barang: currentPhysicalMaterial.nama_barang,
         jenis: mutationType,
         jumlah: qty,
-        satuan: currentSelectedItem?.satuan || 'Unit',
-        tujuan_keperluan: purpose,
+        satuan: currentPhysicalMaterial.satuan,
+        tujuan_keperluan: purpose || defaultPurpose,
         pic_penerima_penyerah: pic,
         nomor_surat_jalan: suratJalan || undefined,
         tanggal: new Date(mutationDate).toISOString(),
@@ -192,7 +261,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         destination_name: destinationName || undefined,
         recipient_name: pic || undefined,
         owner_type: ownerType,
-        purpose: purpose
+        purpose: purpose || defaultPurpose
       });
 
       if (!res.success) {
@@ -258,10 +327,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         gantiTarget.id,
         {
           barang_id: selectedItemId,
-          nama_barang: currentSelectedItem?.nama_barang || 'Material',
+          nama_barang: currentPhysicalMaterial?.nama_barang || 'Material',
           jenis: mutationType,
           jumlah: qty,
-          satuan: currentSelectedItem?.satuan || 'Unit',
+          satuan: currentPhysicalMaterial?.satuan || 'Unit',
           tujuan_keperluan: purpose,
           pic_penerima_penyerah: pic,
           nomor_surat_jalan: suratJalan || undefined,
@@ -629,38 +698,53 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   <label className="block font-semibold text-slate-700 dark:text-slate-300">
                     Pilih Material / Barang <span className="text-rose-500">*</span>
                   </label>
-                  {currentSelectedItem && (
+                  {currentPhysicalMaterial && (
                     <span className="text-[10px] text-slate-400 font-mono">
-                      {currentSelectedItem.kode_boq} · Stok: {currentSelectedItem.stok_saat_ini} {currentSelectedItem.satuan}
+                      Stok Fisik Gudang: <b className="text-slate-700 dark:text-slate-200">{currentStock} {currentPhysicalMaterial.satuan}</b>
                     </span>
                   )}
                 </div>
 
                 {/* Tampilan Material Terpilih */}
-                {currentSelectedItem && !isItemSearchOpen ? (
-                  <div className="flex items-center justify-between gap-3 p-3 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/30">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-bold text-xs text-slate-900 dark:text-white truncate">
-                        {currentSelectedItem.nama_barang}
+                {currentPhysicalMaterial && !isItemSearchOpen ? (
+                  <div className={`p-3 rounded-xl border transition-colors ${
+                    mutationType === 'MASUK'
+                      ? 'border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/30'
+                      : 'border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/30'
+                  }`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                            {currentPhysicalMaterial.nama_barang}
+                          </span>
+                          <span className={`text-[9px] px-2 py-0.5 rounded-full font-semibold uppercase ${
+                            mutationType === 'MASUK'
+                              ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                              : 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
+                          }`}>
+                            {mutationType === 'MASUK' ? 'Penerimaan Fisik Terpadu' : 'Material Fisik Gudang'}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-2 mt-1">
+                          <span>Satuan: <b className="text-slate-700 dark:text-slate-300">{currentPhysicalMaterial.satuan}</b></span>
+                          <span>·</span>
+                          <span>Saldo Fisik Saat Ini: <b className={currentStock > 0 ? "text-emerald-600 dark:text-emerald-400 font-mono" : "text-rose-600 dark:text-rose-400 font-mono"}>{currentStock} {currentPhysicalMaterial.satuan}</b></span>
+                          <span>·</span>
+                          <span>Total Kebutuhan Proyek: <b className="text-blue-600 dark:text-blue-400 font-mono">{currentPhysicalMaterial.total_qty_boq.toLocaleString('id-ID', { maximumFractionDigits: 4 })} {currentPhysicalMaterial.satuan}</b> ({currentPhysicalMaterial.budget_lines.length} Pos Alokasi BOQ)</span>
+                        </div>
                       </div>
-                      <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-0.5">
-                        <span className="font-mono text-blue-600 dark:text-blue-400 font-semibold">{currentSelectedItem.kode_boq}</span>
-                        <span>·</span>
-                        <span>Satuan: <b className="text-slate-700 dark:text-slate-300">{currentSelectedItem.satuan}</b></span>
-                        <span>·</span>
-                        <span>Stok: <b className={currentStock > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>{currentStock} {currentSelectedItem.satuan}</b></span>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsItemSearchOpen(true);
+                          setItemSearchQuery('');
+                        }}
+                        className="shrink-0 px-3 py-1.5 text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 bg-white dark:bg-slate-800 rounded-lg border border-blue-200 dark:border-blue-800 shadow-2xs hover:bg-blue-50 dark:hover:bg-slate-700 transition-colors"
+                      >
+                        Ganti Material
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsItemSearchOpen(true);
-                        setItemSearchQuery('');
-                      }}
-                      className="shrink-0 px-3 py-1.5 text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 bg-white dark:bg-slate-800 rounded-lg border border-blue-200 dark:border-blue-800 shadow-2xs hover:bg-blue-50 dark:hover:bg-slate-700 transition-colors"
-                    >
-                      Cari Material Lain
-                    </button>
                   </div>
                 ) : (
                   /* Kolom Search Input dengan Hasil Autocomplete */
@@ -670,7 +754,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                       <input
                         type="text"
                         autoFocus
-                        placeholder="Ketik nama material, kategori, atau kode BOQ (cth: Kayu, Semen, Besi, Pasir)..."
+                        placeholder="Ketik nama material fisik (cth: Pasir, Semen, Kayu, Besi, Batako)..."
                         value={itemSearchQuery}
                         onChange={(e) => {
                           setItemSearchQuery(e.target.value);
@@ -679,7 +763,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                         onFocus={() => setIsItemSearchOpen(true)}
                         className="w-full pl-9 pr-8 py-2.5 bg-slate-50 dark:bg-slate-800 border border-blue-400 dark:border-blue-500 text-slate-900 dark:text-white rounded-xl text-xs focus:ring-2 focus:ring-blue-500/20 font-medium"
                       />
-                      {currentSelectedItem && (
+                      {currentPhysicalMaterial && (
                         <button
                           type="button"
                           onClick={() => setIsItemSearchOpen(false)}
@@ -694,43 +778,54 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     {/* Dropdown Hasil Pencarian Autocomplete */}
                     {isItemSearchOpen && (
                       <div className="absolute left-0 right-0 mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl z-50 divide-y divide-slate-100 dark:divide-slate-700/60">
-                        {filteredItemsForPicker.length > 0 ? (
-                          filteredItemsForPicker.map((it) => (
+                        {filteredPhysicalMaterialsForPicker.length > 0 ? (
+                          filteredPhysicalMaterialsForPicker.map((pm) => (
                             <button
-                              key={it.id}
+                              key={pm.id}
                               type="button"
                               onClick={() => {
-                                setSelectedItemId(it.id);
+                                setSelectedItemId(pm.id);
+                                if (pm.budget_lines.length > 0) {
+                                  setSelectedAllocationItemId(pm.budget_lines[0].id);
+                                  if (mutationType === 'KELUAR') {
+                                    setPurpose(`${pm.budget_lines[0].kode_boq} - ${pm.budget_lines[0].kategori}`);
+                                  }
+                                }
                                 setIsItemSearchOpen(false);
                                 setItemSearchQuery('');
                               }}
                               className={`w-full text-left p-2.5 transition-colors flex items-center justify-between gap-2 hover:bg-blue-50 dark:hover:bg-slate-700/60 ${
-                                it.id === selectedItemId ? 'bg-blue-50/80 dark:bg-slate-700/90 font-semibold' : ''
+                                pm.id === currentPhysicalMaterial?.id ? 'bg-blue-50/80 dark:bg-slate-700/90 font-semibold' : ''
                               }`}
                             >
                               <div className="min-w-0 flex-1">
                                 <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
-                                  {it.nama_barang}
+                                  {pm.nama_barang}
                                 </div>
-                                <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
-                                  <span className="font-mono text-blue-600 dark:text-blue-400">{it.kode_boq}</span>
+                                <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5 truncate">
+                                  <span className="font-mono text-blue-600 dark:text-blue-400 font-semibold">
+                                    {pm.budget_lines.length} Pos BOQ
+                                  </span>
                                   <span>·</span>
-                                  <span className="truncate">{it.kategori}</span>
+                                  <span className="truncate">
+                                    {pm.budget_lines.slice(0, 2).map((bl) => bl.kode_boq).join(', ')}
+                                    {pm.budget_lines.length > 2 ? '...' : ''}
+                                  </span>
                                 </div>
                               </div>
                               <div className="text-right shrink-0">
                                 <div className="text-[10px] font-mono font-bold text-slate-700 dark:text-slate-300">
-                                  Stok: {it.stok_saat_ini} {it.satuan}
+                                  Stok Fisik: {pm.stok_fisik} {pm.satuan}
                                 </div>
                                 <div className="text-[9px] text-slate-400">
-                                  BOQ: {it.qty_boq} {it.satuan}
+                                  Total Rencana: {pm.total_qty_boq.toLocaleString('id-ID')} {pm.satuan}
                                 </div>
                               </div>
                             </button>
                           ))
                         ) : (
                           <div className="p-4 text-center text-xs text-slate-400">
-                            Tidak ditemukan material dengan kata kunci "{itemSearchQuery}".
+                            Tidak ditemukan material fisik dengan kata kunci "{itemSearchQuery}".
                           </div>
                         )}
                       </div>
@@ -738,6 +833,90 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* KHUSUS PENGELUARAN: Rincian Alokasi Pos BOQ (Pengeluaran Dirincikan) */}
+              {mutationType === 'KELUAR' && currentPhysicalMaterial && (
+                <div className="p-3 rounded-xl border border-amber-300 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                      Alokasi Pos Pekerjaan BOQ <span className="text-rose-500">*</span>
+                    </label>
+                    <span className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">
+                      {currentPhysicalMaterial.budget_lines.length} pos pekerjaan tersedia
+                    </span>
+                  </div>
+
+                  {currentPhysicalMaterial.budget_lines.length === 1 ? (
+                    <div className="p-2.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                          {currentPhysicalMaterial.budget_lines[0].kode_boq}
+                        </span>
+                        <span className="text-[10px] text-slate-400">Tunggal / Otomatis</span>
+                      </div>
+                      <div className="text-slate-800 dark:text-slate-200 font-semibold mt-0.5">
+                        {currentPhysicalMaterial.budget_lines[0].kategori}
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 flex gap-3 font-mono">
+                        <span>Target: <b>{currentPhysicalMaterial.budget_lines[0].qty_boq.toLocaleString('id-ID')}</b></span>
+                        <span>Terpakai: <b className="text-rose-600 dark:text-rose-400">{currentPhysicalMaterial.budget_lines[0].qty_keluar_total.toLocaleString('id-ID')}</b></span>
+                        <span>Sisa Kuota: <b className="text-emerald-600 dark:text-emerald-400">{currentPhysicalMaterial.budget_lines[0].sisa_anggaran.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}</b></span>
+                      </div>
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedAllocationItemId}
+                      onChange={(e) => {
+                        const newId = e.target.value;
+                        setSelectedAllocationItemId(newId);
+                        const line = currentPhysicalMaterial.budget_lines.find((bl) => bl.id === newId);
+                        if (line) {
+                          setPurpose(`${line.kode_boq} - ${line.kategori}`);
+                        }
+                      }}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700/80 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-amber-500/20"
+                    >
+                      {currentPhysicalMaterial.budget_lines.map((line) => (
+                        <option key={line.id} value={line.id}>
+                          [{line.kode_boq}] {line.kategori} — Rencana: {line.qty_boq.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan} (Sisa: {line.sisa_anggaran.toLocaleString('id-ID')})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {selectedBudgetLine && currentPhysicalMaterial.budget_lines.length > 1 && (
+                    <div className="p-2 rounded-lg bg-white/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-[11px] grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Rencana Pos</span>
+                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                          {selectedBudgetLine.qty_boq.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Sudah Terpakai</span>
+                        <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">
+                          {selectedBudgetLine.qty_keluar_total.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block">Sisa Anggaran Pos</span>
+                        <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                          {selectedBudgetLine.sisa_anggaran.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedBudgetLine && qty > selectedBudgetLine.sisa_anggaran && (
+                    <div className="text-[10px] text-amber-700 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-900/40 p-2 rounded-lg flex items-center gap-1.5">
+                      <span>⚠️</span>
+                      <span>
+                        Kuantitas keluar ({qty} {currentPhysicalMaterial.satuan}) melebihi sisa anggaran pos ini ({selectedBudgetLine.sisa_anggaran.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}). Dokumen tetap dapat diterbitkan dan memerlukan otorisasi pengawas.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Tanggal Mutasi & Jumlah Kuantitas */}
               <div className="grid grid-cols-2 gap-3">
@@ -756,7 +935,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Jumlah ({currentSelectedItem?.satuan || 'Unit'}) <span className="text-rose-500">*</span>
+                    Jumlah ({currentPhysicalMaterial?.satuan || 'Unit'}) <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="number"
@@ -770,19 +949,28 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 </div>
               </div>
 
-              {/* Ringkasan Proyeksi Sisa Stok & Target BOQ */}
+              {/* Ringkasan Proyeksi Sisa Stok Fisik Gudang */}
               <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Proyeksi Sisa Stok Fisik</span>
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Proyeksi Saldo Fisik Gudang</span>
                   <div className="text-xs font-bold text-slate-900 dark:text-white font-mono mt-0.5">
-                    {currentStock} → <span className={mutationType === 'MASUK' ? 'text-emerald-500 font-extrabold' : 'text-rose-500 font-extrabold'}>{projectedStock}</span> {currentSelectedItem?.satuan}
+                    {currentStock} →{' '}
+                    <span
+                      className={
+                        mutationType === 'MASUK' ? 'text-emerald-500 font-extrabold' : 'text-rose-500 font-extrabold'
+                      }
+                    >
+                      {projectedStock}
+                    </span>{' '}
+                    {currentPhysicalMaterial?.satuan}
                   </div>
                 </div>
-                {currentSelectedItem && (
+                {currentPhysicalMaterial && (
                   <div className="text-right">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Target Kontrak BOQ</span>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Kebutuhan Proyek</span>
                     <span className="text-xs font-mono font-semibold text-blue-600 dark:text-blue-400">
-                      {currentSelectedItem.qty_boq.toLocaleString('id-ID', { maximumFractionDigits: 4 })} {currentSelectedItem.satuan}
+                      {currentPhysicalMaterial.total_qty_boq.toLocaleString('id-ID', { maximumFractionDigits: 4 })}{' '}
+                      {currentPhysicalMaterial.satuan}
                     </span>
                   </div>
                 )}
