@@ -1,0 +1,62 @@
+Berikut adalah **rangkuman menyeluruh** atas kesepakatan desain arsitektur dan alur kerja di Proyek Cair:
+
+---
+
+### 1. Penghapusan Total "Persona vs Role" $\rightarrow$ Istilah Tunggal: "Jabatan"
+- **Masalah Lama:** Pemisahan antara istilah *"Persona"* dan *"Role"* adalah bentuk *over-engineering* teknis yang membingungkan pengguna di lapangan.
+- **Solusi Baru:** Menghapus dualitas tersebut secara total. Sistem kini hanya mengenal satu istilah resmi: **"Jabatan"** (misalnya: *Clerk*, *Foreman*, *Supervisor*, *Dept. Manager*, *KTT/Project Manager*, *Direktur*).
+- **Hak Akses Otomatis:** Setiap **Jabatan** telah membawa hak operasionalnya masing-masing secara otomatis (contoh: *Clerk* otomatis bisa membuat draf mutasi, *Supervisor* menyetujui, *Direktur* membubuhkan TTE/QR). Tidak ada lagi formulir izin atau JSON manual yang rumit.
+
+---
+
+### 2. Tiga Pilar Identitas yang Jelas & Manusiawi
+1. **Pengguna Personal:** Individu pemilik akun Google/email asli (misalnya: `sumarlin.1103@gmail.com` atau `rrollyy6@gmail.com`). Cukup 1 akun untuk selamanya, tidak perlu membuat email baru.
+2. **Perusahaan (Tenant):** Badan usaha resmi yang menaungi pekerjaan (`CV. MENARA MEGAH`).
+3. **Jabatan (Impersonate):** Wewenang resmi yang diberikan oleh CSA kepada pengguna personal untuk **bertindak untuk dan atas nama perusahaan** pada proyek tertentu.
+
+---
+
+### 3. Tampilan Widget Header (Dipertahankan Penuh)
+Format tampilan pada bilah atas (*Header*) tetap mengacu 100% pada desain yang sudah terbukti ringkas dan elegan:
+
+$$\text{[ Ikon Hexagon ]} \quad\cdot\quad \mathbf{0024376584714000} \quad\cdot\quad \mathbf{MENARA\ MEGAH} \quad\cdot\quad \mathbf{[ \ CLERK\ \triangledown \ ]}$$
+
+- **NPWP:** Kepastian identitas hukum perusahaan di mata hukum.
+- **Nama Tenant:** Kepastian visual perusahaan yang sedang diwakili.
+- **Pill Badge Jabatan:** Menunjukkan kapasitas kerja yang sedang aktif dijalankan detik itu juga.
+
+---
+
+### 4. Solusi Masalah Multi-Proyek & Multi-Jabatan (Konsep "Topi Kerja")
+Setiap undangan **RFIN-B** yang diterbitkan oleh CSA dan diklaim oleh pengguna adalah **1 Paket Penugasan Resmi**:
+$$\text{Perusahaan} \;\longrightarrow\; \text{Proyek} \;\longrightarrow\; \text{Jabatan}$$
+
+Semua penugasan yang dimiliki pengguna berkumpul rapi di dalam **Dropdown Header**:
+
+#### Kasus A: Dua Proyek dengan Dua Jabatan Berbeda
+*(Contoh: Sumarlin sebagai Clerk di Proyek UDU, dan sebagai Supervisor di Proyek Batan)*
+- **Tampilan Dropdown:**
+  - `UDU Project` $\rightarrow$ `[ ✓ CLERK ]` *(Sedang Aktif)*
+  - `Proyek Batan` $\rightarrow$ `[ SUPERVISOR ]` *(Klik untuk beralih)*
+- **Hasil:** Cukup 1 klik, sistem langsung memindahkan data proyek sekaligus menyesuaikan wewenang jabatannya.
+
+#### Kasus B: Satu Proyek dengan Beberapa Jabatan Berbeda (Rangkap Jabatan)
+*(Contoh Nyata Sumarlin di UDU Project: sebagai pembuat draf sekaligus penyetujui)*
+- **Tampilan Dropdown:**
+  - `UDU Project` $\rightarrow$ `[ ✓ CLERK ]` *(Dipakai saat sedang input draf mutasi barang)*
+  - `UDU Project` $\rightarrow$ `[ SUPERVISOR ]` *(Dipakai saat memeriksa & menyetujui dokumen)*
+- **Hasil:** Dokumen tercatat sah di audit (*"Dibuat oleh: Sumarlin (Clerk)"* lalu *"Disetujui oleh: Sumarlin (Spv)"*). Pengguna tetap bekerja dengan 1 akun, hanya berganti "topi" di dropdown.
+
+---
+
+### 5. Alur CSA yang Praktis & Otomatis
+1. CSA menerbitkan undangan RFIN-B dengan memilih: **Email Penerima** + **Proyek** + **Jabatan**.
+2. Calon anggota menerima notifikasi in-house dan mengklaim kode RFIN-B.
+3. Penugasan tersebut **otomatis masuk ke Dropdown Header pengguna**.
+4. Tidak ada konfigurasi tambahan, tidak ada input manual yang membingungkan.
+
+---
+
+### Prinsip Utama yang Dipegang Teguh:
+> **"Sederhanakan, jangan rumitkan. Baik bukan berarti rumit."**  
+> Antarmuka 100% ramah pengguna, berbahasa Indonesia alami, mendukung tema Terang/Gelap (*Light/Dark*), dan transparan dalam tata kelola proyek.

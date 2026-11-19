@@ -60,7 +60,20 @@ export async function testSupabaseConnection(_url?: string, _anonKey?: string): 
 
 export interface ActiveContextPersona { persona_code:string; display_name:string; description:string }
 export interface ActiveContextWorkspace { id:string; type:'PERSONAL'|'COMPANY'; name:string; status:string; company_id:string|null; access_basis:string; personas?:ActiveContextPersona[]; active_persona_code?:string|null }
-export interface ActiveContextProject { id:string; workspace_id:string; project_code:string|null; name:string; status:string; membership_id:string; permissions:string[] }
+export interface ActiveContextProject {
+  id: string;
+  workspace_id: string;
+  company_id?: string;
+  company_name?: string;
+  company_npwp?: string;
+  project_code: string | null;
+  name: string;
+  status: string;
+  membership_id: string;
+  role_code?: string;
+  role_name?: string;
+  permissions: string[];
+}
 export interface ActiveContext { authenticated:boolean; user_id?:string; is_platform_super_admin?:boolean; workspaces:ActiveContextWorkspace[]; projects:ActiveContextProject[] }
 export async function resolveMyActiveContext():Promise<ActiveContext>{
  const {data,error}=await getSupabaseClient().rpc('resolve_my_active_context');

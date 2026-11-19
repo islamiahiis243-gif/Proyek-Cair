@@ -103,7 +103,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
 
   const handleOpenModal = (t: JenisMutasiKas) => {
     if (!rolePermissions.canIssue) {
-      setErrorMessage(`Peran Anda (${activeRole}) tidak memiliki wewenang mencatat kas baru. Wewenang penerbitan transaksi dimiliki oleh Clerk.`);
+      setErrorMessage(`Jabatan Anda (${activeRole}) tidak memiliki wewenang mencatat kas baru. Wewenang penerbitan transaksi dimiliki oleh Clerk.`);
       return;
     }
     setJenis(t);

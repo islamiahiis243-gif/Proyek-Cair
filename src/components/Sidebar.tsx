@@ -94,7 +94,7 @@ export const Sidebar: React.FC = () => {
   } else {
     // Mode Impersonate (Karyawan / Anggota Proyek)
     modeTitle = activeCompany.name;
-    modeSubtitle = `Peran: ${activeRole}`;
+    modeSubtitle = `Jabatan: ${activeRole}`;
     ModeIcon = Hexagon;
     themeAccent = 'amber';
     navItems = [

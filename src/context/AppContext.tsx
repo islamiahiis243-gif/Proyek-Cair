@@ -533,13 +533,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const actorTag = `${user.name} (${activeRole})`;
 
       if (nextStatus === 'DIPERIKSA') {
-        if (!rolePermissions.canCheck) throw new Error('Peran Anda tidak memiliki hak untuk Memeriksa dokumen ini.');
+        if (!rolePermissions.canCheck) throw new Error('Jabatan Anda tidak memiliki hak untuk Memeriksa dokumen ini.');
         payload.diperiksa_oleh = actorTag;
       } else if (nextStatus === 'DISETUJUI') {
-        if (!rolePermissions.canApprove) throw new Error('Peran Anda tidak memiliki hak untuk Menyetujui dokumen ini.');
+        if (!rolePermissions.canApprove) throw new Error('Jabatan Anda tidak memiliki hak untuk Menyetujui dokumen ini.');
         payload.disetujui_oleh = actorTag;
       } else if (nextStatus === 'MENGETAHUI') {
-        if (!rolePermissions.canAcknowledge) throw new Error('Peran Anda tidak memiliki hak untuk Mengesahkan (TTE/QR) dokumen ini.');
+        if (!rolePermissions.canAcknowledge) throw new Error('Jabatan Anda tidak memiliki hak untuk Mengesahkan (TTE/QR) dokumen ini.');
         payload.mengetahui_oleh = actorTag;
         payload.tte_qr_code = `TTE-${activeCompany.npwp}-${id.slice(0, 8)}-${Date.now()}`;
       }
@@ -648,13 +648,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const actorTag = `${user.name} (${activeRole})`;
 
       if (nextStatus === 'DIPERIKSA') {
-        if (!rolePermissions.canCheck) throw new Error('Peran Anda tidak memiliki hak untuk Memeriksa dokumen ini.');
+        if (!rolePermissions.canCheck) throw new Error('Jabatan Anda tidak memiliki hak untuk Memeriksa dokumen ini.');
         payload.diperiksa_oleh = actorTag;
       } else if (nextStatus === 'DISETUJUI') {
-        if (!rolePermissions.canApprove) throw new Error('Peran Anda tidak memiliki hak untuk Menyetujui dokumen ini.');
+        if (!rolePermissions.canApprove) throw new Error('Jabatan Anda tidak memiliki hak untuk Menyetujui dokumen ini.');
         payload.disetujui_oleh = actorTag;
       } else if (nextStatus === 'MENGETAHUI') {
-        if (!rolePermissions.canAcknowledge) throw new Error('Peran Anda tidak memiliki hak untuk Mengesahkan (TTE/QR) dokumen ini.');
+        if (!rolePermissions.canAcknowledge) throw new Error('Jabatan Anda tidak memiliki hak untuk Mengesahkan (TTE/QR) dokumen ini.');
         payload.mengetahui_oleh = actorTag;
         payload.tte_qr_code = `TTE-${activeCompany.npwp}-${id.slice(0, 8)}-${Date.now()}`;
       }

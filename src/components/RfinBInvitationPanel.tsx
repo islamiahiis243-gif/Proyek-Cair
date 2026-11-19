@@ -88,7 +88,7 @@ export const RfinBInvitationPanel: React.FC<{
     setCopyState('');
 
     if (!email.trim() || !selectedRole || selectedProjectIds.length === 0) {
-      setError('Mohon lengkapi email penerima, peran penugasan, dan minimal satu project.');
+      setError('Mohon lengkapi email penerima, jabatan penugasan, dan minimal satu proyek.');
       return;
     }
 
@@ -159,9 +159,9 @@ export const RfinBInvitationPanel: React.FC<{
             <KeyRound className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-slate-900 dark:text-white">Penerbitan Undangan RFIN-B (Anggota Proyek)</h2>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">Penerbitan Undangan Jabatan Tim (RFIN-B)</h2>
             <p className="text-xs text-slate-500">
-              Terbitkan kode untuk calon anggota tim. Penerima dapat memasukkan kode ini di menu Aktivasi RFIN-B untuk mendapatkan peran Impersonate.
+              Terbitkan kode untuk calon anggota tim. Penerima dapat memasukkan kode ini di menu Aktivasi RFIN-B untuk mengaktifkan Jabatan resmi pada proyek.
             </p>
           </div>
         </div>
@@ -255,10 +255,10 @@ export const RfinBInvitationPanel: React.FC<{
             </div>
           </div>
 
-          {/* Pemilihan Peran */}
+          {/* Pemilihan Jabatan */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              Tentukan Peran Impersonate <span className="text-rose-500">*</span>
+              Pilih Jabatan Penugasan pada Proyek <span className="text-rose-500">*</span>
             </label>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {ROLES.map((r) => {

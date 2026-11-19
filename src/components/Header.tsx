@@ -12,7 +12,8 @@ import {
   LogOut,
   Wallet,
   CheckCircle2,
-  Database
+  Database,
+  FolderKanban
 } from 'lucide-react';
 import { formatRupiah } from '../lib/pdfGenerator';
 import { ImpersonateRole, AppMode } from '../types';
@@ -30,6 +31,10 @@ export const Header: React.FC = () => {
     activeRole,
     setActiveRole,
     activeCompany,
+    setActiveCompany,
+    activeProjectId,
+    setActiveProjectId,
+    activeContext,
     supabaseConfig,
     setCurrentView
   } = useApp();
@@ -48,17 +53,46 @@ export const Header: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const roles: Array<{ role: ImpersonateRole; label: string; desc: string }> = [
-    { role: 'Clerk', label: 'Clerk', desc: 'Staf Administrasi / Logistik · Terbitkan & Input Transaksi' },
+  const mapRoleCode = (code?: string): ImpersonateRole => {
+    if (!code) return 'Clerk';
+    const upper = code.toUpperCase();
+    if (upper === 'CLERK') return 'Clerk';
+    if (upper === 'FOREMAN') return 'Foreman';
+    if (upper === 'SUPERVISOR' || upper === 'SPV') return 'Spv.';
+    if (upper === 'DEPT_MANAGER' || upper === 'MANAGER') return 'Dept. Manager';
+    if (upper === 'KTT_PM' || upper === 'PM') return 'KTT/Proj. Manager';
+    if (upper === 'CEO' || upper === 'DIRECTOR' || upper === 'DIREKTUR') return 'CEO/Direktur';
+    return 'Clerk';
+  };
+
+  const defaultRoles: Array<{ role: ImpersonateRole; label: string; desc: string }> = [
+    { role: 'Clerk', label: 'Clerk', desc: 'Staf Administrasi / Logistik · Input Transaksi & Draf' },
     { role: 'Foreman', label: 'Foreman', desc: 'Mandor / Pengawas Lapangan · Diperiksa Oleh' },
-    { role: 'Spv.', label: 'Spv. (Supervisor)', desc: 'Pengawas Teknis · Diperiksa & Disetujui Oleh' },
+    { role: 'Spv.', label: 'Spv. (Supervisor)', desc: 'Pengawas Teknis Divisi · Disetujui Oleh' },
     { role: 'Dept. Manager', label: 'Dept. Manager', desc: 'Manajer Bagian · Disetujui & TTE/QR' },
     { role: 'KTT/Proj. Manager', label: 'KTT / Project Manager', desc: 'Kepala Teknik Tambang / PM · Mengetahui & TTE/QR' },
-    { role: 'CEO/Direktur', label: 'CEO / Direktur', desc: 'Direktur Utama · Otorisasi Puncak & TTE/QR' }
+    { role: 'CEO/Direktur', label: 'CEO / Direktur', desc: 'Direktur Utama Perusahaan · Otorisasi Puncak & TTE/QR' }
   ];
 
   const handleSelectRole = (role: ImpersonateRole) => {
     setActiveRole(role);
+    setAppMode('IMPERSONATE');
+    setDropdownOpen(false);
+  };
+
+  const handleSelectAssignment = (proj: any) => {
+    const role = mapRoleCode(proj.role_code);
+    setActiveRole(role);
+    if (proj.company_id && proj.company_name) {
+      setActiveCompany({
+        id: proj.company_id,
+        name: proj.company_name,
+        npwp: proj.company_npwp || activeCompany.npwp
+      });
+    }
+    if (proj.id) {
+      setActiveProjectId(proj.id);
+    }
     setAppMode('IMPERSONATE');
     setDropdownOpen(false);
   };
@@ -77,6 +111,10 @@ export const Header: React.FC = () => {
     setAppMode('PSA');
     setDropdownOpen(false);
   };
+
+  const userAssignments = activeContext?.projects || [];
+  const isCSA = (activeContext?.workspaces || []).some(w => w.type === 'COMPANY' && w.status === 'ACTIVE') || appMode === 'CSA';
+  const isPSA = activeContext?.is_platform_super_admin || user.email === 'islamiahiis243@gmail.com' || appMode === 'PSA';
 
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between gap-3 px-3 py-2.5 sm:px-6 bg-slate-900 border-b border-slate-800 text-white transition-colors">
@@ -103,7 +141,7 @@ export const Header: React.FC = () => {
         </button>
       </div>
 
-      {/* WIDGET IMPERSONATE / SWITCHER PERSONA (SESUAI GAMBAR 2) */}
+      {/* WIDGET STATUS KONTEKS / PENUGASAN JABATAN */}
       <div className="relative" ref={dropdownRef}>
         <button
           type="button"
@@ -119,7 +157,7 @@ export const Header: React.FC = () => {
           }`}
           aria-haspopup="true"
           aria-expanded={dropdownOpen}
-          title="Klik untuk beralih mode dan persona impersonate"
+          title="Klik untuk memilih penugasan jabatan dan perusahaan"
         >
           {/* Ikon Hexagon / Identitas */}
           <div className="flex items-center justify-center shrink-0">
@@ -155,7 +193,7 @@ export const Header: React.FC = () => {
             </div>
           </div>
 
-          {/* Badge Tombol Sesuai Gambar 2 */}
+          {/* Badge Jabatan Tombol Sesuai Gambar */}
           <div
             className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase border transition-colors ${
               appMode === 'IMPERSONATE'
@@ -180,7 +218,7 @@ export const Header: React.FC = () => {
           </div>
         </button>
 
-        {/* Panel Dropdown Pemilih Persona */}
+        {/* Panel Dropdown Pemilih Penugasan Jabatan */}
         {dropdownOpen && (
           <div className="absolute left-0 mt-2 w-80 sm:w-96 rounded-2xl border border-slate-800 bg-slate-900/95 p-3.5 shadow-2xl backdrop-blur-xl z-50 text-slate-200 divide-y divide-slate-800/80 animate-in fade-in slide-in-from-top-2 duration-150">
             {/* 1. Akun Personal */}
@@ -193,12 +231,12 @@ export const Header: React.FC = () => {
                 onClick={handleSelectPersonal}
                 className={`w-full flex items-center justify-between gap-3 p-2 rounded-xl text-left transition-all ${
                   appMode === 'PERSONAL'
-                    ? 'bg-emerald-950/60 border border-emerald-500/40 text-emerald-100'
+                    ? 'bg-emerald-950/60 border border-emerald-500/40 text-emerald-100 font-semibold'
                     : 'hover:bg-slate-800 text-slate-300'
                 }`}
               >
                 <div className="min-w-0">
-                  <div className="text-xs font-bold truncate">{user.name || 'Pengguna'}</div>
+                  <div className="text-xs font-bold truncate">{user.name || 'Pengguna Pribadi'}</div>
                   <div className="text-[10px] text-slate-400 truncate">{user.email} · Mode Personal</div>
                 </div>
                 {appMode === 'PERSONAL' && (
@@ -207,46 +245,90 @@ export const Header: React.FC = () => {
               </button>
             </div>
 
-            {/* 2. Persona Impersonate Perusahaan */}
+            {/* 2. Daftar Penugasan Jabatan Proyek (Topi Kerja Aktif) */}
             <div className="py-3">
               <div className="text-[10px] font-bold uppercase tracking-widest text-amber-400 mb-2 px-2 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
-                  <Building2 className="w-3 h-3" /> Impersonate Peran ({activeCompany.name})
+                  <Building2 className="w-3 h-3" /> Penugasan Jabatan Proyek
                 </span>
                 <span className="font-mono text-[9px] text-slate-400">{activeCompany.npwp}</span>
               </div>
 
-              <div className="space-y-1">
-                {roles.map(({ role, label, desc }) => {
-                  const isActive = appMode === 'IMPERSONATE' && activeRole === role;
-                  return (
-                    <button
-                      key={role}
-                      type="button"
-                      onClick={() => handleSelectRole(role)}
-                      className={`w-full flex items-center justify-between gap-2 p-2 rounded-xl text-left transition-all ${
-                        isActive
-                          ? 'bg-amber-950/60 border border-amber-500/40 text-amber-100 font-semibold'
-                          : 'hover:bg-slate-800/80 text-slate-300'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="text-xs flex items-center gap-1.5">
-                          <span>{label}</span>
-                          {role === 'Clerk' && (
-                            <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[9px]">CRU</span>
-                          )}
-                          {['Dept. Manager', 'KTT/Proj. Manager', 'CEO/Direktur'].includes(role) && (
-                            <span className="px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 text-[9px]">TTE/QR</span>
-                          )}
+              {/* Tampilkan Penugasan Nyata dari Database jika ada */}
+              {userAssignments.length > 0 ? (
+                <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                  {userAssignments.map((proj) => {
+                    const role = mapRoleCode(proj.role_code);
+                    const isActive = appMode === 'IMPERSONATE' && activeProjectId === proj.id && activeRole === role;
+                    return (
+                      <button
+                        key={`${proj.id}-${proj.role_code}`}
+                        type="button"
+                        onClick={() => handleSelectAssignment(proj)}
+                        className={`w-full flex items-center justify-between gap-2 p-2 rounded-xl text-left transition-all border ${
+                          isActive
+                            ? 'bg-amber-950/60 border-amber-500/50 text-amber-100 font-semibold'
+                            : 'border-slate-800/60 hover:bg-slate-800/80 text-slate-300'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                            <FolderKanban className="w-3 h-3 text-blue-400 shrink-0" />
+                            <span className="truncate font-medium text-slate-300">
+                              {proj.company_name ? `${proj.company_name} — ` : ''}{proj.name}
+                            </span>
+                            {proj.project_code && (
+                              <span className="font-mono text-blue-300 text-[9px]">({proj.project_code})</span>
+                            )}
+                          </div>
+                          <div className="mt-1 flex items-center justify-between gap-2">
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              {proj.role_name || role}
+                            </span>
+                            {['Dept. Manager', 'KTT/Proj. Manager', 'CEO/Direktur', 'Spv.'].includes(role) && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300">TTE/QR</span>
+                            )}
+                          </div>
                         </div>
-                        <div className="text-[10px] text-slate-400 truncate">{desc}</div>
-                      </div>
-                      {isActive && <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />}
-                    </button>
-                  );
-                })}
-              </div>
+                        {isActive && <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* Fallback jika belum memiliki penugasan database spesifik */
+                <div className="space-y-1">
+                  {defaultRoles.map(({ role, label, desc }) => {
+                    const isActive = appMode === 'IMPERSONATE' && activeRole === role;
+                    return (
+                      <button
+                        key={role}
+                        type="button"
+                        onClick={() => handleSelectRole(role)}
+                        className={`w-full flex items-center justify-between gap-2 p-2 rounded-xl text-left transition-all ${
+                          isActive
+                            ? 'bg-amber-950/60 border border-amber-500/40 text-amber-100 font-semibold'
+                            : 'hover:bg-slate-800/80 text-slate-300'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="text-xs flex items-center gap-1.5 font-bold">
+                            <span>{label}</span>
+                            {role === 'Clerk' && (
+                              <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[9px]">Draf & Input</span>
+                            )}
+                            {['Dept. Manager', 'KTT/Proj. Manager', 'CEO/Direktur'].includes(role) && (
+                              <span className="px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 text-[9px]">TTE/QR</span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate">{desc}</div>
+                        </div>
+                        {isActive && <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* 3. Konsol Super Admin (CSA & PSA) */}
@@ -256,44 +338,48 @@ export const Header: React.FC = () => {
               </div>
 
               {/* Konsol CSA */}
-              <button
-                type="button"
-                onClick={handleSelectCSA}
-                className={`w-full flex items-center justify-between gap-2 p-2 rounded-xl text-left transition-all ${
-                  appMode === 'CSA'
-                    ? 'bg-blue-950/60 border border-blue-500/40 text-blue-100'
-                    : 'hover:bg-slate-800/80 text-slate-300'
-                }`}
-              >
-                <div>
-                  <div className="text-xs font-semibold flex items-center gap-1.5">
-                    <ShieldAlert className="w-3.5 h-3.5 text-blue-400" />
-                    <span>Company Super Admin (CSA)</span>
+              {isCSA && (
+                <button
+                  type="button"
+                  onClick={handleSelectCSA}
+                  className={`w-full flex items-center justify-between gap-2 p-2 rounded-xl text-left transition-all ${
+                    appMode === 'CSA'
+                      ? 'bg-blue-950/60 border border-blue-500/40 text-blue-100 font-semibold'
+                      : 'hover:bg-slate-800/80 text-slate-300'
+                  }`}
+                >
+                  <div>
+                    <div className="text-xs font-semibold flex items-center gap-1.5">
+                      <ShieldAlert className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Company Super Admin (CSA)</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">Pengaturan Proyek & Terbitkan RFIN-B</div>
                   </div>
-                  <div className="text-[10px] text-slate-400">Pengaturan Proyek & Terbitkan RFIN-B</div>
-                </div>
-                {appMode === 'CSA' && <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />}
-              </button>
+                  {appMode === 'CSA' && <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />}
+                </button>
+              )}
 
               {/* Konsol PSA */}
-              <button
-                type="button"
-                onClick={handleSelectPSA}
-                className={`w-full flex items-center justify-between gap-2 p-2 rounded-xl text-left transition-all ${
-                  appMode === 'PSA'
-                    ? 'bg-purple-950/60 border border-purple-500/40 text-purple-100'
-                    : 'hover:bg-slate-800/80 text-slate-300'
-                }`}
-              >
-                <div>
-                  <div className="text-xs font-semibold flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
-                    <span>Platform Super Admin (PSA)</span>
+              {isPSA && (
+                <button
+                  type="button"
+                  onClick={handleSelectPSA}
+                  className={`w-full flex items-center justify-between gap-2 p-2 rounded-xl text-left transition-all ${
+                    appMode === 'PSA'
+                      ? 'bg-purple-950/60 border border-purple-500/40 text-purple-100 font-semibold'
+                      : 'hover:bg-slate-800/80 text-slate-300'
+                  }`}
+                >
+                  <div>
+                    <div className="text-xs font-semibold flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Platform Super Admin (PSA)</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">Persetujuan RFIN-A & Kontrol Platform</div>
                   </div>
-                  <div className="text-[10px] text-slate-400">Persetujuan RFIN-A & Kontrol Platform</div>
-                </div>
-                {appMode === 'PSA' && <CheckCircle2 className="w-4 h-4 text-purple-400 shrink-0" />}
-              </button>
+                  {appMode === 'PSA' && <CheckCircle2 className="w-4 h-4 text-purple-400 shrink-0" />}
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -301,11 +387,11 @@ export const Header: React.FC = () => {
 
       {/* Bagian Kanan: Saldo Kas, Tema & Akun */}
       <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-        {/* Saldo Kas (Hanya relevan di mode impersonate operasional) */}
+        {/* Saldo Kas (Hanya relevan di mode operasional) */}
         {appMode === 'IMPERSONATE' && (
           <div className="hidden lg:flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs">
             <Wallet className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="text-slate-400">Saldo:</span>
+            <span className="text-slate-400">Saldo Kas:</span>
             <span className="font-semibold text-emerald-400 font-mono">
               {cashAccess ? formatRupiah(currentCashBalance) : 'Terbatas'}
             </span>

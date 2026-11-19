@@ -22,7 +22,7 @@ export const RfinBInputView: React.FC = () => {
       const { data, error } = await db.rpc('preview_rfin_redemption', { p_code: code.trim() });
       if (error) throw error;
       setPreview(data);
-      setMessage('Kode undangan valid. Silakan tinjau ringkasan peran sebelum aktivasi.');
+      setMessage('Kode undangan valid. Silakan tinjau ringkasan Jabatan sebelum aktivasi.');
       setMessageTone('success');
     } catch (err: any) {
       setPreview(null);
@@ -36,7 +36,7 @@ export const RfinBInputView: React.FC = () => {
   const handleRedeem = async () => {
     if (!preview || busy) return;
     setBusy(true);
-    setMessage('Mengaktifkan penugasan peran proyek...');
+    setMessage('Mengaktifkan penugasan Jabatan proyek...');
     setMessageTone('info');
     try {
       const { data, error } = await db.rpc('redeem_rfin', { p_code: code.trim() });
@@ -44,7 +44,7 @@ export const RfinBInputView: React.FC = () => {
       if (!data?.ok) {
         throw new Error(data?.error || 'Aktivasi kode gagal.');
       }
-      setMessage(`Aktivasi berhasil! Anda kini memiliki akses impersonate pada ${preview.company_name || 'perusahaan'}.`);
+      setMessage(`Aktivasi berhasil! Anda kini resmi memegang Jabatan pada ${preview.company_name || 'perusahaan'}.`);
       setMessageTone('success');
       setCode('');
       setPreview(null);
@@ -67,7 +67,7 @@ export const RfinBInputView: React.FC = () => {
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">Aktivasi Kode Undangan (RFIN-B)</h1>
             <p className="mt-1 text-xs text-slate-500">
-              Masukkan kode RFIN-B yang Anda terima dari Company Super Admin (CSA) untuk mengaktifkan peran proyek & mode impersonate Anda.
+              Masukkan kode RFIN-B yang Anda terima dari Company Super Admin (CSA) untuk mengaktifkan Jabatan resmi Anda pada proyek perusahaan.
             </p>
           </div>
         </div>
@@ -150,7 +150,7 @@ export const RfinBInputView: React.FC = () => {
             </div>
 
             <div>
-              <span className="text-xs text-slate-500">Peran Persona yang Diberikan</span>
+              <span className="text-xs text-slate-500">Jabatan yang Diberikan</span>
               <div className="font-semibold text-sm text-blue-600 dark:text-blue-400 mt-0.5 flex items-center gap-1.5">
                 <Users className="h-4 w-4" />
                 {Array.isArray(preview.personas) && preview.personas.length > 0
@@ -175,7 +175,7 @@ export const RfinBInputView: React.FC = () => {
               className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 transition-colors"
             >
               <CheckCircle2 className="h-4 w-4" />
-              <span>{busy ? 'Mengaktifkan...' : 'Konfirmasi & Aktifkan Peran Impersonate'}</span>
+              <span>{busy ? 'Mengaktifkan...' : 'Konfirmasi & Aktifkan Jabatan'}</span>
             </button>
             <button
               type="button"

@@ -526,7 +526,7 @@ export const CompanyConsole: React.FC = () => {
                     <div>
                       <h2 className="font-bold text-base text-slate-900 dark:text-slate-100">Tim & Penugasan Proyek</h2>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Daftar anggota tim proyek, peran aktif (Impersonate), dan akses operasional.
+                        Daftar anggota tim proyek, Jabatan aktif, dan akses operasional.
                       </p>
                     </div>
                   </div>

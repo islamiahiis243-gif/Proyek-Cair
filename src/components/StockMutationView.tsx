@@ -105,7 +105,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
   const handleOpenNewModal = (type: JenisMutasiBarang = 'MASUK') => {
     if (!rolePermissions.canIssue) {
-      setErrorMessage(`Peran Anda (${activeRole}) tidak memiliki wewenang menerbitkan dokumen mutasi baru. Wewenang ini milik Clerk.`);
+      setErrorMessage(`Jabatan Anda (${activeRole}) tidak memiliki wewenang menerbitkan dokumen mutasi baru. Wewenang ini milik Clerk.`);
       return;
     }
     setMutationType(type);
