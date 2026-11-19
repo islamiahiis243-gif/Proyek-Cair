@@ -1,6 +1,14 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp, computeItemStatus } from '../context/AppContext';
-import { ItemBarang, JenisMutasiBarang, MutasiBarang, StatusDokumenWorkflow, BebanBiaya } from '../types';
+import {
+  ItemBarang,
+  JenisMutasiBarang,
+  MutasiBarang,
+  StatusDokumenWorkflow,
+  BebanBiaya,
+  AsalBarang,
+  TujuanPengeluaran
+} from '../types';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -50,13 +58,21 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<'ALL' | 'MASUK' | 'KELUAR' | 'KLIEN' | 'KONTRAKTOR' | 'OPERASIONAL'>('ALL');
+  const [filterType, setFilterType] = useState<'ALL' | 'MASUK' | 'KELUAR' | 'PROYEK_BOQ' | 'PERMINTAAN_KLIEN' | 'BONUS_KLIEN' | 'OPERASIONAL'>('ALL');
 
   // Form input states
   const [isCustomMode, setIsCustomMode] = useState<boolean>(false);
   const [customItemName, setCustomItemName] = useState<string>('');
   const [customItemUom, setCustomItemUom] = useState<string>('Unit');
   const [bebanBiaya, setBebanBiaya] = useState<BebanBiaya>('KONTRAKTOR');
+
+  // Input Khusus MASUK: Asal Barang
+  const [asalBarang, setAsalBarang] = useState<AsalBarang>('KONTRAKTOR');
+  const [tokoBebasName, setTokoBebasName] = useState<string>('');
+
+  // Input Khusus KELUAR: Tujuan Pengeluaran (4 Opsi Ringkas)
+  const [tujuanPengeluaran, setTujuanPengeluaran] = useState<TujuanPengeluaran>('PROYEK_BOQ');
+  const [keteranganPengeluaran, setKeteranganPengeluaran] = useState<string>('');
 
   const [selectedItemId, setSelectedItemId] = useState<string>(preselectedItem ? preselectedItem.id : (items[0]?.id || ''));
   const [selectedAllocationItemId, setSelectedAllocationItemId] = useState<string>('');
@@ -177,13 +193,15 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         (m.nama_barang || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (m.tujuan_keperluan || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (m.pic_penerima_penyerah || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (m.source_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (m.nomor_surat_jalan && m.nomor_surat_jalan.toLowerCase().includes(searchQuery.toLowerCase()));
 
       let matchFilter = true;
       if (filterType === 'MASUK') matchFilter = m.jenis === 'MASUK';
       else if (filterType === 'KELUAR') matchFilter = m.jenis === 'KELUAR';
-      else if (filterType === 'KLIEN') matchFilter = m.beban_biaya === 'KLIEN';
-      else if (filterType === 'KONTRAKTOR') matchFilter = m.beban_biaya === 'KONTRAKTOR';
+      else if (filterType === 'PROYEK_BOQ') matchFilter = m.beban_biaya === 'PROYEK_BOQ' || m.beban_biaya === 'KONTRAKTOR';
+      else if (filterType === 'PERMINTAAN_KLIEN') matchFilter = m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN';
+      else if (filterType === 'BONUS_KLIEN') matchFilter = m.beban_biaya === 'BONUS_KLIEN';
       else if (filterType === 'OPERASIONAL') matchFilter = m.beban_biaya === 'OPERASIONAL';
 
       return matchSearch && matchFilter;
@@ -199,7 +217,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     setIsCustomMode(false);
     setCustomItemName('');
     setCustomItemUom('Unit');
-    setBebanBiaya('KONTRAKTOR');
+    setAsalBarang('KONTRAKTOR');
+    setTokoBebasName('');
+    setTujuanPengeluaran('PROYEK_BOQ');
+    setKeteranganPengeluaran('');
     setQty(1);
     setPic(user.name);
     setSuratJalan('');
@@ -207,21 +228,17 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     setMutationDate(new Date().toISOString().slice(0, 10));
     setItemSearchQuery('');
     setIsItemSearchOpen(false);
-    setSourceName(type === 'MASUK' ? 'Supplier / Vendor' : 'Gudang Proyek');
-    setDestinationName(type === 'MASUK' ? 'Gudang Utama' : 'Area Proyek UDU');
+    setSourceName('CV Menara Megah');
+    setDestinationName(type === 'MASUK' ? 'Gudang Utama Proyek' : 'Area Proyek UDU');
     setOwnerType('KONTRAKTOR');
     setErrorMessage(null);
 
-    if (type === 'MASUK') {
-      setPurpose('Penyediaan Material Kontrak BOQ');
-    } else if (type === 'KELUAR' && currentPhysicalMaterial) {
+    if (type === 'KELUAR' && currentPhysicalMaterial?.budget_lines[0]) {
       const bl = currentPhysicalMaterial.budget_lines[0];
-      if (bl) {
-        setSelectedAllocationItemId(bl.id);
-        setPurpose(`${bl.kode_boq} - ${bl.kategori}`);
-      }
+      setSelectedAllocationItemId(bl.id);
+      setPurpose(`${bl.kode_boq} - ${bl.kategori}`);
     } else {
-      setPurpose('');
+      setPurpose('Penyediaan Material Kontrak BOQ');
     }
 
     setIsModalOpen(true);
@@ -233,11 +250,11 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
     if (isCustomMode) {
       if (!customItemName.trim()) {
-        setErrorMessage('Tuliskan nama material / kebutuhan custom.');
+        setErrorMessage('Tuliskan nama material / barang.');
         return;
       }
       if (!customItemUom.trim()) {
-        setErrorMessage('Tuliskan satuan untuk material custom (contoh: Zak, Kg, Batang, Hari).');
+        setErrorMessage('Tuliskan satuan material (cth: Zak, Kg, Batang, Unit).');
         return;
       }
     } else {
@@ -258,29 +275,60 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       return;
     }
 
-    // Material BOQ: Pemasukan disatukan (agregat), Pengeluaran dirincikan (pos BOQ)
+    // Material BOQ: Pemasukan disatukan (agregat), Pengeluaran dirincikan (pos BOQ jika pilih Proyek)
     const targetItemId = isCustomMode
       ? ''
-      : mutationType === 'KELUAR'
+      : (mutationType === 'KELUAR' && tujuanPengeluaran === 'PROYEK_BOQ')
       ? (selectedAllocationItemId || currentPhysicalMaterial?.id || '')
       : (currentPhysicalMaterial?.id || '');
 
     const itemName = isCustomMode ? customItemName.trim() : (currentPhysicalMaterial?.nama_barang || 'Material');
     const itemSatuan = isCustomMode ? customItemUom.trim() : (currentPhysicalMaterial?.satuan || 'Unit');
 
+    // Menetapkan Asal Barang & Pemilik (Khusus MASUK)
+    let calculatedSourceName = 'Pengadaan Kontraktor (CV Menara Megah)';
+    let calculatedOwnerType: 'KONTRAKTOR' | 'KLIEN' = 'KONTRAKTOR';
+
+    if (mutationType === 'MASUK') {
+      if (asalBarang === 'KLIEN') {
+        calculatedSourceName = 'Disediakan Klien / Owner';
+        calculatedOwnerType = 'KLIEN';
+      } else if (asalBarang === 'TOKO_BEBAS') {
+        calculatedSourceName = tokoBebasName.trim() ? `Toko: ${tokoBebasName.trim()}` : 'Toko / Pembelian Bebas';
+        calculatedOwnerType = 'KONTRAKTOR';
+      }
+    }
+
+    // Menetapkan Beban Biaya & Uraian Tujuan (Khusus KELUAR)
+    let calculatedBeban: BebanBiaya = 'KONTRAKTOR';
+    let finalPurpose = 'Penyediaan Material Kontrak BOQ';
+
+    if (mutationType === 'MASUK') {
+      finalPurpose = isCustomMode
+        ? (notes.trim() || `Penerimaan ${itemName}`)
+        : 'Penyediaan Material Kontrak BOQ';
+    } else {
+      // KELUAR
+      if (tujuanPengeluaran === 'PROYEK_BOQ') {
+        calculatedBeban = 'PROYEK_BOQ';
+        finalPurpose = selectedBudgetLine
+          ? `Pekerjaan: ${selectedBudgetLine.kode_boq} - ${selectedBudgetLine.kategori}`
+          : 'Pekerjaan Proyek BOQ';
+      } else if (tujuanPengeluaran === 'OPERASIONAL') {
+        calculatedBeban = 'OPERASIONAL';
+        finalPurpose = keteranganPengeluaran.trim() || 'Kebutuhan Operasional Lapangan';
+      } else if (tujuanPengeluaran === 'PERMINTAAN_KLIEN') {
+        calculatedBeban = 'KLIEN'; // Kena invoice ke Klien
+        calculatedOwnerType = 'KLIEN';
+        finalPurpose = keteranganPengeluaran.trim() || 'Permintaan Tambahan Klien (Kena Invoice)';
+      } else if (tujuanPengeluaran === 'BONUS_KLIEN') {
+        calculatedBeban = 'BONUS_KLIEN'; // Gratis / Tidak ditagihkan
+        finalPurpose = keteranganPengeluaran.trim() || 'Bonus untuk Klien (Gratis / Beban Menara Megah)';
+      }
+    }
+
     setSubmitting(true);
     setErrorMessage(null);
-
-    const defaultPurpose = isCustomMode
-      ? (bebanBiaya === 'OPERASIONAL' ? 'Kebutuhan Operasional Lapangan' : bebanBiaya === 'KLIEN' ? 'Permintaan Tambahan Klien (VO)' : 'Kebutuhan Khusus Lapangan')
-      : mutationType === 'MASUK'
-      ? 'Penyediaan Material Kontrak BOQ'
-      : selectedBudgetLine
-      ? `${selectedBudgetLine.kode_boq} - ${selectedBudgetLine.kategori}`
-      : 'Pemakaian material proyek';
-
-    const finalPurpose = isCustomMode ? (purpose.trim() || defaultPurpose) : defaultPurpose;
-    const finalBeban = isCustomMode ? bebanBiaya : 'KONTRAKTOR';
 
     try {
       const res = await addStockMutation({
@@ -294,12 +342,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         nomor_surat_jalan: suratJalan || undefined,
         tanggal: new Date(mutationDate).toISOString(),
         catatan: notes || undefined,
-        source_name: sourceName || undefined,
+        source_name: calculatedSourceName,
         destination_name: destinationName || undefined,
         recipient_name: pic || undefined,
-        owner_type: ownerType,
+        owner_type: calculatedOwnerType,
         purpose: finalPurpose,
-        beban_biaya: finalBeban,
+        beban_biaya: calculatedBeban,
         is_custom_item: isCustomMode
       });
 
@@ -516,8 +564,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 { id: 'ALL', label: `Semua (${stockMutations.length})` },
                 { id: 'MASUK', label: `Masuk (${stockMutations.filter((m) => m.jenis === 'MASUK').length})` },
                 { id: 'KELUAR', label: `Keluar (${stockMutations.filter((m) => m.jenis === 'KELUAR').length})` },
-                { id: 'KLIEN', label: `Tagihan Klien (${stockMutations.filter((m) => m.beban_biaya === 'KLIEN').length})` },
-                { id: 'KONTRAKTOR', label: `Beban Menara Megah (${stockMutations.filter((m) => m.beban_biaya === 'KONTRAKTOR').length})` },
+                { id: 'PROYEK_BOQ', label: `Proyek BOQ (${stockMutations.filter((m) => m.beban_biaya === 'PROYEK_BOQ' || m.beban_biaya === 'KONTRAKTOR').length})` },
+                { id: 'PERMINTAAN_KLIEN', label: `Minta Klien (${stockMutations.filter((m) => m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN').length})` },
+                { id: 'BONUS_KLIEN', label: `Bonus Klien (${stockMutations.filter((m) => m.beban_biaya === 'BONUS_KLIEN').length})` },
                 { id: 'OPERASIONAL', label: `Operasional (${stockMutations.filter((m) => m.beban_biaya === 'OPERASIONAL').length})` },
               ].map((tab) => (
                 <button
@@ -546,7 +595,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     <th className="py-3 px-3.5 text-center">Jenis</th>
                     <th className="py-3 px-3.5">Material</th>
                     <th className="py-3 px-3.5 text-right">Jumlah</th>
-                    <th className="py-3 px-3.5">Beban & Keperluan / Lokasi</th>
+                    <th className="py-3 px-3.5">Asal / Keperluan</th>
                     <th className="py-3 px-3.5 text-center">Status Dokumen</th>
                     <th className="py-3 px-3.5 text-center">Alur Persetujuan</th>
                     <th className="py-3 px-3.5 text-center">Koreksi</th>
@@ -609,18 +658,34 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                           </td>
                           <td className="py-3 px-3.5 text-slate-700 dark:text-slate-300 max-w-xs">
                             <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                              {mut.beban_biaya === 'KLIEN' ? (
-                                <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300">
-                                  🟢 Tagihan Klien (VO)
-                                </span>
-                              ) : mut.beban_biaya === 'OPERASIONAL' ? (
-                                <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-950/70 text-sky-800 dark:text-sky-300">
-                                  🔵 Operasional Lapangan
+                              {mut.jenis === 'MASUK' ? (
+                                <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                                  mut.source_name?.includes('Klien')
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300'
+                                    : mut.source_name?.includes('Toko')
+                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300'
+                                    : 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300'
+                                }`}>
+                                  {mut.source_name || '🏢 CV Menara Megah'}
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300">
-                                  🟠 Beban Menara Megah
-                                </span>
+                                mut.beban_biaya === 'KLIEN' || (mut.beban_biaya as string) === 'PERMINTAAN_KLIEN' ? (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300">
+                                    💰 Permintaan Klien (Kena Invoice)
+                                  </span>
+                                ) : mut.beban_biaya === 'BONUS_KLIEN' ? (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/70 text-purple-800 dark:text-purple-300">
+                                    🎁 Bonus Klien (Gratis)
+                                  </span>
+                                ) : mut.beban_biaya === 'OPERASIONAL' ? (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-950/70 text-sky-800 dark:text-sky-300">
+                                    🧑‍🍳 Operasional
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                    🏗️ Proyek BOQ
+                                  </span>
+                                )
                               )}
                             </div>
                             <div className="truncate font-medium">{mut.tujuan_keperluan || '-'}</div>
@@ -923,50 +988,236 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 )}
               </div>
 
-              {/* Baris 2: KHUSUS PENGELUARAN BOQ: Pos Pekerjaan BOQ */}
-              {!isCustomMode && mutationType === 'KELUAR' && currentPhysicalMaterial && (
+              {/* KHUSUS MASUK: Asal Barang / Sumber Pengadaan */}
+              {mutationType === 'MASUK' && (
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Pos Pekerjaan BOQ <span className="text-rose-500">*</span>
+                    Asal Barang / Sumber <span className="text-rose-500">*</span>
                   </label>
-                  {currentPhysicalMaterial.budget_lines.length === 1 ? (
-                    <div className="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs">
-                      <div className="truncate mr-2">
-                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400 mr-1.5">
-                          {currentPhysicalMaterial.budget_lines[0].kode_boq}
-                        </span>
-                        <span className="text-slate-800 dark:text-slate-200">
-                          {currentPhysicalMaterial.budget_lines[0].kategori}
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-slate-500 font-mono shrink-0">
-                        Sisa: <b className="text-emerald-600 dark:text-emerald-400">{currentPhysicalMaterial.budget_lines[0].sisa_anggaran.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}</b>
-                      </span>
-                    </div>
-                  ) : (
-                    <select
-                      value={selectedAllocationItemId}
-                      onChange={(e) => {
-                        const newId = e.target.value;
-                        setSelectedAllocationItemId(newId);
-                        const line = currentPhysicalMaterial.budget_lines.find((bl) => bl.id === newId);
-                        if (line) {
-                          setPurpose(`${line.kode_boq} - ${line.kategori}`);
-                        }
-                      }}
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500/20"
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAsalBarang('KONTRAKTOR')}
+                      className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
+                        asalBarang === 'KONTRAKTOR'
+                          ? 'border-blue-500 bg-blue-50 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 ring-1 ring-blue-500'
+                          : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                      }`}
                     >
-                      {currentPhysicalMaterial.budget_lines.map((line) => (
-                        <option key={line.id} value={line.id}>
-                          [{line.kode_boq}] {line.kategori} (Sisa: {line.sisa_anggaran.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan})
-                        </option>
-                      ))}
-                    </select>
+                      🏢 CV Menara Megah
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAsalBarang('KLIEN')}
+                      className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
+                        asalBarang === 'KLIEN'
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 ring-1 ring-emerald-500'
+                          : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      👤 Disediakan Klien
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAsalBarang('TOKO_BEBAS')}
+                      className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
+                        asalBarang === 'TOKO_BEBAS'
+                          ? 'border-purple-500 bg-purple-50 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 ring-1 ring-purple-500'
+                          : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      🏪 Toko Bebas
+                    </button>
+                  </div>
+                  {asalBarang === 'TOKO_BEBAS' && (
+                    <input
+                      type="text"
+                      placeholder="Nama toko / vendor pemasok (cth: TB Makmur, Toko Berkah)..."
+                      value={tokoBebasName}
+                      onChange={(e) => setTokoBebasName(e.target.value)}
+                      className="mt-1.5 w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-purple-300 dark:border-purple-700 text-slate-900 dark:text-white rounded-xl text-xs"
+                    />
+                  )}
+                  {isCustomMode && (
+                    <div className="mt-2">
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Alasan / Catatan Pengadaan
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Contoh: Logistik dapur tukang minggu ke-3, Bahan bedeng camp..."
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl text-xs"
+                      />
+                    </div>
                   )}
                 </div>
               )}
 
-              {/* Baris 3: Tanggal Mutasi & Jumlah Kuantitas */}
+              {/* KHUSUS KELUAR: Tujuan Pengeluaran (4 Opsi Ringkas) */}
+              {mutationType === 'KELUAR' && (
+                <div className="space-y-2">
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300">
+                    Dikeluarkan untuk Keperluan Apa? <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setTujuanPengeluaran('PROYEK_BOQ')}
+                      className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
+                        tujuanPengeluaran === 'PROYEK_BOQ'
+                          ? 'border-blue-500 bg-blue-50 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 ring-1 ring-blue-500'
+                          : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      🏗️ Proyek (BOQ)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTujuanPengeluaran('OPERASIONAL')}
+                      className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
+                        tujuanPengeluaran === 'OPERASIONAL'
+                          ? 'border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 ring-1 ring-sky-500'
+                          : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      🧑‍🍳 Operasional
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTujuanPengeluaran('PERMINTAAN_KLIEN')}
+                      className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
+                        tujuanPengeluaran === 'PERMINTAAN_KLIEN'
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 ring-1 ring-emerald-500'
+                          : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      💰 Minta Klien
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTujuanPengeluaran('BONUS_KLIEN')}
+                      className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
+                        tujuanPengeluaran === 'BONUS_KLIEN'
+                          ? 'border-purple-500 bg-purple-50 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 ring-1 ring-purple-500'
+                          : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      🎁 Bonus Klien
+                    </button>
+                  </div>
+
+                  {/* Rincian Tambahan Sesuai Pilihan Tujuan Keluar */}
+                  {tujuanPengeluaran === 'PROYEK_BOQ' && !isCustomMode && currentPhysicalMaterial && (
+                    <div className="pt-1">
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        Pilih Pos Pekerjaan BOQ
+                      </label>
+                      {currentPhysicalMaterial.budget_lines.length === 1 ? (
+                        <div className="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs">
+                          <div className="truncate mr-2">
+                            <span className="font-mono font-bold text-blue-600 dark:text-blue-400 mr-1.5">
+                              {currentPhysicalMaterial.budget_lines[0].kode_boq}
+                            </span>
+                            <span className="text-slate-800 dark:text-slate-200">
+                              {currentPhysicalMaterial.budget_lines[0].kategori}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-mono shrink-0">
+                            Sisa: <b className="text-emerald-600 dark:text-emerald-400">{currentPhysicalMaterial.budget_lines[0].sisa_anggaran.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}</b>
+                          </span>
+                        </div>
+                      ) : (
+                        <select
+                          value={selectedAllocationItemId}
+                          onChange={(e) => {
+                            const newId = e.target.value;
+                            setSelectedAllocationItemId(newId);
+                            const line = currentPhysicalMaterial.budget_lines.find((bl) => bl.id === newId);
+                            if (line) {
+                              setPurpose(`${line.kode_boq} - ${line.kategori}`);
+                            }
+                          }}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500/20"
+                        >
+                          {currentPhysicalMaterial.budget_lines.map((line) => (
+                            <option key={line.id} value={line.id}>
+                              [{line.kode_boq}] {line.kategori} (Sisa: {line.sisa_anggaran.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan})
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
+
+                  {tujuanPengeluaran === 'OPERASIONAL' && (
+                    <div className="pt-1">
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        Keterangan Operasional Lapangan <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Contoh: Konsumsi dapur tukang minggu ke-3, Bahan bakar genset proyek..."
+                        value={keteranganPengeluaran}
+                        onChange={(e) => setKeteranganPengeluaran(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500/20"
+                      />
+                    </div>
+                  )}
+
+                  {tujuanPengeluaran === 'PERMINTAAN_KLIEN' && (
+                    <div className="pt-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                          Keterangan Permintaan Klien <span className="text-rose-500">*</span>
+                        </label>
+                        <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full">
+                          Kena Invoice ke Klien
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Contoh: Penambahan stop kontak AC kamar utama, variasi keramik teras..."
+                        value={keteranganPengeluaran}
+                        onChange={(e) => setKeteranganPengeluaran(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500/20"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        ℹ️ Transaksi ini otomatis ditampung ke draf tagihan/invoice pekerjaan tambah ke klien.
+                      </p>
+                    </div>
+                  )}
+
+                  {tujuanPengeluaran === 'BONUS_KLIEN' && (
+                    <div className="pt-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-semibold text-purple-700 dark:text-purple-400">
+                          Keterangan Bonus untuk Klien <span className="text-rose-500">*</span>
+                        </label>
+                        <span className="text-[10px] text-purple-600 font-semibold bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-full">
+                          Gratis (Beban CV Menara Megah)
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Contoh: Bonus kekuatan bekisting kolom struktur, ekstra plesteran luar..."
+                        value={keteranganPengeluaran}
+                        onChange={(e) => setKeteranganPengeluaran(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-purple-300 dark:border-purple-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-purple-500/20"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        ℹ️ Tidak ditagihkan ke klien (diserap sebagai penjaminan mutu CV Menara Megah).
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Tanggal Mutasi & Jumlah Kuantitas */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -1003,70 +1254,6 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   />
                 </div>
               </div>
-
-              {/* KHUSUS MODE CUSTOM / NON-BOQ: Ditampilkan saat klerk menekan tombol kustom */}
-              {isCustomMode && (
-                <>
-                  {/* Beban Pembiayaan Khusus Custom */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Beban Pembiayaan <span className="text-rose-500">*</span>
-                    </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setBebanBiaya('OPERASIONAL')}
-                        className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
-                          bebanBiaya === 'OPERASIONAL'
-                            ? 'border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 ring-1 ring-sky-500'
-                            : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
-                        }`}
-                      >
-                        Operasional
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setBebanBiaya('KLIEN')}
-                        className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
-                          bebanBiaya === 'KLIEN'
-                            ? 'border-emerald-500 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 ring-1 ring-emerald-500'
-                            : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
-                        }`}
-                      >
-                        Tagihan Klien (VO)
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setBebanBiaya('KONTRAKTOR')}
-                        className={`py-1.5 px-2 rounded-xl border text-center transition-all text-xs font-semibold ${
-                          bebanBiaya === 'KONTRAKTOR'
-                            ? 'border-amber-500 bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 ring-1 ring-amber-500'
-                            : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
-                        }`}
-                      >
-                        Beban Kontraktor
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Tujuan & Keperluan Khusus Custom */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Tujuan & Keperluan <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Contoh: Konsumsi tukang minggu ke-3, Bahan bedeng camp..."
-                      value={purpose}
-                      onChange={(e) => setPurpose(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                </>
-              )}
 
               {/* Baris 6: PIC & No. Surat Jalan */}
               <div className="grid grid-cols-2 gap-3">
