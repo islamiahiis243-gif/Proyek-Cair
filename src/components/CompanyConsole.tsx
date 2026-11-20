@@ -34,7 +34,8 @@ type CompanyDashboard = {
   recent_activity: { action: string; entity_type: string; created_at: string }[];
 };
 type CoveragePermission = { permission_code: string; module: string; action: string; risk_level: string; requires_authority_check: boolean; description: string };
-type CoverageMember = { project_membership_id: string; company_membership_id: string; user_id: string; full_name: string; membership_status: string; permissions: CoveragePermission[] };
+type CoverageRole = { role_code: string; display_name: string };
+type CoverageMember = { project_membership_id: string; company_membership_id: string; user_id: string; full_name: string; email?: string; membership_status: string; roles?: CoverageRole[]; permissions: CoveragePermission[] };
 type CoverageProject = { id: string; project_code: string; name: string; status: string; active_member_count: number; members_without_permissions: number; permission_code_count: number; members: CoverageMember[] };
 type ProjectCoverage = {
   active_company_members: number;
@@ -581,7 +582,7 @@ export const CompanyConsole: React.FC = () => {
                                       </div>
                                       <div>
                                         <p className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight">{member.full_name}</p>
-                                        <p className="text-[10px] text-slate-500 dark:text-slate-400">ID: {member.user_id?.slice(0, 8)}…</p>
+                                        <p className="text-[10px] text-slate-600 dark:text-slate-300 font-medium break-all">{member.email || 'Email tidak tersedia'}</p>
                                       </div>
                                     </div>
                                     <span className="px-1.5 py-0.5 text-[9px] font-semibold rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
@@ -589,22 +590,29 @@ export const CompanyConsole: React.FC = () => {
                                     </span>
                                   </div>
 
-                                  {/* Hak Operasional Sederhana */}
-                                  <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-1">
-                                    {member.permissions?.length ? (
-                                      member.permissions.slice(0, 3).map(p => (
-                                        <span key={p.permission_code} className="px-1.5 py-0.5 text-[9px] rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                                          {p.permission_code}
-                                        </span>
-                                      ))
-                                    ) : (
-                                      <span className="text-[10px] text-slate-400 italic">Izin operasional terpasang</span>
-                                    )}
-                                    {member.permissions?.length > 3 && (
-                                      <span className="px-1.5 py-0.5 text-[9px] rounded bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300">
-                                        +{member.permissions.length - 3} lainnya
-                                      </span>
-                                    )}
+                                  {/* Jabatan yang dimandatkan pada proyek ini (boleh merangkap) */}
+                                  <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                                    <p className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                                      Jabatan pada proyek ini{(member.roles?.length || 0) > 1 ? ` (merangkap ${member.roles!.length})` : ''}
+                                    </p>
+                                    <div className="flex flex-wrap gap-1">
+                                      {member.roles?.length ? (
+                                        member.roles.map(r => (
+                                          <span
+                                            key={r.role_code}
+                                            className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border ${
+                                              r.role_code === 'VIEWER'
+                                                ? 'bg-cyan-50 text-cyan-800 border-cyan-200 dark:bg-cyan-950/50 dark:text-cyan-200 dark:border-cyan-800'
+                                                : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-800'
+                                            }`}
+                                          >
+                                            {r.display_name}
+                                          </span>
+                                        ))
+                                      ) : (
+                                        <span className="text-[10px] text-slate-600 dark:text-slate-300 italic">Belum ada jabatan</span>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               ))}

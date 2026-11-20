@@ -262,6 +262,9 @@ export const RfinBInvitationPanel: React.FC<{
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
               Pilih Jabatan Penugasan pada Proyek <span className="text-rose-500">*</span>
             </label>
+            <p className="-mt-0.5 mb-2 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+              Satu orang boleh merangkap beberapa jabatan (misalnya saat kekurangan tenaga di lapangan). Terbitkan satu kode RFIN-B untuk setiap jabatan, lalu penerima mengaktivasi masing-masing kodenya.
+            </p>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {ROLES.map((r) => {
                 const isSelected = selectedRole === r.code;
