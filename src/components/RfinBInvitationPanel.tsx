@@ -34,11 +34,16 @@ export const RfinBInvitationPanel: React.FC<{
   companyId: string;
   canAdmin: boolean;
   projects: Project[];
-}> = ({ companyId, canAdmin, projects }) => {
+  initialEmail?: string;
+  initialProjectId?: string;
+}> = ({ companyId, canAdmin, projects, initialEmail, initialProjectId }) => {
   const db = getSupabaseClient();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(initialEmail || '');
   const [selectedRole, setSelectedRole] = useState('CLERK');
-  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>(() => {
+    if (initialProjectId) return [initialProjectId];
+    return [];
+  });
   const [expiryDays, setExpiryDays] = useState('7');
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [busy, setBusy] = useState(false);
@@ -48,12 +53,20 @@ export const RfinBInvitationPanel: React.FC<{
   const [issuedCode, setIssuedCode] = useState('');
   const [copyState, setCopyState] = useState('');
 
-  // Default pilih project pertama jika ada
+  // Sinkronisasi data awal jika diteruskan dari penugasan anggota
   useEffect(() => {
-    if (projects.length > 0 && selectedProjectIds.length === 0) {
+    if (initialEmail) {
+      setEmail(initialEmail);
+    }
+  }, [initialEmail]);
+
+  useEffect(() => {
+    if (initialProjectId) {
+      setSelectedProjectIds([initialProjectId]);
+    } else if (projects.length > 0 && selectedProjectIds.length === 0) {
       setSelectedProjectIds([projects[0].id]);
     }
-  }, [projects]);
+  }, [initialProjectId, projects]);
 
   const loadInvitations = useCallback(async () => {
     if (!companyId) return;

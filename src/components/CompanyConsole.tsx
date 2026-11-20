@@ -60,6 +60,7 @@ type ProjectCoverage = {
     company_membership_id: string;
     user_id: string;
     full_name: string;
+    email?: string;
     avatar_url?: string | null;
     activated_at: string | null;
   }[];
@@ -119,6 +120,7 @@ export const CompanyConsole: React.FC = () => {
   const [coverageError, setCoverageError] = useState('');
   const [assignmentTargets, setAssignmentTargets] = useState<Record<string, string>>({});
   const [assigningMember, setAssigningMember] = useState('');
+  const [rfinBTarget, setRfinBTarget] = useState<{ email?: string; projectId?: string }>({});
 
   const loadProjects = useCallback(async (targetWorkspaceId: string): Promise<ProjectRow[]> => {
     if (!targetWorkspaceId) { setProjects([]); setClients([]); return []; }
@@ -172,24 +174,15 @@ export const CompanyConsole: React.FC = () => {
     }
   }, [db]);
 
-  const assignMemberToProject = async (companyMembershipId: string, targetProjectId: string) => {
-    if (!canAdmin || !companyMembershipId || !targetProjectId || assigningMember) return;
-    setAssigningMember(companyMembershipId); setError(''); setNotice('');
-    try {
-      const { data, error: rpcErr } = await db.rpc('assign_company_member_to_project', {
-        p_project_id: targetProjectId,
-        p_company_membership_id: companyMembershipId
-      });
-      if (rpcErr) throw rpcErr;
-      setNotice('Anggota berhasil ditugaskan ke Proyek.');
-      setAssignmentTargets(current => ({ ...current, [companyMembershipId]: '' }));
-      await loadProjectCoverage(workspaceId);
-      await loadDashboard(workspaceId);
-    } catch (e: any) {
-      setError(e?.message || 'Penugasan anggota ke proyek gagal.');
-    } finally {
-      setAssigningMember('');
-    }
+  const handleAssignToProjectClick = (companyMembershipId: string, memberEmail?: string) => {
+    const selectedProjectId = assignmentTargets[companyMembershipId] || '';
+    setRfinBTarget({
+      email: memberEmail || '',
+      projectId: selectedProjectId || undefined
+    });
+    setError('');
+    setNotice('');
+    setCurrentView('rfin-b-generate');
   };
 
   const refresh = useCallback(async () => {
@@ -737,11 +730,10 @@ export const CompanyConsole: React.FC = () => {
                                 </select>
                                 <button
                                   type="button"
-                                  onClick={() => void assignMemberToProject(member.company_membership_id, assignmentTargets[member.company_membership_id] || '')}
-                                  disabled={!assignmentTargets[member.company_membership_id] || Boolean(assigningMember)}
-                                  className="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-semibold text-xs hover:bg-blue-700 disabled:opacity-40 transition-colors"
+                                  onClick={() => handleAssignToProjectClick(member.company_membership_id, member.email)}
+                                  className="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-semibold text-xs hover:bg-blue-700 transition-colors shadow-xs"
                                 >
-                                  {assigningMember === member.company_membership_id ? 'Menugaskan…' : 'Tugaskan ke Proyek'}
+                                  Tugaskan ke Proyek
                                 </button>
                               </div>
                             </div>
@@ -763,6 +755,8 @@ export const CompanyConsole: React.FC = () => {
                 companyId={activeWorkspace?.company_id || ''}
                 canAdmin={canAdmin}
                 projects={projects}
+                initialEmail={rfinBTarget.email}
+                initialProjectId={rfinBTarget.projectId}
               />
             </div>
           )}
