@@ -287,21 +287,8 @@ export const Header: React.FC = () => {
               <ShieldAlert className="w-5 h-5 text-blue-400" />
             ) : appMode === 'PSA' ? (
               <ShieldCheck className="w-5 h-5 text-purple-400" />
-            ) : user.avatar_url ? (
-              <img
-                src={user.avatar_url}
-                alt={user.name || 'Profil'}
-                className="w-5 h-5 rounded-full object-cover border border-emerald-400/60 shadow-xs"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                  e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                }}
-              />
             ) : (
               <User className="w-5 h-5 text-emerald-400" />
-            )}
-            {appMode === 'PERSONAL' && user.avatar_url && (
-              <User className="hidden w-5 h-5 text-emerald-400" />
             )}
           </div>
 
@@ -643,6 +630,39 @@ export const Header: React.FC = () => {
             ) : (
               <Moon className="w-4 h-4 text-slate-300" />
             )}
+          </button>
+        )}
+
+        {/* FOTO PROFIL / AVATAR PENGGUNA BERDIRI SENDIRI DI TOPBAR */}
+        {user.id && (
+          <button
+            type="button"
+            onClick={() => {
+              if (appMode !== 'PERSONAL') {
+                setAppMode('PERSONAL');
+              }
+              setCurrentView('settings');
+            }}
+            aria-label={`Profil ${user.name || user.email}`}
+            title={`Profil: ${user.name || 'Pengguna Pribadi'} (${user.email})\nKlik untuk Pengaturan Profil & Foto`}
+            className="group relative flex items-center justify-center rounded-full transition-transform hover:scale-105 focus:outline-none shrink-0 cursor-pointer"
+          >
+            {user.avatar_url ? (
+              <img
+                src={user.avatar_url}
+                alt={user.name || 'Foto Profil'}
+                className="w-9 h-9 rounded-full object-cover border-2 border-slate-700 group-hover:border-blue-400 shadow-sm transition-all"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                }}
+              />
+            ) : null}
+            <div
+              className={`${user.avatar_url ? 'hidden' : ''} w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-bold text-sm flex items-center justify-center border-2 border-slate-700 group-hover:border-blue-400 shadow-sm transition-all`}
+            >
+              {user.name ? user.name.charAt(0).toUpperCase() : (user.email ? user.email.charAt(0).toUpperCase() : 'U')}
+            </div>
           </button>
         )}
 
