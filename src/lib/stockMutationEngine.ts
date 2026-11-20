@@ -17,7 +17,8 @@ export type WizardStepId =
   | 'EXIT_CATEGORY'
   | 'EXIT_BOQ_POS'
   | 'EXIT_NOTE'
-  | 'SUMMARY';
+  | 'SUMMARY'
+  | 'DONE_NEXT';
 
 export interface CustomStockOption {
   nama_barang: string;
@@ -286,6 +287,7 @@ export const validateWizardStep = (
       return null;
 
     case 'SUMMARY':
+    case 'DONE_NEXT':
       return null;
   }
 };
@@ -587,5 +589,118 @@ export const getStepTheme = (
             cardRing: 'border-rose-400/80 dark:border-rose-700',
             primaryBtn: 'bg-rose-600 hover:bg-rose-700'
           };
+
+    case 'DONE_NEXT':
+      return {
+        id: stepId,
+        badgeLabel: 'Tersimpan · Lanjut?',
+        headerBg: 'bg-cyan-700 dark:bg-cyan-950/90',
+        headerBorder: 'border-cyan-600/40 dark:border-cyan-800',
+        accentBar: 'bg-cyan-500',
+        badgeClass: 'bg-cyan-100 text-cyan-900 dark:bg-cyan-900/70 dark:text-cyan-200',
+        cardRing: 'border-cyan-300/80 dark:border-cyan-700',
+        primaryBtn: 'bg-cyan-600 hover:bg-cyan-700'
+      };
   }
+};
+
+/**
+ * PENCARIAN CERDAS TOLERAN TYPO & MULTI-KATA:
+ * Mendukung kata acak ("screw baja"), typo ringan ("holow gipsum", "square" -> "squere", "angle" -> "angel"),
+ * dan singkatan tanpa harus sama persis hurufnya.
+ */
+const normalizeSearchText = (text: string): string =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const levenshteinDistance = (a: string, b: string): number => {
+  if (a === b) return 0;
+  const al = a.length;
+  const bl = b.length;
+  if (al === 0) return bl;
+  if (bl === 0) return al;
+  if (Math.abs(al - bl) > 2) return 3;
+
+  let prev = new Array<number>(bl + 1);
+  let curr = new Array<number>(bl + 1);
+  for (let j = 0; j <= bl; j++) prev[j] = j;
+
+  for (let i = 1; i <= al; i++) {
+    curr[0] = i;
+    const ca = a.charCodeAt(i - 1);
+    for (let j = 1; j <= bl; j++) {
+      const cost = ca === b.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+    }
+    const tmp = prev;
+    prev = curr;
+    curr = tmp;
+  }
+  return prev[bl];
+};
+
+const isSubsequence = (needle: string, haystack: string): boolean => {
+  let i = 0;
+  for (let j = 0; j < haystack.length && i < needle.length; j++) {
+    if (needle[i] === haystack[j]) i++;
+  }
+  return i === needle.length;
+};
+
+export const scoreFuzzyMatch = (rawQuery: string, ...fields: string[]): number => {
+  const normQuery = normalizeSearchText(rawQuery);
+  if (!normQuery) return 0;
+
+  const combined = normalizeSearchText(fields.filter(Boolean).join(' '));
+  if (!combined) return 0;
+
+  const queryTokens = normQuery.split(' ').filter(Boolean);
+  const targetTokens = combined.split(' ').filter(Boolean);
+
+  let totalScore = 0;
+
+  // Bonus jika keseluruhan frasa cocok langsung
+  if (combined.includes(normQuery)) {
+    totalScore += combined.startsWith(normQuery) ? 140 : 90;
+  }
+
+  for (const qt of queryTokens) {
+    let bestTokenScore = 0;
+    const maxEdit = qt.length >= 5 ? 2 : qt.length >= 3 ? 1 : 0;
+
+    for (const tw of targetTokens) {
+      if (tw === qt) {
+        bestTokenScore = Math.max(bestTokenScore, 100);
+        break;
+      }
+      if (tw.startsWith(qt)) {
+        bestTokenScore = Math.max(bestTokenScore, 80);
+      } else if (tw.includes(qt)) {
+        bestTokenScore = Math.max(bestTokenScore, 65);
+      } else if (maxEdit > 0) {
+        // Cek jarak edit terhadap kata penuh maupun awalan kata
+        const distFull = levenshteinDistance(qt, tw);
+        const prefixCandidate = tw.slice(0, Math.min(tw.length, qt.length + 1));
+        const distPrefix = levenshteinDistance(qt, prefixCandidate);
+        const dist = Math.min(distFull, distPrefix);
+        if (dist <= maxEdit) {
+          bestTokenScore = Math.max(bestTokenScore, dist === 1 ? 50 : 38);
+        }
+      }
+    }
+
+    // Fallback: cek subsequence pada teks gabungan untuk singkatan (cth: "hlg" -> "hollow gypsum")
+    if (bestTokenScore === 0 && qt.length >= 3 && isSubsequence(qt, combined.replace(/\s+/g, ''))) {
+      bestTokenScore = 20;
+    }
+
+    if (bestTokenScore === 0) {
+      return 0; // Semua kata kunci harus menemukan kecocokan (toleran typo)
+    }
+    totalScore += bestTokenScore;
+  }
+
+  return totalScore;
 };

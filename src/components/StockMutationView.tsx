@@ -29,7 +29,10 @@ import {
   Building2,
   TrendingUp,
   Filter,
-  FileText
+  FileText,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { formatDateTime, formatRupiah, generateBOQReportPDF, generateStockMutationPDF } from '../lib/pdfGenerator';
 import {
@@ -85,6 +88,61 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   // State untuk Tab 1: Rekap Gudang ("Satukan Masuk")
   const [warehouseSearchQuery, setWarehouseSearchQuery] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState<'ALL' | 'HAS_ARRIVED' | 'IN_STOCK' | 'NOT_ARRIVED'>('ALL');
+
+  // State Sortir untuk Ke-4 Tabel (Rekap Gudang, Pos BOQ, Jurnal Transaksi, Dokumen Resmi)
+  type SortDir = 'asc' | 'desc';
+  const [warehouseSort, setWarehouseSort] = useState<{ key: string; dir: SortDir } | null>(null);
+  const [boqSort, setBoqSort] = useState<{ key: string; dir: SortDir } | null>(null);
+  const [journalSort, setJournalSort] = useState<{ key: string; dir: SortDir }>({ key: 'tanggal', dir: 'desc' });
+  const [docSort, setDocSort] = useState<{ key: string; dir: SortDir }>({ key: 'tanggal', dir: 'desc' });
+
+  const toggleSort = (
+    current: { key: string; dir: SortDir } | null,
+    key: string,
+    defaultDir: SortDir = 'asc'
+  ): { key: string; dir: SortDir } => {
+    if (current && current.key === key) {
+      return { key, dir: current.dir === 'asc' ? 'desc' : 'asc' };
+    }
+    return { key, dir: defaultDir };
+  };
+
+  const renderSortBtn = (
+    label: string,
+    colKey: string,
+    activeSort: { key: string; dir: SortDir } | null,
+    onToggle: () => void,
+    align: 'left' | 'center' | 'right' = 'left'
+  ) => {
+    const isActive = activeSort?.key === colKey;
+    const alignCls =
+      align === 'right'
+        ? 'justify-end ml-auto'
+        : align === 'center'
+        ? 'justify-center mx-auto'
+        : 'justify-start';
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        title={`Urutkan berdasarkan ${label}`}
+        className={`inline-flex items-center gap-1 uppercase tracking-wider font-bold hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer ${alignCls} ${
+          isActive ? 'text-blue-700 dark:text-blue-300' : ''
+        }`}
+      >
+        <span>{label}</span>
+        {isActive ? (
+          activeSort!.dir === 'asc' ? (
+            <ArrowUp className="w-3 h-3 shrink-0 text-blue-600 dark:text-blue-400" />
+          ) : (
+            <ArrowDown className="w-3 h-3 shrink-0 text-blue-600 dark:text-blue-400" />
+          )
+        ) : (
+          <ArrowUpDown className="w-3 h-3 shrink-0 opacity-60" />
+        )}
+      </button>
+    );
+  };
 
   // State untuk Tab 4: Dokumen Resmi & Persetujuan Berantai
   const [docTitle, setDocTitle] = useState('Berita Acara Rekapitulasi Mutasi Barang & Gudang');
@@ -212,7 +270,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   }, [stockMutations]);
 
   const filteredMutations = useMemo(() => {
-    return stockMutations.filter((m) => {
+    const list = stockMutations.filter((m) => {
       const matchSearch =
         (m.nama_barang || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (m.tujuan_keperluan || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -230,7 +288,32 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
       return matchSearch && matchFilter;
     });
-  }, [stockMutations, searchQuery, filterType]);
+
+    const mult = journalSort.dir === 'asc' ? 1 : -1;
+    const statusRank = (m: MutasiBarang) =>
+      m.is_batal || m.status_dokumen === 'BATAL'
+        ? 0
+        : m.is_ganti || m.status_dokumen === 'DIGANTI'
+        ? 1
+        : 2;
+
+    return [...list].sort((a, b) => {
+      switch (journalSort.key) {
+        case 'tanggal':
+          return (new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime()) * mult;
+        case 'jenis':
+          return (a.jenis || '').localeCompare(b.jenis || '') * mult;
+        case 'nama_barang':
+          return (a.nama_barang || '').localeCompare(b.nama_barang || '') * mult;
+        case 'jumlah':
+          return ((a.jumlah || 0) - (b.jumlah || 0)) * mult;
+        case 'status':
+          return (statusRank(a) - statusRank(b)) * mult;
+        default:
+          return 0;
+      }
+    });
+  }, [stockMutations, searchQuery, filterType, journalSort]);
 
   // Helper Pengelompokan Kategori BOQ (Divisi & Sub-Pekerjaan)
   const parseCategory = (cat: string) => {
@@ -341,7 +424,45 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       let divKeluar = 0;
 
       subMap.forEach((subItems, subName) => {
-        subItems.sort((a, b) => (a.source_excel_row || 0) - (b.source_excel_row || 0));
+        const boqStatusRank = (it: ItemBarang) =>
+          it.status_pemenuhan === 'Melebihi BOQ'
+            ? 3
+            : it.status_pemenuhan === 'Terpenuhi'
+            ? 2
+            : it.status_pemenuhan === 'Dalam pemenuhan'
+            ? 1
+            : 0;
+
+        if (!boqSort) {
+          subItems.sort((a, b) => (a.source_excel_row || 0) - (b.source_excel_row || 0));
+        } else {
+          const mult = boqSort.dir === 'asc' ? 1 : -1;
+          subItems.sort((a, b) => {
+            switch (boqSort.key) {
+              case 'kode_boq':
+                return (a.kode_boq || '').localeCompare(b.kode_boq || '', 'id', { numeric: true }) * mult;
+              case 'nama_barang':
+                return (a.nama_barang || '').localeCompare(b.nama_barang || '') * mult;
+              case 'penyedia': {
+                const aImk = (a.keterangan || '').toLowerCase().includes('imk') ? 1 : 0;
+                const bImk = (b.keterangan || '').toLowerCase().includes('imk') ? 1 : 0;
+                return (aImk - bImk) * mult;
+              }
+              case 'qty_boq':
+                return ((a.qty_boq || 0) - (b.qty_boq || 0)) * mult;
+              case 'qty_keluar_total':
+                return ((a.qty_keluar_total || 0) - (b.qty_keluar_total || 0)) * mult;
+              case 'qty_pemenuhan_sisa':
+                return ((a.qty_pemenuhan_sisa || 0) - (b.qty_pemenuhan_sisa || 0)) * mult;
+              case 'stok_saat_ini':
+                return ((a.stok_saat_ini || 0) - (b.stok_saat_ini || 0)) * mult;
+              case 'status_pemenuhan':
+                return (boqStatusRank(a) - boqStatusRank(b)) * mult;
+              default:
+                return 0;
+            }
+          });
+        }
 
         let subQtyBoq = 0;
         let subMasuk = 0;
@@ -388,7 +509,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     });
 
     return divisions;
-  }, [items, deferredBoqSearchQuery, boqProviderFilter, boqStatusFilter]);
+  }, [items, deferredBoqSearchQuery, boqProviderFilter, boqStatusFilter, boqSort]);
 
   const handleCollapseAll = () => {
     const allDivs = new Set(groupedBoqData.map((d) => d.name));
@@ -462,7 +583,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   // Filter Material Gudang untuk Tab 1 ("Satukan Masuk" - 1 Baris per Nama Material)
   const filteredWarehouseMaterials = useMemo(() => {
     const q = warehouseSearchQuery.trim().toLowerCase();
-    return (physicalMaterials || [])
+    const list = (physicalMaterials || [])
       .filter((pm) => pm.is_stock_item)
       .filter((pm) => {
         if (warehouseFilter === 'HAS_ARRIVED' && pm.total_qty_masuk <= 0) return false;
@@ -477,19 +598,68 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           if (!matchName && !matchUom && !matchBoq) return false;
         }
         return true;
-      })
-      .sort((a, b) => {
-        // Prioritaskan yang sudah ada barang masuk di paling atas agar langsung terlihat
+      });
+
+    const whStatusRank = (pm: PhysicalMaterialItem) =>
+      pm.stok_fisik > 0 ? 2 : pm.total_qty_masuk > 0 ? 1 : 0;
+
+    return [...list].sort((a, b) => {
+      if (!warehouseSort) {
         if (a.total_qty_masuk > 0 && b.total_qty_masuk === 0) return -1;
         if (a.total_qty_masuk === 0 && b.total_qty_masuk > 0) return 1;
         return a.nama_barang.localeCompare(b.nama_barang);
-      });
-  }, [physicalMaterials, warehouseSearchQuery, warehouseFilter]);
+      }
+      const mult = warehouseSort.dir === 'asc' ? 1 : -1;
+      switch (warehouseSort.key) {
+        case 'nama_barang':
+          return a.nama_barang.localeCompare(b.nama_barang) * mult;
+        case 'satuan':
+          return (a.satuan || '').localeCompare(b.satuan || '') * mult;
+        case 'total_qty_boq':
+          return ((a.total_qty_boq || 0) - (b.total_qty_boq || 0)) * mult;
+        case 'total_qty_masuk':
+          return ((a.total_qty_masuk || 0) - (b.total_qty_masuk || 0)) * mult;
+        case 'sisa_belum_tiba': {
+          const aSisa = Math.max(0, (a.total_qty_boq || 0) - (a.total_qty_masuk || 0));
+          const bSisa = Math.max(0, (b.total_qty_boq || 0) - (b.total_qty_masuk || 0));
+          return (aSisa - bSisa) * mult;
+        }
+        case 'total_qty_keluar':
+          return ((a.total_qty_keluar || 0) - (b.total_qty_keluar || 0)) * mult;
+        case 'stok_fisik':
+          return ((a.stok_fisik || 0) - (b.stok_fisik || 0)) * mult;
+        case 'status':
+          return (whStatusRank(a) - whStatusRank(b)) * mult;
+        default:
+          return 0;
+      }
+    });
+  }, [physicalMaterials, warehouseSearchQuery, warehouseFilter, warehouseSort]);
 
   // Daftar Dokumen Resmi Mutasi Barang (Tab 4)
   const stockDocuments = useMemo(() => {
-    return (documents || []).filter((d) => d.jenis === 'MUTASI_STOK' || d.jenis === 'GABUNGAN_PROYEK');
-  }, [documents]);
+    const list = (documents || []).filter((d) => d.jenis === 'MUTASI_STOK' || d.jenis === 'GABUNGAN_PROYEK');
+    const mult = docSort.dir === 'asc' ? 1 : -1;
+    const wfRank = (s?: string) => {
+      if (s === 'MENGETAHUI') return 4;
+      if (s === 'DISETUJUI') return 3;
+      if (s === 'DIPERIKSA') return 2;
+      if (s === 'DITERBITKAN') return 1;
+      return 0;
+    };
+    return [...list].sort((a, b) => {
+      switch (docSort.key) {
+        case 'tanggal':
+          return (new Date(a.dibuat_pada).getTime() - new Date(b.dibuat_pada).getTime()) * mult;
+        case 'judul':
+          return (a.judul || '').localeCompare(b.judul || '') * mult;
+        case 'status':
+          return (wfRank(a.status_dokumen) - wfRank(b.status_dokumen)) * mult;
+        default:
+          return 0;
+      }
+    });
+  }, [documents, docSort]);
 
   // Aksi Cepat Mutasi dari Baris Material BOQ (Khusus Pemakaian / Keluar per Pos di Tab 2)
   const handleOpenItemMutation = (item: ItemBarang, type: JenisMutasiBarang) => {
@@ -1019,14 +1189,53 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     <thead>
                       <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold uppercase tracking-wider text-[10px]">
                         <th className="py-3 px-3.5 w-10 text-center">No</th>
-                        <th className="py-3 px-3.5">Nama Material & Cakupan Pos BOQ</th>
-                        <th className="py-3 px-3 text-center">Satuan</th>
-                        <th className="py-3 px-3 text-right">Total Kebutuhan Proyek</th>
-                        <th className="py-3 px-3 text-right">Total Sudah Masuk Gudang</th>
-                        <th className="py-3 px-3 text-right">Sisa Belum Tiba</th>
-                        <th className="py-3 px-3 text-right">Total Sudah Dipakai (Keluar)</th>
-                        <th className="py-3 px-3 text-right">Saldo Fisik Gudang</th>
-                        <th className="py-3 px-3 text-center">Status Gudang</th>
+                        <th className="py-3 px-3.5">
+                          {renderSortBtn('Nama Material & Cakupan Pos BOQ', 'nama_barang', warehouseSort, () =>
+                            setWarehouseSort((prev) => toggleSort(prev, 'nama_barang', 'asc'))
+                          )}
+                        </th>
+                        <th className="py-3 px-3 text-center">
+                          {renderSortBtn('Satuan', 'satuan', warehouseSort, () =>
+                            setWarehouseSort((prev) => toggleSort(prev, 'satuan', 'asc')),
+                            'center'
+                          )}
+                        </th>
+                        <th className="py-3 px-3 text-right">
+                          {renderSortBtn('Total Kebutuhan Proyek', 'total_qty_boq', warehouseSort, () =>
+                            setWarehouseSort((prev) => toggleSort(prev, 'total_qty_boq', 'desc')),
+                            'right'
+                          )}
+                        </th>
+                        <th className="py-3 px-3 text-right">
+                          {renderSortBtn('Total Sudah Masuk Gudang', 'total_qty_masuk', warehouseSort, () =>
+                            setWarehouseSort((prev) => toggleSort(prev, 'total_qty_masuk', 'desc')),
+                            'right'
+                          )}
+                        </th>
+                        <th className="py-3 px-3 text-right">
+                          {renderSortBtn('Sisa Belum Tiba', 'sisa_belum_tiba', warehouseSort, () =>
+                            setWarehouseSort((prev) => toggleSort(prev, 'sisa_belum_tiba', 'desc')),
+                            'right'
+                          )}
+                        </th>
+                        <th className="py-3 px-3 text-right">
+                          {renderSortBtn('Total Sudah Dipakai (Keluar)', 'total_qty_keluar', warehouseSort, () =>
+                            setWarehouseSort((prev) => toggleSort(prev, 'total_qty_keluar', 'desc')),
+                            'right'
+                          )}
+                        </th>
+                        <th className="py-3 px-3 text-right">
+                          {renderSortBtn('Saldo Fisik Gudang', 'stok_fisik', warehouseSort, () =>
+                            setWarehouseSort((prev) => toggleSort(prev, 'stok_fisik', 'desc')),
+                            'right'
+                          )}
+                        </th>
+                        <th className="py-3 px-3 text-center">
+                          {renderSortBtn('Status Gudang', 'status', warehouseSort, () =>
+                            setWarehouseSort((prev) => toggleSort(prev, 'status', 'desc')),
+                            'center'
+                          )}
+                        </th>
                         <th className="py-3 px-3.5 text-center">Aksi Cepat</th>
                       </tr>
                     </thead>
@@ -1292,14 +1501,52 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold uppercase tracking-wider text-[10px]">
-                        <th className="py-3 px-3.5 w-24">Kode BOQ</th>
-                        <th className="py-3 px-3.5">Uraian Material & Pekerjaan</th>
-                        <th className="py-3 px-3 text-center">Penyedia</th>
-                        <th className="py-3 px-3 text-right">Target Pos BOQ</th>
-                        <th className="py-3 px-3 text-right">Terpakai di Pos Ini (Keluar)</th>
-                        <th className="py-3 px-3 text-right">Sisa Kebutuhan Pos</th>
-                        <th className="py-3 px-3 text-center">Ketersediaan Gudang</th>
-                        <th className="py-3 px-3 text-center">Status Pos</th>
+                        <th className="py-3 px-3.5 w-24">
+                          {renderSortBtn('Kode BOQ', 'kode_boq', boqSort, () =>
+                            setBoqSort((prev) => toggleSort(prev, 'kode_boq', 'asc'))
+                          )}
+                        </th>
+                        <th className="py-3 px-3.5">
+                          {renderSortBtn('Uraian Material & Pekerjaan', 'nama_barang', boqSort, () =>
+                            setBoqSort((prev) => toggleSort(prev, 'nama_barang', 'asc'))
+                          )}
+                        </th>
+                        <th className="py-3 px-3 text-center">
+                          {renderSortBtn('Penyedia', 'penyedia', boqSort, () =>
+                            setBoqSort((prev) => toggleSort(prev, 'penyedia', 'asc')),
+                            'center'
+                          )}
+                        </th>
+                        <th className="py-3 px-3 text-right">
+                          {renderSortBtn('Target Pos BOQ', 'qty_boq', boqSort, () =>
+                            setBoqSort((prev) => toggleSort(prev, 'qty_boq', 'desc')),
+                            'right'
+                          )}
+                        </th>
+                        <th className="py-3 px-3 text-right">
+                          {renderSortBtn('Terpakai di Pos Ini (Keluar)', 'qty_keluar_total', boqSort, () =>
+                            setBoqSort((prev) => toggleSort(prev, 'qty_keluar_total', 'desc')),
+                            'right'
+                          )}
+                        </th>
+                        <th className="py-3 px-3 text-right">
+                          {renderSortBtn('Sisa Kebutuhan Pos', 'qty_pemenuhan_sisa', boqSort, () =>
+                            setBoqSort((prev) => toggleSort(prev, 'qty_pemenuhan_sisa', 'desc')),
+                            'right'
+                          )}
+                        </th>
+                        <th className="py-3 px-3 text-center">
+                          {renderSortBtn('Ketersediaan Gudang', 'stok_saat_ini', boqSort, () =>
+                            setBoqSort((prev) => toggleSort(prev, 'stok_saat_ini', 'desc')),
+                            'center'
+                          )}
+                        </th>
+                        <th className="py-3 px-3 text-center">
+                          {renderSortBtn('Status Pos', 'status_pemenuhan', boqSort, () =>
+                            setBoqSort((prev) => toggleSort(prev, 'status_pemenuhan', 'desc')),
+                            'center'
+                          )}
+                        </th>
                         <th className="py-3 px-3.5 text-center w-28">Aksi Pemakaian</th>
                       </tr>
                     </thead>
@@ -1583,12 +1830,35 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     <thead>
                       <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold uppercase tracking-wider text-[10px]">
                         <th className="py-3 px-3.5 w-10 text-center">No</th>
-                        <th className="py-3 px-3.5">Tanggal</th>
-                        <th className="py-3 px-3.5 text-center">Jenis</th>
-                        <th className="py-3 px-3.5">Material</th>
-                        <th className="py-3 px-3.5 text-right">Jumlah</th>
+                        <th className="py-3 px-3.5">
+                          {renderSortBtn('Tanggal', 'tanggal', journalSort, () =>
+                            setJournalSort((prev) => toggleSort(prev, 'tanggal', 'desc'))
+                          )}
+                        </th>
+                        <th className="py-3 px-3.5 text-center">
+                          {renderSortBtn('Jenis', 'jenis', journalSort, () =>
+                            setJournalSort((prev) => toggleSort(prev, 'jenis', 'asc')),
+                            'center'
+                          )}
+                        </th>
+                        <th className="py-3 px-3.5">
+                          {renderSortBtn('Material', 'nama_barang', journalSort, () =>
+                            setJournalSort((prev) => toggleSort(prev, 'nama_barang', 'asc'))
+                          )}
+                        </th>
+                        <th className="py-3 px-3.5 text-right">
+                          {renderSortBtn('Jumlah', 'jumlah', journalSort, () =>
+                            setJournalSort((prev) => toggleSort(prev, 'jumlah', 'desc')),
+                            'right'
+                          )}
+                        </th>
                         <th className="py-3 px-3.5">Asal / Peruntukan & Jejak Audit</th>
-                        <th className="py-3 px-3.5 text-center">Status Baris Data</th>
+                        <th className="py-3 px-3.5 text-center">
+                          {renderSortBtn('Status Baris Data', 'status', journalSort, () =>
+                            setJournalSort((prev) => toggleSort(prev, 'status', 'desc')),
+                            'center'
+                          )}
+                        </th>
                         <th className="py-3 px-3.5 text-center">Koreksi Langsung (Batal / Ganti)</th>
                       </tr>
                     </thead>
@@ -1832,10 +2102,23 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold uppercase tracking-wider text-[10px]">
-                        <th className="py-3 px-3.5">Kode & Tanggal</th>
-                        <th className="py-3 px-3.5">Judul Dokumen & Ringkasan</th>
+                        <th className="py-3 px-3.5">
+                          {renderSortBtn('Kode & Tanggal', 'tanggal', docSort, () =>
+                            setDocSort((prev) => toggleSort(prev, 'tanggal', 'desc'))
+                          )}
+                        </th>
+                        <th className="py-3 px-3.5">
+                          {renderSortBtn('Judul Dokumen & Ringkasan', 'judul', docSort, () =>
+                            setDocSort((prev) => toggleSort(prev, 'judul', 'asc'))
+                          )}
+                        </th>
                         <th className="py-3 px-3.5">Jejak Persetujuan Berantai</th>
-                        <th className="py-3 px-3.5 text-center">Status Dokumen</th>
+                        <th className="py-3 px-3.5 text-center">
+                          {renderSortBtn('Status Dokumen', 'status', docSort, () =>
+                            setDocSort((prev) => toggleSort(prev, 'status', 'desc')),
+                            'center'
+                          )}
+                        </th>
                         <th className="py-3 px-3.5 text-center">Aksi Persetujuan</th>
                         <th className="py-3 px-3.5 text-center">Koreksi & PDF</th>
                       </tr>
