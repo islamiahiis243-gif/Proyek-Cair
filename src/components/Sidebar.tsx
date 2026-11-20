@@ -167,7 +167,7 @@ export const Sidebar: React.FC = () => {
           <button
             type="button"
             onClick={toggleCollapsed}
-            className="hidden md:flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="hidden md:flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             title={isCollapsed ? 'Luaskan Bilah Sisi (Expand)' : 'Ciutkan Bilah Sisi (Collapse)'}
             aria-label={isCollapsed ? 'Luaskan Bilah Sisi' : 'Ciutkan Bilah Sisi'}
           >
@@ -233,19 +233,19 @@ export const Sidebar: React.FC = () => {
       </nav>
 
       {/* Footer Info & Tombol Toggle Bawah */}
-      <div className="hidden border-t border-slate-100 dark:border-slate-800 p-3 text-[11px] text-slate-400 md:block">
+      <div className="hidden border-t border-slate-100 dark:border-slate-800 p-3 text-[11px] text-slate-500 dark:text-slate-400 md:block">
         {!isCollapsed ? (
           <div className="space-y-2">
             <div className="flex justify-between items-center">
               <span>Mode:</span>
-              <span className="font-bold uppercase text-slate-600 dark:text-slate-300">
+              <span className="font-bold uppercase text-slate-700 dark:text-slate-200">
                 {appMode}
               </span>
             </div>
             <button
               type="button"
               onClick={toggleCollapsed}
-              className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-200 dark:border-slate-800 py-1.5 text-[11px] font-medium text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors"
+              className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-200 dark:border-slate-800 py-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               <span>Ciutkan Bilah Sisi</span>
@@ -256,7 +256,7 @@ export const Sidebar: React.FC = () => {
             <button
               type="button"
               onClick={toggleCollapsed}
-              className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               title="Luaskan Bilah Sisi (Expand)"
             >
               <ChevronRight className="h-4 w-4" />
