@@ -74,7 +74,7 @@ export const Header: React.FC = () => {
   const isCSA = (activeContext?.workspaces || []).some(
     w => w.type === 'COMPANY' && w.is_company_super_admin === true
   );
-  const isPSA = Boolean(activeContext?.is_platform_super_admin || user.email === 'islamiahiis243@gmail.com');
+  const isPSA = Boolean(activeContext?.is_platform_super_admin);
 
   // Auto-snap penugasan proyek jika belum ada proyek aktif yang terpilih
   useEffect(() => {
