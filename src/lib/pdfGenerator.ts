@@ -1,8 +1,12 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import QRCode from 'qrcode';
-import { DokumenLaporan, MutasiBarang, MutasiKas, UserProfile, ItemBarang, PhysicalMaterialItem } from '../types';
-import { analyzeIncomingProviderDiscrepancy, summarizeMaterialIncomingDiscrepancy } from './stockMutationEngine';
+import { DokumenLaporan, MutasiBarang, MutasiKas, UserProfile, ItemBarang, PhysicalMaterialItem, TenantBranding } from '../types';
+import {
+  analyzeIncomingProviderDiscrepancy,
+  isClientProvidedRemark,
+  summarizeMaterialIncomingDiscrepancy
+} from './stockMutationEngine';
 
 function stableStringify(value: any): string {
   if (Array.isArray(value)) return '[' + value.map(stableStringify).join(',') + ']';
@@ -53,41 +57,82 @@ export function formatDateOnly(dateString: string): string {
   }
 }
 
+interface ResolvedPdfBranding {
+  contractorName: string;
+  contractorSlug: string;
+  contractorNpwp: string;
+  contractorAddress: string;
+  contractorContact: string;
+  clientName: string;
+  projectName: string;
+  directorName: string;
+  directorEmail: string;
+}
+
+function resolvePdfBranding(branding?: TenantBranding, overrideProjectName?: string): ResolvedPdfBranding {
+  const contractorName = (branding?.contractorName || '').trim() || 'PERUSAHAAN KONTRAKTOR';
+  const contractorSlug =
+    contractorName
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'PROYEK';
+  return {
+    contractorName,
+    contractorSlug,
+    contractorNpwp: (branding?.contractorNpwp || '').trim(),
+    contractorAddress: (branding?.contractorAddress || '').trim(),
+    contractorContact: (branding?.contractorContact || '').trim(),
+    clientName: (branding?.clientName || '').trim() || 'Klien',
+    projectName: (overrideProjectName || branding?.projectName || '').trim() || 'Proyek Aktif',
+    directorName: (branding?.directorName || '').trim() || 'Direktur Utama',
+    directorEmail: (branding?.directorEmail || '').trim(),
+  };
+}
+
 /**
- * Render Kop Surat Resmi CV. MENARA MEGAH
+ * Render Kop Surat Resmi Dinamis (Multi-Tenant)
  */
-function drawOfficialHeader(doc: jsPDF, pageWidth: number) {
-  // Nama Perusahaan
+function drawOfficialHeader(doc: jsPDF, pageWidth: number, branding: ResolvedPdfBranding) {
+  // Nama Perusahaan Kontraktor
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
-  doc.setTextColor(15, 23, 42); // slate-900
-  doc.text('CV. MENARA MEGAH', 14, 15);
+  doc.setTextColor(15, 23, 42);
+  doc.text(branding.contractorName.toUpperCase(), 14, 15);
 
-  // Alamat & Kontak Resmi
+  // Alamat & Kontak Resmi (opsional jika tersedia di profil perusahaan)
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
-  doc.setTextColor(51, 65, 85); // slate-700
-  doc.text('Jl. Veteran Gg. Margo Rukun No. 144', 14, 20);
-  doc.text('Puruk Cahu Kalimantan Tengah - Indonesia', 14, 24);
-  doc.text('Telpon/Hand Phone : 0822 9152 5049   e-mail : menara.megah.cv@gmail.com', 14, 28);
+  doc.setTextColor(51, 65, 85);
+  if (branding.contractorAddress) {
+    doc.text(branding.contractorAddress, 14, 20);
+  } else {
+    doc.text(`Proyek: ${branding.projectName}`, 14, 20);
+  }
+  if (branding.contractorContact) {
+    doc.text(branding.contractorContact, 14, 25);
+  } else {
+    doc.text(`Laporan Operasional & Audit Proyek`, 14, 25);
+  }
 
-  // NPWP badge di kanan atas
+  // NPWP & Info Klien/Proyek di kanan atas
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
-  doc.setTextColor(30, 58, 138); // blue-900
-  doc.text('NPWP: 00.243.765.8-471.000', pageWidth - 14, 15, { align: 'right' });
+  doc.setTextColor(30, 58, 138);
+  if (branding.contractorNpwp) {
+    doc.text(`NPWP: ${branding.contractorNpwp}`, pageWidth - 14, 15, { align: 'right' });
+  }
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(100, 116, 139);
-  doc.text('Klien: PT INDO MURO KENCANA', pageWidth - 14, 20, { align: 'right' });
-  doc.text('Proyek: UDU Project (Trainer & Office)', pageWidth - 14, 24, { align: 'right' });
+  doc.text(`Klien: ${branding.clientName}`, pageWidth - 14, 20, { align: 'right' });
+  doc.text(`Proyek: ${branding.projectName}`, pageWidth - 14, 24, { align: 'right' });
 
   // Garis Pembatas Kop Surat Biru Tebal
-  doc.setDrawColor(37, 99, 235); // blue-600
+  doc.setDrawColor(37, 99, 235);
   doc.setLineWidth(1.2);
   doc.line(14, 32, pageWidth - 14, 32);
 
-  doc.setDrawColor(148, 163, 184); // slate-400
+  doc.setDrawColor(148, 163, 184);
   doc.setLineWidth(0.3);
   doc.line(14, 33.5, pageWidth - 14, 33.5);
 }
@@ -103,6 +148,7 @@ export async function generateStockMutationPDF(params: {
   signer: UserProfile;
   projectName?: string;
   physicalMaterials?: PhysicalMaterialItem[];
+  branding?: TenantBranding;
 }): Promise<DokumenLaporan> {
   const {
     docId,
@@ -110,9 +156,12 @@ export async function generateStockMutationPDF(params: {
     endDate,
     mutations,
     signer,
-    projectName = 'UDU Project (Trainer & UDU Office)',
-    physicalMaterials = []
+    projectName,
+    physicalMaterials = [],
+    branding: rawBranding
   } = params;
+  const b = resolvePdfBranding(rawBranding, projectName);
+  const providerLabels = { contractorName: b.contractorName, clientName: b.clientName };
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -122,8 +171,8 @@ export async function generateStockMutationPDF(params: {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
-  // Kop Surat Resmi
-  drawOfficialHeader(doc, pageWidth);
+  // Kop Surat Resmi Dinamis
+  drawOfficialHeader(doc, pageWidth, b);
 
   // Judul Dokumen
   doc.setTextColor(15, 23, 42);
@@ -140,8 +189,8 @@ export async function generateStockMutationPDF(params: {
   doc.text(`Periode Laporan  : ${formatDateOnly(startDate)} s/d ${formatDateOnly(endDate)}`, 14, 52);
   doc.text(`Tanggal Cetak    : ${formatDateOnly(new Date().toISOString())}`, 14, 56);
 
-  doc.text(`Project : ${projectName}`, pageWidth - 14, 48, { align: 'right' });
-  doc.text(`Kontraktor : CV. MENARA MEGAH`, pageWidth - 14, 52, { align: 'right' });
+  doc.text(`Proyek : ${b.projectName}`, pageWidth - 14, 48, { align: 'right' });
+  doc.text(`Kontraktor : ${b.contractorName}`, pageWidth - 14, 52, { align: 'right' });
   doc.text(`Status Alur : Tervalidasi Berjenjang`, pageWidth - 14, 56, { align: 'right' });
 
   // Filter transaksi aktif (abaikan yang BATAL / DIGANTI untuk total)
@@ -149,8 +198,8 @@ export async function generateStockMutationPDF(params: {
   const totalMasuk = activeMutations.filter((m) => m.jenis === 'MASUK').reduce((acc, m) => acc + m.jumlah, 0);
   const totalKeluar = activeMutations.filter((m) => m.jenis === 'KELUAR').reduce((acc, m) => acc + m.jumlah, 0);
 
-  // Analisis selisih penyedia (mis. Jatah Klien PT IMK tapi ditalangi Kontraktor)
-  const discrepancyByRow = mutations.map((m) => analyzeIncomingProviderDiscrepancy(m, physicalMaterials, mutations));
+  // Analisis selisih penyedia (mis. Jatah Klien tapi ditalangi Kontraktor)
+  const discrepancyByRow = mutations.map((m) => analyzeIncomingProviderDiscrepancy(m, physicalMaterials, mutations, providerLabels));
   const mismatchCount = mutations.filter(
     (m, i) => !m.is_batal && !m.is_ganti && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI' && discrepancyByRow[i].isMismatch
   ).length;
@@ -287,11 +336,11 @@ export async function generateStockMutationPDF(params: {
   doc.setFont('helvetica', 'bold');
   doc.text('Clerk / Logistik', 14, signY + 4);
   doc.setTextColor(15, 23, 42);
-  doc.text('Sumarlin', 14, signY + 22);
+  doc.text(signer?.name || 'Pelaksana Administrasi', 14, signY + 22);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
-  doc.text('sumarlin.1103@gmail.com', 14, signY + 26);
+  if (signer?.email) doc.text(signer.email, 14, signY + 26);
 
   // 2. Diperiksa Oleh (Foreman / Spv)
   const col2X = 14 + colWidth;
@@ -326,29 +375,26 @@ export async function generateStockMutationPDF(params: {
   doc.setFont('helvetica', 'bold');
   doc.text('Direktur Utama', col4X, signY + 4);
 
-  // Generate QR Code untuk Direktur
-  const qrDataUrl = await QRCode.toDataURL(
-    `TTE-CV-MENARA-MEGAH:${docId}:DIREKTUR:ROLLY_YOHANES_KARINAH:NPWP_0024376584714000:STATUS_VALID_SAH`,
-    { width: 100, margin: 0 }
-  );
+  const qrPayload = `TTE-${b.contractorSlug}:${docId}:DIREKTUR:${b.directorName.replace(/\s+/g, '_')}:NPWP_${b.contractorNpwp || 'NA'}:STATUS_VALID_SAH`;
+  const qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 100, margin: 0 });
   doc.addImage(qrDataUrl, 'PNG', col4X, signY + 7, 16, 16);
 
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text('ROLLY YOHANES KARINAH', col4X, signY + 26);
+  doc.text(b.directorName, col4X, signY + 26);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
-  doc.text('rrollyy6@gmail.com', col4X, signY + 30);
+  if (b.directorEmail) doc.text(b.directorEmail, col4X, signY + 30);
 
   // Hash Keamanan Dokumen di Footer
   const snapshot = stableStringify({
     docId,
     startDate,
     endDate,
-    company: 'CV. MENARA MEGAH',
-    project: projectName,
+    company: b.contractorName,
+    project: b.projectName,
     transactions: mutations.map(m => ({ id: m.id, qty: m.jumlah, barang: m.nama_barang, status: m.status_dokumen }))
   });
   const hash = await sha256Hex(snapshot);
@@ -356,30 +402,30 @@ export async function generateStockMutationPDF(params: {
   doc.setFontSize(6);
   doc.setTextColor(148, 163, 184);
   doc.text(
-    `Integritas Dokumen SHA-256: ${hash} | CV. MENARA MEGAH - Puruk Cahu`,
+    `Integritas Dokumen SHA-256: ${hash} | ${b.contractorName}`,
     pageWidth / 2,
     pageHeight - 5,
     { align: 'center' }
   );
 
   // Simpan PDF
-  doc.save(`${docId}_Mutasi_Barang_CV_MENARA_MEGAH.pdf`);
+  doc.save(`${docId}_Mutasi_Barang_${b.contractorSlug}.pdf`);
 
   return {
     id: docId,
-    judul: 'Rekap Mutasi Material & Barang CV. Menara Megah',
+    judul: `Rekap Mutasi Material & Barang ${b.contractorName}`,
     jenis: 'MUTASI_STOK',
     status: 'TERVERIFIKASI',
     periode_awal: startDate,
     periode_akhir: endDate,
     dibuat_pada: new Date().toISOString(),
-    penandatangan_nama: 'ROLLY YOHANES KARINAH',
+    penandatangan_nama: b.directorName,
     penandatangan_jabatan: 'Direktur Utama',
-    penandatangan_email: 'rrollyy6@gmail.com',
+    penandatangan_email: b.directorEmail,
     hash_keamanan: hash,
     total_transaksi: mutations.length,
     ringkasan_nilai_rp: totalMasuk - totalKeluar,
-    qr_payload: `TTE-CV-MENARA-MEGAH:${docId}:DIREKTUR:ROLLY_YOHANES_KARINAH:NPWP_0024376584714000:STATUS_VALID_SAH`,
+    qr_payload: qrPayload,
   };
 }
 
@@ -393,8 +439,10 @@ export async function generateCashflowPDF(params: {
   cashMutations: MutasiKas[];
   signer: UserProfile;
   projectName?: string;
+  branding?: TenantBranding;
 }): Promise<DokumenLaporan> {
-  const { docId, startDate, endDate, cashMutations, signer, projectName = 'UDU Project (Trainer & UDU Office)' } = params;
+  const { docId, startDate, endDate, cashMutations, signer, projectName, branding: rawBranding } = params;
+  const b = resolvePdfBranding(rawBranding, projectName);
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -404,8 +452,8 @@ export async function generateCashflowPDF(params: {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
-  // Kop Surat Resmi
-  drawOfficialHeader(doc, pageWidth);
+  // Kop Surat Resmi Dinamis
+  drawOfficialHeader(doc, pageWidth, b);
 
   // Judul
   doc.setTextColor(15, 23, 42);
@@ -422,8 +470,8 @@ export async function generateCashflowPDF(params: {
   doc.text(`Periode Laporan  : ${formatDateOnly(startDate)} s/d ${formatDateOnly(endDate)}`, 14, 52);
   doc.text(`Tanggal Cetak    : ${formatDateOnly(new Date().toISOString())}`, 14, 56);
 
-  doc.text(`Project : ${projectName}`, pageWidth - 14, 48, { align: 'right' });
-  doc.text(`Kontraktor : CV. MENARA MEGAH`, pageWidth - 14, 52, { align: 'right' });
+  doc.text(`Proyek : ${b.projectName}`, pageWidth - 14, 48, { align: 'right' });
+  doc.text(`Kontraktor : ${b.contractorName}`, pageWidth - 14, 52, { align: 'right' });
   doc.text(`Status Alur : Tervalidasi Berjenjang`, pageWidth - 14, 56, { align: 'right' });
 
   const activeCash = cashMutations.filter(m => !m.is_batal && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI');
@@ -522,11 +570,11 @@ export async function generateCashflowPDF(params: {
   doc.setFont('helvetica', 'bold');
   doc.text('Clerk / Kasir', 14, signY + 4);
   doc.setTextColor(15, 23, 42);
-  doc.text('Sumarlin', 14, signY + 22);
+  doc.text(signer?.name || 'Pelaksana Administrasi', 14, signY + 22);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
-  doc.text('sumarlin.1103@gmail.com', 14, signY + 26);
+  if (signer?.email) doc.text(signer.email, 14, signY + 26);
 
   // 2. Diperiksa Oleh (Spv)
   const col2X = 14 + colWidth;
@@ -561,27 +609,25 @@ export async function generateCashflowPDF(params: {
   doc.setFont('helvetica', 'bold');
   doc.text('Direktur Utama', col4X, signY + 4);
 
-  const qrDataUrl = await QRCode.toDataURL(
-    `TTE-CV-MENARA-MEGAH:${docId}:DIREKTUR:ROLLY_YOHANES_KARINAH:NPWP_0024376584714000:STATUS_VALID_SAH`,
-    { width: 100, margin: 0 }
-  );
+  const qrPayload = `TTE-${b.contractorSlug}:${docId}:DIREKTUR:${b.directorName.replace(/\s+/g, '_')}:NPWP_${b.contractorNpwp || 'NA'}:STATUS_VALID_SAH`;
+  const qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 100, margin: 0 });
   doc.addImage(qrDataUrl, 'PNG', col4X, signY + 7, 16, 16);
 
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text('ROLLY YOHANES KARINAH', col4X, signY + 26);
+  doc.text(b.directorName, col4X, signY + 26);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
-  doc.text('rrollyy6@gmail.com', col4X, signY + 30);
+  if (b.directorEmail) doc.text(b.directorEmail, col4X, signY + 30);
 
   const snapshot = stableStringify({
     docId,
     startDate,
     endDate,
-    company: 'CV. MENARA MEGAH',
-    project: projectName,
+    company: b.contractorName,
+    project: b.projectName,
     cash_mutations: cashMutations.map(m => ({ id: m.id, amount: m.jumlah_rp, jenis: m.jenis, status: m.status_dokumen }))
   });
   const hash = await sha256Hex(snapshot);
@@ -589,29 +635,29 @@ export async function generateCashflowPDF(params: {
   doc.setFontSize(6);
   doc.setTextColor(148, 163, 184);
   doc.text(
-    `Integritas Dokumen SHA-256: ${hash} | CV. MENARA MEGAH - Puruk Cahu`,
+    `Integritas Dokumen SHA-256: ${hash} | ${b.contractorName}`,
     pageWidth / 2,
     pageHeight - 5,
     { align: 'center' }
   );
 
-  doc.save(`${docId}_Buku_Kas_CV_MENARA_MEGAH.pdf`);
+  doc.save(`${docId}_Buku_Kas_${b.contractorSlug}.pdf`);
 
   return {
     id: docId,
-    judul: 'Laporan Arus Kas & Dana Proyek CV. Menara Megah',
+    judul: `Laporan Arus Kas & Dana Proyek ${b.contractorName}`,
     jenis: 'MUTASI_KAS',
     status: 'TERVERIFIKASI',
     periode_awal: startDate,
     periode_akhir: endDate,
     dibuat_pada: new Date().toISOString(),
-    penandatangan_nama: 'ROLLY YOHANES KARINAH',
+    penandatangan_nama: b.directorName,
     penandatangan_jabatan: 'Direktur Utama',
-    penandatangan_email: 'rrollyy6@gmail.com',
+    penandatangan_email: b.directorEmail,
     hash_keamanan: hash,
     total_transaksi: cashMutations.length,
     ringkasan_nilai_rp: endingBalance,
-    qr_payload: `TTE-CV-MENARA-MEGAH:${docId}:DIREKTUR:ROLLY_YOHANES_KARINAH:NPWP_0024376584714000:STATUS_VALID_SAH`,
+    qr_payload: qrPayload,
   };
 }
 
@@ -625,14 +671,18 @@ export async function generateBOQReportPDF(params: {
   signer?: UserProfile;
   preserveOrder?: boolean;
   filterSummary?: string;
+  branding?: TenantBranding;
 }): Promise<DokumenLaporan> {
   const {
     docId,
     items,
-    projectName = 'UDU Project (Trainer & UDU Office)',
+    projectName,
+    signer,
     preserveOrder = false,
-    filterSummary
+    filterSummary,
+    branding: rawBranding
   } = params;
+  const b = resolvePdfBranding(rawBranding, projectName);
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
@@ -642,8 +692,8 @@ export async function generateBOQReportPDF(params: {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
-  // Kop Surat Resmi
-  drawOfficialHeader(doc, pageWidth);
+  // Kop Surat Resmi Dinamis
+  drawOfficialHeader(doc, pageWidth, b);
 
   // Judul Dokumen
   doc.setTextColor(15, 23, 42);
@@ -655,12 +705,30 @@ export async function generateBOQReportPDF(params: {
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
   doc.text(
-    `Klien: PT INDO MURO KENCANA | Proyek: ${projectName} | Tanggal Cetak: ${formatDateOnly(new Date().toISOString())}${filterSummary ? ` | ${filterSummary}` : ''}`,
+    `Klien: ${b.clientName} | Proyek: ${b.projectName} | Tanggal Cetak: ${formatDateOnly(new Date().toISOString())}${filterSummary ? ` | ${filterSummary}` : ''}`,
     14,
     45
   );
 
-  // Kotak Ringkasan Nilai Kontrak Resmi
+  // Hitung Ringkasan Nilai Kontrak Dinamis dari Item BOQ
+  let contractMaterial = 0;
+  let contractManpower = 0;
+  let clientFreeIssue = 0;
+  items.forEach((it) => {
+    const lineTotal = (Number(it.harga_satuan) || 0) * (Number(it.qty_boq) || 0);
+    const isClientItem = isClientProvidedRemark(it.keterangan, b.clientName);
+    if (isClientItem) {
+      clientFreeIssue += lineTotal;
+    } else {
+      const catUpper = (it.kategori || '').toUpperCase();
+      const isManpower = !it.is_stock_item || catUpper.startsWith('IV') || catUpper.includes('JASA') || catUpper.includes('UPAH');
+      if (isManpower) contractManpower += lineTotal;
+      else contractMaterial += lineTotal;
+    }
+  });
+  const contractTotal = contractMaterial + contractManpower;
+
+  // Kotak Ringkasan Nilai Kontrak Dinamis
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(203, 213, 225);
   doc.roundedRect(14, 48, pageWidth - 28, 14, 2, 2, 'FD');
@@ -668,45 +736,45 @@ export async function generateBOQReportPDF(params: {
   doc.setFontSize(7);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(30, 41, 59);
-  doc.text('NILAI KONTRAK RESMI (CV MENARA MEGAH):', 18, 53);
+  doc.text(`NILAI KONTRAK (${b.contractorName.toUpperCase()}):`, 18, 53);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.text('Material Kontrak:', 18, 58);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(37, 99, 235);
-  doc.text('Rp 448.150.623', 45, 58);
+  doc.text(formatRupiah(contractMaterial), 45, 58);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(30, 41, 59);
   doc.text('Upah & Jasa (Manpower):', 80, 58);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(16, 185, 129);
-  doc.text('Rp 271.849.378', 120, 58);
+  doc.text(formatRupiah(contractManpower), 120, 58);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(30, 41, 59);
   doc.text('GRAND TOTAL KONTRAK:', 160, 58);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text('Rp 720.000.000', 205, 58);
+  doc.text(formatRupiah(contractTotal), 205, 58);
 
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(6.5);
   doc.setTextColor(126, 34, 206);
-  doc.text('* Pengadaan Klien (Free-Issue PT IMK): Rp 177.571.280 (Beban Kontraktor: Rp 0)', pageWidth - 18, 53, { align: 'right' });
+  doc.text(`* Pengadaan Klien (Free-Issue ${b.clientName}): ${formatRupiah(clientFreeIssue)} (Beban Kontraktor: Rp 0)`, pageWidth - 18, 53, { align: 'right' });
 
   // Siapkan Data Tabel Berdasarkan Hierarki (pertahankan urutan layar bila preserveOrder = true)
   const sortedItems = preserveOrder
     ? [...items]
-    : [...items].sort((a, b) => (a.source_excel_row || 0) - (b.source_excel_row || 0));
+    : [...items].sort((a, bItem) => (a.source_excel_row || 0) - (bItem.source_excel_row || 0));
   
   const tableData: any[] = [];
   let currentDivision = '';
   let currentSubSection = '';
 
   sortedItems.forEach((it) => {
-    const isImk = (it.keterangan || '').toLowerCase().includes('imk');
+    const isClientItem = isClientProvidedRemark(it.keterangan, b.clientName);
     const catParts = (it.kategori || '').split(' / ');
     const divName = catParts[0] || 'UMUM';
     const subName = catParts[1] || '';
@@ -733,9 +801,9 @@ export async function generateBOQReportPDF(params: {
       ]);
     }
 
-    const hargaSatuanText = isImk ? '0 (By Klien)' : formatRupiah(it.harga_satuan);
-    const totalHargaText = isImk ? '0 (By Klien)' : formatRupiah(it.harga_satuan * it.qty_boq);
-    const providerText = isImk ? 'PT IMK' : 'Menara Megah';
+    const hargaSatuanText = isClientItem ? '0 (By Klien)' : formatRupiah(it.harga_satuan);
+    const totalHargaText = isClientItem ? '0 (By Klien)' : formatRupiah(it.harga_satuan * it.qty_boq);
+    const providerText = isClientItem ? b.clientName : b.contractorName;
 
     tableData.push([
       it.kode_boq || '-',
@@ -804,11 +872,11 @@ export async function generateBOQReportPDF(params: {
   doc.setFont('helvetica', 'bold');
   doc.text('Clerk / Logistik', 14, signY + 4);
   doc.setTextColor(15, 23, 42);
-  doc.text('Sumarlin', 14, signY + 18);
+  doc.text(signer?.name || 'Pelaksana Administrasi', 14, signY + 18);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6);
   doc.setTextColor(100, 116, 139);
-  doc.text('sumarlin.1103@gmail.com', 14, signY + 22);
+  if (signer?.email) doc.text(signer.email, 14, signY + 22);
 
   // 2. Diperiksa Oleh (Foreman)
   const col2X = 14 + colWidth;
@@ -849,42 +917,40 @@ export async function generateBOQReportPDF(params: {
   doc.setFont('helvetica', 'bold');
   doc.text('Direktur Utama', col4X, signY + 4);
 
-  const qrDataUrl = await QRCode.toDataURL(
-    `TTE-CV-MENARA-MEGAH:${docId}:DIREKTUR:ROLLY_YOHANES_KARINAH:NPWP_0024376584714000:BOQ_VALID`,
-    { width: 100, margin: 0 }
-  );
+  const qrPayload = `TTE-${b.contractorSlug}:${docId}:DIREKTUR:${b.directorName.replace(/\s+/g, '_')}:NPWP_${b.contractorNpwp || 'NA'}:BOQ_VALID`;
+  const qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 100, margin: 0 });
   doc.addImage(qrDataUrl, 'PNG', col4X, signY + 6, 14, 14);
 
   doc.setFontSize(7);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text('ROLLY YOHANES KARINAH', col4X, signY + 22);
+  doc.text(b.directorName, col4X, signY + 22);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6);
   doc.setTextColor(100, 116, 139);
-  doc.text('rrollyy6@gmail.com', col4X, signY + 26);
+  if (b.directorEmail) doc.text(b.directorEmail, col4X, signY + 26);
 
   const snapshot = stableStringify({
     docId,
-    company: 'CV. MENARA MEGAH',
-    project: projectName,
+    company: b.contractorName,
+    project: b.projectName,
     total_items: items.length,
-    contract_material: 448150623,
-    contract_manpower: 271849378,
-    contract_total: 720000000,
+    contract_material: contractMaterial,
+    contract_manpower: contractManpower,
+    contract_total: contractTotal,
   });
   const hash = await sha256Hex(snapshot);
 
   doc.setFontSize(6);
   doc.setTextColor(148, 163, 184);
   doc.text(
-    `Integritas Dokumen SHA-256: ${hash} | CV. MENARA MEGAH - Puruk Cahu`,
+    `Integritas Dokumen SHA-256: ${hash} | ${b.contractorName}`,
     pageWidth / 2,
     pageHeight - 5,
     { align: 'center' }
   );
 
-  doc.save(`${docId}_Laporan_BOQ_Pemenuhan_Material_CV_MENARA_MEGAH.pdf`);
+  doc.save(`${docId}_Laporan_BOQ_Pemenuhan_Material_${b.contractorSlug}.pdf`);
 
   return {
     id: docId,
@@ -894,13 +960,13 @@ export async function generateBOQReportPDF(params: {
     periode_awal: new Date().toISOString(),
     periode_akhir: new Date().toISOString(),
     dibuat_pada: new Date().toISOString(),
-    penandatangan_nama: 'ROLLY YOHANES KARINAH',
+    penandatangan_nama: b.directorName,
     penandatangan_jabatan: 'Direktur Utama',
-    penandatangan_email: 'rrollyy6@gmail.com',
+    penandatangan_email: b.directorEmail,
     hash_keamanan: hash,
     total_transaksi: items.length,
-    ringkasan_nilai_rp: 720000000,
-    qr_payload: `TTE-CV-MENARA-MEGAH:${docId}:DIREKTUR:ROLLY_YOHANES_KARINAH:NPWP_0024376584714000:BOQ_VALID`,
+    ringkasan_nilai_rp: contractTotal,
+    qr_payload: qrPayload,
   };
 }
 
@@ -914,15 +980,19 @@ export async function generateWarehouseSummaryPDF(params: {
   filterSummary?: string;
   signer?: UserProfile;
   stockMutations?: MutasiBarang[];
+  branding?: TenantBranding;
 }): Promise<DokumenLaporan> {
   const {
     docId,
     materials,
-    projectName = 'UDU Project (Trainer & UDU Office)',
+    projectName,
     filterSummary,
     signer,
-    stockMutations = []
+    stockMutations = [],
+    branding: rawBranding
   } = params;
+  const b = resolvePdfBranding(rawBranding, projectName);
+  const providerLabels = { contractorName: b.contractorName, clientName: b.clientName };
 
   const doc = new jsPDF({
     orientation: 'landscape',
@@ -933,21 +1003,21 @@ export async function generateWarehouseSummaryPDF(params: {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
-  drawOfficialHeader(doc, pageWidth);
+  drawOfficialHeader(doc, pageWidth, b);
 
   doc.setTextColor(15, 23, 42);
   doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
   doc.text('REKAPITULASI GUDANG MATERIAL ("SATUKAN MASUK")', 14, 40);
 
-  const discrepancyList = materials.map((pm) => summarizeMaterialIncomingDiscrepancy(pm, stockMutations));
+  const discrepancyList = materials.map((pm) => summarizeMaterialIncomingDiscrepancy(pm, stockMutations, providerLabels));
   const mismatchMatCount = discrepancyList.filter((d) => d.hasMismatch).length;
 
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
   doc.text(
-    `Proyek: ${projectName} | Tanggal Cetak: ${formatDateOnly(new Date().toISOString())}${filterSummary ? ` | ${filterSummary}` : ''} | Total Baris: ${materials.length} Material${mismatchMatCount > 0 ? ` | Beda Penyedia/Talangan: ${mismatchMatCount} Material` : ''}`,
+    `Proyek: ${b.projectName} | Tanggal Cetak: ${formatDateOnly(new Date().toISOString())}${filterSummary ? ` | ${filterSummary}` : ''} | Total Baris: ${materials.length} Material${mismatchMatCount > 0 ? ` | Beda Penyedia/Talangan: ${mismatchMatCount} Material` : ''}`,
     14,
     45
   );
@@ -1045,7 +1115,7 @@ export async function generateWarehouseSummaryPDF(params: {
     signY = 25;
   }
 
-  const qrPayload = `TTE-CV-MENARA-MEGAH:${docId}:GUDANG:${materials.length}_MATERIAL`;
+  const qrPayload = `TTE-${b.contractorSlug}:${docId}:GUDANG:${materials.length}_MATERIAL`;
   const qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 100, margin: 0 });
   doc.addImage(qrDataUrl, 'PNG', pageWidth - 30, signY, 16, 16);
 
@@ -1055,19 +1125,19 @@ export async function generateWarehouseSummaryPDF(params: {
   doc.text(`Dicetak oleh: ${signer?.name || 'Clerk'}`, 14, signY + 5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
-  doc.text(`Kode Dokumen: ${docId} | CV. MENARA MEGAH - Puruk Cahu`, 14, signY + 10);
+  doc.text(`Kode Dokumen: ${docId} | ${b.contractorName}`, 14, signY + 10);
 
-  const hash = await sha256Hex(stableStringify({ docId, count: materials.length, projectName }));
+  const hash = await sha256Hex(stableStringify({ docId, count: materials.length, projectName: b.projectName, company: b.contractorName }));
   doc.setFontSize(6);
   doc.setTextColor(148, 163, 184);
   doc.text(
-    `Integritas Dokumen SHA-256: ${hash} | CV. MENARA MEGAH - Puruk Cahu`,
+    `Integritas Dokumen SHA-256: ${hash} | ${b.contractorName}`,
     pageWidth / 2,
     pageHeight - 5,
     { align: 'center' }
   );
 
-  doc.save(`${docId}_Rekap_Gudang_Material_CV_MENARA_MEGAH.pdf`);
+  doc.save(`${docId}_Rekap_Gudang_Material_${b.contractorSlug}.pdf`);
 
   return {
     id: docId,

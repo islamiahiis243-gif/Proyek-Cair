@@ -22,7 +22,7 @@ import {
 } from '../lib/pdfGenerator';
 
 export const ReportsView: React.FC = () => {
-  const { stockMutations, cashMutations, documents, activeProject, activeWorkspaceId, user, setVerifyingDocId, setCurrentView, dataReady, dataError, refreshData } = useApp();
+  const { stockMutations, physicalMaterials, cashMutations, documents, activeProject, activeWorkspaceId, user, setVerifyingDocId, setCurrentView, dataReady, dataError, refreshData, tenantBranding } = useApp();
   const canReadStock=Boolean(activeProject?.permissions.includes('inventory.read'));
   const canReadCash=Boolean(activeProject?.permissions.includes('cash.read'));
   const canReadDocuments=Boolean(activeProject?.permissions.includes('document.read'));
@@ -72,6 +72,8 @@ export const ReportsView: React.FC = () => {
           mutations: filtered,
           signer: user,
           projectName,
+          physicalMaterials,
+          branding: tenantBranding,
         });
 
         setGenerationSuccess(`Ekspor PDF internal ${docId} berhasil diunduh. Tidak dibuat dokumen resmi atau QR verifikasi; gunakan Operations Hub → Dokumen untuk alur approval dan Final Signatory.`);
@@ -90,6 +92,7 @@ export const ReportsView: React.FC = () => {
           cashMutations: filtered,
           signer: user,
           projectName,
+          branding: tenantBranding,
         });
 
         setGenerationSuccess(`Ekspor PDF internal ${docId} berhasil diunduh. Tidak dibuat dokumen resmi atau QR verifikasi; gunakan Operations Hub → Dokumen untuk alur approval dan Final Signatory.`);

@@ -39,6 +39,7 @@ import {
   analyzeIncomingProviderDiscrepancy,
   buildOccurredAtIso,
   getTodayLocalDate,
+  isClientProvidedRemark,
   summarizeMaterialIncomingDiscrepancy,
   toLocalDateInput
 } from '../lib/stockMutationEngine';
@@ -74,8 +75,17 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     user,
     rolePermissions,
     activeRole,
-    dataReady
+    dataReady,
+    tenantBranding
   } = useApp();
+
+  const providerLabels = useMemo(
+    () => ({
+      contractorName: tenantBranding.contractorName,
+      clientName: tenantBranding.clientName
+    }),
+    [tenantBranding.contractorName, tenantBranding.clientName]
+  );
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'ALL' | 'MASUK' | 'KELUAR' | 'BEDA_PENYEDIA' | 'PROYEK_BOQ' | 'PERMINTAAN_KLIEN' | 'BONUS_KLIEN' | 'OPERASIONAL'>('ALL');
@@ -268,7 +278,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       else if (filterType === 'KELUAR') matchFilter = m.jenis === 'KELUAR';
       else if (filterType === 'BEDA_PENYEDIA') {
         matchFilter = !m.is_batal && !m.is_ganti && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI' &&
-          analyzeIncomingProviderDiscrepancy(m, physicalMaterials, stockMutations).isMismatch;
+          analyzeIncomingProviderDiscrepancy(m, physicalMaterials, stockMutations, providerLabels).isMismatch;
       }
       else if (filterType === 'PROYEK_BOQ') matchFilter = m.beban_biaya === 'PROYEK_BOQ' || m.beban_biaya === 'KONTRAKTOR';
       else if (filterType === 'PERMINTAAN_KLIEN') matchFilter = m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN';
@@ -312,9 +322,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           !m.is_ganti &&
           m.status_dokumen !== 'BATAL' &&
           m.status_dokumen !== 'DIGANTI' &&
-          analyzeIncomingProviderDiscrepancy(m, physicalMaterials, stockMutations).isMismatch
+          analyzeIncomingProviderDiscrepancy(m, physicalMaterials, stockMutations, providerLabels).isMismatch
       ).length,
-    [stockMutations, physicalMaterials]
+    [stockMutations, physicalMaterials, providerLabels]
   );
 
   // Helper Pengelompokan Kategori BOQ (Divisi & Sub-Pekerjaan)
@@ -365,9 +375,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   const groupedBoqData = useMemo(() => {
     const q = deferredBoqSearchQuery.trim().toLowerCase();
     const filtered = items.filter((item) => {
-      const isImk = (item.keterangan || '').toLowerCase().includes('imk');
-      if (boqProviderFilter === 'IMK' && !isImk) return false;
-      if (boqProviderFilter === 'KONTRAKTOR' && isImk) return false;
+      const isClientItem = isClientProvidedRemark(item.keterangan, tenantBranding.clientName);
+      if (boqProviderFilter === 'IMK' && !isClientItem) return false;
+      if (boqProviderFilter === 'KONTRAKTOR' && isClientItem) return false;
       if (boqStatusFilter !== 'ALL' && item.status_pemenuhan !== boqStatusFilter) return false;
       if (q) {
         const matchName = item.nama_barang.toLowerCase().includes(q);
@@ -446,8 +456,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               case 'nama_barang':
                 return (a.nama_barang || '').localeCompare(b.nama_barang || '') * mult;
               case 'penyedia': {
-                const aImk = (a.keterangan || '').toLowerCase().includes('imk') ? 1 : 0;
-                const bImk = (b.keterangan || '').toLowerCase().includes('imk') ? 1 : 0;
+                const aImk = isClientProvidedRemark(a.keterangan, tenantBranding.clientName) ? 1 : 0;
+                const bImk = isClientProvidedRemark(b.keterangan, tenantBranding.clientName) ? 1 : 0;
                 return (aImk - bImk) * mult;
               }
               case 'qty_boq':
@@ -478,7 +488,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           subMasuk += it.qty_masuk_total;
           subKeluar += it.qty_keluar_total;
           subSisa += it.qty_pemenuhan_sisa;
-          if ((it.keterangan || '').toLowerCase().includes('imk')) {
+          if (isClientProvidedRemark(it.keterangan, tenantBranding.clientName)) {
             imkCount++;
           } else {
             kontraktorCount++;
@@ -533,12 +543,22 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     let totalImkItems = 0;
     let totalKontraktorItems = 0;
     let arrivedPosCoverageCount = 0;
+    let contractMaterialTotal = 0;
+    let contractManpowerTotal = 0;
+    let clientFreeIssueTotal = 0;
 
     items.forEach((it) => {
-      if ((it.keterangan || '').toLowerCase().includes('imk')) {
+      const isClientItem = isClientProvidedRemark(it.keterangan, tenantBranding.clientName);
+      const lineVal = (Number(it.harga_satuan) || 0) * (Number(it.qty_boq) || 0);
+      if (isClientItem) {
         totalImkItems++;
+        clientFreeIssueTotal += lineVal;
       } else {
         totalKontraktorItems++;
+        const catUpper = (it.kategori || '').toUpperCase();
+        const isManpower = !it.is_stock_item || catUpper.startsWith('IV') || catUpper.includes('JASA') || catUpper.includes('UPAH');
+        if (isManpower) contractManpowerTotal += lineVal;
+        else contractMaterialTotal += lineVal;
       }
 
       if (it.qty_masuk_total > 0) arrivedPosCoverageCount++;
@@ -552,6 +572,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     const arrivedMaterialTypesCount = (physicalMaterials || []).filter((pm) => pm.total_qty_masuk > 0).length;
     const totalMaterialTypesCount = (physicalMaterials || []).filter((pm) => pm.is_stock_item).length;
     const progressPct = totalItems > 0 ? Math.round(((fulfilledCount + overQuotaCount + inProgressCount * 0.5) / totalItems) * 100) : 0;
+    const contractGrandTotal = contractMaterialTotal + contractManpowerTotal;
 
     return {
       totalItems,
@@ -564,9 +585,13 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       arrivedPosCoverageCount,
       arrivedMaterialTypesCount,
       totalMaterialTypesCount,
-      progressPct
+      progressPct,
+      contractMaterialTotal,
+      contractManpowerTotal,
+      contractGrandTotal,
+      clientFreeIssueTotal
     };
-  }, [items, physicalMaterials]);
+  }, [items, physicalMaterials, tenantBranding.clientName]);
 
   // Aksi Cepat Catat Masuk langsung dari 1 Baris Material Gudang ("Satukan Masuk")
   const handleOpenWarehouseMaterialIn = (pm: PhysicalMaterialItem) => {
@@ -983,10 +1008,11 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       await generateWarehouseSummaryPDF({
         docId,
         materials: filteredWarehouseMaterials,
-        projectName: 'Trainer & UDU Office (PT IMK)',
+        projectName: tenantBranding.projectName,
         filterSummary: `${filterLabelMap[warehouseFilter]}${searchPart} · ${sortLabel}`,
         signer: user || undefined,
-        stockMutations
+        stockMutations,
+        branding: tenantBranding
       });
       setNoticeMessage(`PDF Rekap Gudang (${filteredWarehouseMaterials.length} material sesuai sortir layar) berhasil diunduh.`);
     } catch (err: any) {
@@ -1008,7 +1034,11 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       setIsExportingBoq(true);
       const docId = `BOQ-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
       const providerLabel =
-        boqProviderFilter === 'KONTRAKTOR' ? 'CV Menara Megah' : boqProviderFilter === 'IMK' ? 'PT IMK' : 'Semua Penyedia';
+        boqProviderFilter === 'KONTRAKTOR'
+          ? tenantBranding.contractorName
+          : boqProviderFilter === 'IMK'
+          ? tenantBranding.clientName
+          : 'Semua Penyedia';
       const statusLabel = boqStatusFilter === 'ALL' ? 'Semua Status' : boqStatusFilter;
       const sortLabel = boqSort
         ? `Urut: ${boqSort.key} (${boqSort.dir === 'asc' ? 'Naik' : 'Turun'})`
@@ -1018,10 +1048,11 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       await generateBOQReportPDF({
         docId,
         items: visibleItems,
-        projectName: 'Trainer & UDU Office (PT IMK)',
+        projectName: tenantBranding.projectName,
         signer: user || undefined,
         preserveOrder: true,
-        filterSummary: `${providerLabel} · ${statusLabel}${searchPart} · ${sortLabel}`
+        filterSummary: `${providerLabel} · ${statusLabel}${searchPart} · ${sortLabel}`,
+        branding: tenantBranding
       });
       setNoticeMessage(`PDF Realisasi BOQ (${visibleItems.length} pos sesuai sortir layar) berhasil diunduh.`);
     } catch (err: any) {
@@ -1054,7 +1085,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         endDate,
         mutations: filteredMutations,
         signer: user,
-        physicalMaterials
+        projectName: tenantBranding.projectName,
+        physicalMaterials,
+        branding: tenantBranding
       });
       setNoticeMessage(`PDF Jurnal Mutasi (${filteredMutations.length} baris sesuai sortir layar) berhasil diunduh.`);
     } catch (err: any) {
@@ -1075,7 +1108,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         endDate: today,
         mutations: validMutations,
         signer: user,
-        physicalMaterials
+        projectName: tenantBranding.projectName,
+        physicalMaterials,
+        branding: tenantBranding
       });
       setNoticeMessage(`Dokumen PDF Resmi (${docCode}) dengan QR Code Verifikasi berhasil diunduh.`);
     } catch (err: any) {
@@ -1374,7 +1409,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                           const sisaBelumTiba = Math.max(0, totalTarget - totalMasuk);
                           const pctTiba = totalTarget > 0 ? Math.round((totalMasuk / totalTarget) * 100) : 0;
                           const posCount = pm.budget_lines.length;
-                          const matDiscrepancy = summarizeMaterialIncomingDiscrepancy(pm, stockMutations);
+                          const matDiscrepancy = summarizeMaterialIncomingDiscrepancy(pm, stockMutations, providerLabels);
 
                           return (
                             <tr
@@ -1497,7 +1532,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           ===================================================================== */}
           {activeTab === 'BOQ_MONITOR' && (
             <div className="space-y-4">
-              {/* Ringkasan Nilai Kontrak Resmi (POV Kontraktor CV Menara Megah & Klien PT IMK) */}
+              {/* Ringkasan Nilai Kontrak Dinamis (Multi-Tenant: Kontraktor & Klien Proyek Aktif) */}
               <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 dark:from-slate-950 dark:via-blue-950/70 dark:to-slate-950 text-white p-4 sm:p-5 rounded-2xl border border-blue-900/40 shadow-sm">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-blue-800/40">
                   <div className="flex items-center gap-3">
@@ -1509,7 +1544,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                         POV 2: Realisasi Pemakaian per Pos Pekerjaan BOQ ("Bedakan Keluar")
                       </h4>
                       <p className="text-[11px] text-slate-300">
-                        CV MENARA MEGAH · Trainer & UDU Office (Klien: PT INDO MURO KENCANA) — Fokus Pemakaian per Pos Pekerjaan
+                        {tenantBranding.contractorName} · {tenantBranding.projectName} (Klien: {tenantBranding.clientName}) — Fokus Pemakaian per Pos Pekerjaan
                       </p>
                     </div>
                   </div>
@@ -1528,25 +1563,25 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-3.5">
                   <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
                     <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider">1. Material Kontrak</span>
-                    <div className="mt-1 text-base sm:text-lg font-black text-blue-400 font-mono">Rp 448.150.623</div>
-                    <span className="text-[10px] text-slate-300">Tanggungan CV Menara Megah</span>
+                    <div className="mt-1 text-base sm:text-lg font-black text-blue-400 font-mono">{formatRupiah(boqMetrics.contractMaterialTotal)}</div>
+                    <span className="text-[10px] text-slate-300">Tanggungan {tenantBranding.contractorName}</span>
                   </div>
 
                   <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
                     <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider">2. Upah & Jasa (Manpower)</span>
-                    <div className="mt-1 text-base sm:text-lg font-black text-emerald-400 font-mono">Rp 271.849.378</div>
-                    <span className="text-[10px] text-slate-300">Jasa Bongkar & Bangun</span>
+                    <div className="mt-1 text-base sm:text-lg font-black text-emerald-400 font-mono">{formatRupiah(boqMetrics.contractManpowerTotal)}</div>
+                    <span className="text-[10px] text-slate-300">Jasa & Tenaga Kerja</span>
                   </div>
 
                   <div className="bg-amber-500/10 dark:bg-amber-500/[0.08] p-3 rounded-xl border border-amber-500/30">
                     <span className="text-[10px] uppercase font-bold text-amber-300 tracking-wider">3. Grand Total Kontrak</span>
-                    <div className="mt-1 text-base sm:text-lg font-black text-amber-300 font-mono">Rp 720.000.000</div>
-                    <span className="text-[10px] text-amber-200/90 font-medium">Nilai Resmi SPK / Kontrak</span>
+                    <div className="mt-1 text-base sm:text-lg font-black text-amber-300 font-mono">{formatRupiah(boqMetrics.contractGrandTotal)}</div>
+                    <span className="text-[10px] text-amber-200/90 font-medium">Total Nilai BOQ Kontraktor</span>
                   </div>
 
                   <div className="bg-purple-950/50 p-3 rounded-xl border border-purple-800/40">
-                    <span className="text-[10px] uppercase font-bold text-purple-300 tracking-wider">Free-Issue Klien (PT IMK)</span>
-                    <div className="mt-1 text-base sm:text-lg font-black text-purple-300 font-mono">Rp 177.571.280</div>
+                    <span className="text-[10px] uppercase font-bold text-purple-300 tracking-wider">Free-Issue Klien ({tenantBranding.clientName})</span>
+                    <div className="mt-1 text-base sm:text-lg font-black text-purple-300 font-mono">{formatRupiah(boqMetrics.clientFreeIssueTotal)}</div>
                     <span className="text-[10px] text-purple-200">Disediakan Klien (Beban Kontraktor: Rp 0)</span>
                   </div>
                 </div>
@@ -1598,7 +1633,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                           : 'text-slate-700 dark:text-slate-200'
                       }`}
                     >
-                      🏢 Menara Megah
+                      🏢 {tenantBranding.contractorName}
                     </button>
                     <button
                       onClick={() => setBoqProviderFilter('IMK')}
@@ -1608,7 +1643,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                           : 'text-slate-700 dark:text-slate-200'
                       }`}
                     >
-                      👤 PT IMK
+                      👤 {tenantBranding.clientName}
                     </button>
                   </div>
 
@@ -1750,7 +1785,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                             )}
                                             <span>{sub.name}</span>
                                             <span className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-200/90 dark:bg-emerald-900/70 text-emerald-900 dark:text-emerald-200">
-                                              {sub.items.length} Pos · {sub.imkCount > 0 ? `${sub.imkCount} Klien · ` : ''}{sub.kontraktorCount} Menara Megah
+                                              {sub.items.length} Pos · {sub.imkCount > 0 ? `${sub.imkCount} Klien · ` : ''}{sub.kontraktorCount} {tenantBranding.contractorName}
                                             </span>
                                           </button>
                                         </td>
@@ -1758,7 +1793,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
                                       {!isSubCollapsed &&
                                         sub.items.map((item) => {
-                                          const isImk = (item.keterangan || '').toLowerCase().includes('imk');
+                                          const isImk = isClientProvidedRemark(item.keterangan, tenantBranding.clientName);
                                           const keluarPosPct = item.qty_boq > 0 ? Math.round((item.qty_keluar_total / item.qty_boq) * 100) : 0;
 
                                           return (
@@ -1776,7 +1811,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                                 </div>
                                                 {isImk ? (
                                                   <div className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">
-                                                    Beban Kontraktor: Rp 0 (Disediakan Klien PT IMK)
+                                                    Beban Kontraktor: Rp 0 (Disediakan Klien {tenantBranding.clientName})
                                                   </div>
                                                 ) : (
                                                   <div className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">
@@ -1791,11 +1826,11 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                               <td className="py-2.5 px-3 text-center">
                                                 {isImk ? (
                                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800">
-                                                    👤 PT IMK
+                                                    👤 {tenantBranding.clientName}
                                                   </span>
                                                 ) : (
                                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800">
-                                                    🏢 Menara Megah
+                                                    🏢 {tenantBranding.contractorName}
                                                   </span>
                                                 )}
                                               </td>
@@ -2035,7 +2070,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                           const isVoid = mut.is_batal || mut.status_dokumen === 'BATAL';
                           const isReplaced = mut.is_ganti || mut.status_dokumen === 'DIGANTI';
                           const canCorrectRow = rolePermissions.canInitiateBatalGanti || rolePermissions.canInstructBatalGanti;
-                          const rowDiscrepancy = analyzeIncomingProviderDiscrepancy(mut, physicalMaterials, stockMutations);
+                          const rowDiscrepancy = analyzeIncomingProviderDiscrepancy(mut, physicalMaterials, stockMutations, providerLabels);
 
                           return (
                             <tr
@@ -2105,7 +2140,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                           ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300'
                                           : 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300'
                                       }`}>
-                                        {mut.source_name || '🏢 CV Menara Megah'}
+                                        {mut.source_name || `🏢 ${tenantBranding.contractorName}`}
                                       </span>
                                       {rowDiscrepancy.isMismatch && (
                                         <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/80 dark:text-amber-200 dark:border-amber-700">

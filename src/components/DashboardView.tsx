@@ -16,6 +16,7 @@ import {
   Building,
 } from 'lucide-react';
 import { formatRupiah, formatDateTime } from '../lib/pdfGenerator';
+import { isClientProvidedRemark } from '../lib/stockMutationEngine';
 
 interface DashboardViewProps {
   onOpenStockModal: (type?: 'MASUK' | 'KELUAR') => void;
@@ -39,6 +40,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     lowStockCount,
     availableStockCount,
     setCurrentView,
+    tenantBranding,
   } = useApp();
 
   // Cash stats
@@ -61,11 +63,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const totalItemCount = items.length;
   const contractorItemCount = useMemo(() => {
-    return items.filter((it) => !(it.keterangan || '').toLowerCase().includes('imk')).length;
-  }, [items]);
+    return items.filter((it) => !isClientProvidedRemark(it.keterangan, tenantBranding.clientName)).length;
+  }, [items, tenantBranding.clientName]);
   const imkItemCount = useMemo(() => {
-    return items.filter((it) => (it.keterangan || '').toLowerCase().includes('imk')).length;
-  }, [items]);
+    return items.filter((it) => isClientProvidedRemark(it.keterangan, tenantBranding.clientName)).length;
+  }, [items, tenantBranding.clientName]);
+  const contractStats = useMemo(() => {
+    let material = 0;
+    let manpower = 0;
+    let clientFreeIssue = 0;
+    items.forEach((it) => {
+      const val = Number(it.qty_boq || 0) * Number(it.harga_satuan || 0);
+      if (isClientProvidedRemark(it.keterangan, tenantBranding.clientName)) {
+        clientFreeIssue += val;
+      } else {
+        const catUpper = (it.kategori || '').toUpperCase();
+        const isManpower = !it.is_stock_item || catUpper.startsWith('IV') || catUpper.includes('JASA') || catUpper.includes('UPAH');
+        if (isManpower) manpower += val;
+        else material += val;
+      }
+    });
+    const total = material + manpower;
+    const bruto = total + clientFreeIssue;
+    return { material, manpower, total, clientFreeIssue, bruto };
+  }, [items, tenantBranding.clientName]);
   const fulfilledOrArrivedCount = useMemo(() => {
     return items.filter((it) => (it.qty_masuk_total || 0) > 0).length;
   }, [items]);
@@ -95,7 +116,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
           </div>
           <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
-            Monitoring arus barang keluar-masuk dan mutasi kas proyek pembangunan Trainer & UDU Office.
+            Monitoring arus barang keluar-masuk dan mutasi kas proyek {tenantBranding.projectName}.
           </p>
         </div>
 
@@ -183,7 +204,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Card 2: Nilai Kontrak Pelaksanaan (POV Kontraktor Menara Megah) */}
+        {/* Card 2: Nilai Kontrak Pelaksanaan (Dinamis sesuai proyek aktif) */}
         <div
           onClick={() => setCurrentView('stock-mutations')}
           className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:border-blue-400 dark:hover:border-blue-600 cursor-pointer group"
@@ -199,14 +220,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
           <div className="mt-2 text-2xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
-            {formatRupiah(720000000)}
+            {formatRupiah(contractStats.total)}
           </div>
           <div className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
-            Material: <span className="font-semibold text-slate-800 dark:text-slate-200">Rp 448,15 Jt</span> · Upah: <span className="font-semibold text-slate-800 dark:text-slate-200">Rp 271,85 Jt</span>
+            Material: <span className="font-semibold text-slate-800 dark:text-slate-200">{formatRupiah(contractStats.material)}</span> · Upah: <span className="font-semibold text-slate-800 dark:text-slate-200">{formatRupiah(contractStats.manpower)}</span>
           </div>
           <div className="mt-2 flex items-center justify-between text-[10px] text-purple-600 dark:text-purple-400 border-t border-slate-100 dark:border-slate-800 pt-2 font-medium">
-            <span>+ Aset Klien (IMK): Rp 177,57 Jt</span>
-            <span className="text-slate-600 dark:text-slate-300 font-normal">Bruto: Rp 895,97 Jt</span>
+            <span>+ Aset Klien ({tenantBranding.clientName}): {formatRupiah(contractStats.clientFreeIssue)}</span>
+            <span className="text-slate-600 dark:text-slate-300 font-normal">Bruto: {formatRupiah(contractStats.bruto)}</span>
           </div>
         </div>
 
@@ -214,7 +235,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div
           onClick={() => setCurrentView('stock-mutations')}
           className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:border-emerald-400 dark:hover:border-emerald-600 cursor-pointer group"
-          title="Klik untuk melihat rincian pemenuhan 274 pos item BOQ"
+          title={`Klik untuk melihat rincian pemenuhan ${items.length} pos item BOQ`}
         >
           <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1">
@@ -230,7 +251,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">Pos Pekerjaan & Material</span>
           </div>
           <div className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium flex items-center gap-1">
-            <span className="font-semibold text-blue-600 dark:text-blue-400 inline-block min-w-[7rem]">{contractorItemCount} Menara Megah</span>
+            <span className="font-semibold text-blue-600 dark:text-blue-400 inline-block min-w-[7rem]">{contractorItemCount} {tenantBranding.contractorName}</span>
             <span>·</span>
             <span className="font-semibold text-purple-600 dark:text-purple-400">{imkItemCount} Free-Issue Klien</span>
           </div>

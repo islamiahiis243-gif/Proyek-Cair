@@ -43,7 +43,7 @@ export const PersonalDashboardView: React.FC = () => {
               Privasi & Isolasi Data Multi-Tenant
             </h2>
             <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
-              Data operasional, anggaran kontrak pelaksanaan, pos BOQ, serta transaksi kas dan logistik adalah milik mutlak masing-masing perusahaan tenant (seperti <b>CV MENARA MEGAH</b>) dan dilindungi oleh sistem keamanan berbasis mandat. Akun personal tidak dapat melihat data internal perusahaan lain tanpa penugasan resmi dari Company Super Admin (CSA).
+              Data operasional, anggaran kontrak pelaksanaan, pos BOQ, serta transaksi kas dan logistik adalah milik mutlak masing-masing perusahaan tenant dan dilindungi oleh sistem keamanan berbasis mandat. Akun personal tidak dapat melihat data internal perusahaan lain tanpa penugasan resmi dari Company Super Admin (CSA).
             </p>
           </div>
         </div>

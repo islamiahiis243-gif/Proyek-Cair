@@ -13,7 +13,8 @@ import {
   StatusDokumenWorkflow,
   PhysicalMaterialItem,
   PhysicalBudgetLine,
-  BebanBiaya
+  BebanBiaya,
+  TenantBranding
 } from '../types';
 import {
   getStoredConfig,
@@ -130,6 +131,7 @@ interface AppContextType {
   setActiveRole: (role: ImpersonateRole) => void;
   activeCompany: { id: string; name: string; npwp: string };
   setActiveCompany: (c: { id: string; name: string; npwp: string }) => void;
+  tenantBranding: TenantBranding;
   rolePermissions: RolePermissions;
 }
 
@@ -181,6 +183,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     name: 'Akun Pribadi',
     npwp: ''
   });
+  const [activeClientName, setActiveClientName] = useState<string>('');
 
   const setAppMode = (mode: AppMode) => {
     setAppModeState(mode);
@@ -240,8 +243,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (companyWs) {
           setActiveCompany({
             id: companyWs.company_id || companyWs.id,
-            name: companyWs.name || 'CV. MENARA MEGAH',
-            npwp: (companyWs as any).company_npwp || (companyWs as any).npwp || '0024376584714000'
+            name: companyWs.name || 'Perusahaan',
+            npwp: (companyWs as any).company_npwp || (companyWs as any).npwp || ''
           });
         } else {
           setActiveCompany({
@@ -321,8 +324,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (companyWs) {
       setActiveCompany({
         id: companyWs.company_id || companyWs.id,
-        name: companyWs.name || 'CV. MENARA MEGAH',
-        npwp: (companyWs as any).company_npwp || (companyWs as any).npwp || '0024376584714000'
+        name: companyWs.name || 'Perusahaan',
+        npwp: (companyWs as any).company_npwp || (companyWs as any).npwp || ''
       });
     }
 
@@ -364,14 +367,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const client = getSupabaseClient();
-    const [boqRes, sectionsRes, stockRes, cashRes, docsRes, reversalsRes] = await Promise.all([
+    const [boqRes, sectionsRes, stockRes, cashRes, docsRes, reversalsRes, clientRelRes] = await Promise.all([
       client.from('boq_items').select('*').eq('project_id', selectedProject.id).eq('is_active', true).order('source_row'),
       client.from('boq_sections').select('*').eq('project_id', selectedProject.id).eq('is_active', true).order('sort_order'),
       client.from('inventory_transactions').select('*').eq('project_id', selectedProject.id).order('occurred_at', { ascending: true }).order('created_at', { ascending: true }),
       client.from('cash_transactions').select('*').eq('project_id', selectedProject.id).order('occurred_at', { ascending: true }).order('created_at', { ascending: true }),
       client.from('documents').select('*').eq('project_id', selectedProject.id).in('document_type', ['MUTASI_KAS', 'MUTASI_STOK']).order('created_at', { ascending: false }),
-      client.from('inventory_transaction_reversals').select('original_transaction_id')
+      client.from('inventory_transaction_reversals').select('original_transaction_id'),
+      client.from('project_client_relationships').select('client_name, relationship_type').eq('project_id', selectedProject.id).order('created_at', { ascending: true })
     ]);
+
+    const mainClientRow =
+      (clientRelRes.data || []).find((r: any) => r.relationship_type === 'MAIN_CLIENT') ||
+      (clientRelRes.data || [])[0];
+    setActiveClientName(mainClientRow?.client_name || '');
 
     const reversedIds = new Set((reversalsRes.data || []).map((r: any) => r.original_transaction_id));
 
@@ -1152,6 +1161,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const lowStockCount = stockItems.filter(x => x.stok_saat_ini > 0 && x.stok_saat_ini <= x.stok_minimum).length;
   const availableStockCount = stockItems.filter(x => x.has_stock_history && x.stok_saat_ini > x.stok_minimum).length;
 
+  const tenantBranding: TenantBranding = {
+    contractorName:
+      activeProject?.company_name ||
+      (activeCompany.id ? activeCompany.name : '') ||
+      'Kontraktor',
+    contractorNpwp: activeProject?.company_npwp || activeCompany.npwp || '',
+    clientName: activeClientName || 'Klien',
+    projectName: activeProject?.name || 'Proyek Aktif',
+    projectCode: activeProject?.project_code || '',
+    directorName: activeRole === 'CEO/Direktur' && user?.name ? user.name : 'Direktur Utama',
+    directorEmail: activeRole === 'CEO/Direktur' && user?.email ? user.email : ''
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -1213,6 +1235,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveRole,
         activeCompany,
         setActiveCompany,
+        tenantBranding,
         rolePermissions
       }}
     >

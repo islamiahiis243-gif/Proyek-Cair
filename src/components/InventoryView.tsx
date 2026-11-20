@@ -63,7 +63,7 @@ export const InventoryView:React.FC<InventoryViewProps>=({onQuickMutate,canMutat
     <td className="px-3 py-2 text-right font-mono">{section.source_qty==null?'—':Number(section.source_qty).toLocaleString('id-ID',{maximumFractionDigits:4})}</td>
     <td className="px-3 py-2">{section.source_uom||Object.keys(section.quantities_by_uom||{}).join(', ')||'—'}</td>
     <td colSpan={2} className="px-3 py-2 text-right font-semibold">{formatRupiah(Number(section.calculated_total_price||0))}</td>
-    <td colSpan={5} className="px-3 py-2 text-[10px]">{Math.abs(Number(section.source_total_variance||0))>1?'Selisih subtotal sumber: '+formatRupiah(Number(section.source_total_variance)) :'Subtotal sesuai sumber'} · By IMK: {formatRupiah(Number(section.imk_total_price||0))}</td>
+    <td colSpan={5} className="px-3 py-2 text-[10px]">{Math.abs(Number(section.source_total_variance||0))>1?'Selisih subtotal sumber: '+formatRupiah(Number(section.source_total_variance)) :'Subtotal sesuai sumber'} · Free-Issue Klien: {formatRupiah(Number(section.imk_total_price||0))}</td>
    </tr>
    {isOpen&&children.map(child=>renderSection(child,depth+1))}
    {isOpen&&ownItems.map(x=><tr key={x.id} className="border-b border-slate-100 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800/40">

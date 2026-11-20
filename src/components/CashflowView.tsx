@@ -48,7 +48,8 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
     cashAccess,
     rolePermissions,
     activeRole,
-    dataReady
+    dataReady,
+    tenantBranding
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'CASH_JOURNAL' | 'CASH_DOCUMENTS'>('CASH_JOURNAL');
@@ -372,7 +373,9 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
         startDate: '2026-01-01',
         endDate: today,
         cashMutations: validCash,
-        signer: user
+        signer: user,
+        projectName: tenantBranding.projectName,
+        branding: tenantBranding
       });
       setNoticeMessage(`Dokumen PDF Resmi Kas (${docCode}) dengan QR Code Verifikasi berhasil diunduh.`);
     } catch (err: any) {

@@ -466,7 +466,7 @@ export const CompanyConsole: React.FC = () => {
                       Perusahaan / Tenant Aktif
                     </span>
                     <h2 className="mt-1 text-xl font-bold text-slate-900 dark:text-slate-100">
-                      {activeWorkspace?.name || currentCompanyLegalName || 'CV. MENARA MEGAH'}
+                      {activeWorkspace?.name || currentCompanyLegalName || 'Perusahaan'}
                     </h2>
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                       <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
@@ -749,7 +749,7 @@ export const CompanyConsole: React.FC = () => {
                           maxLength={200}
                           value={clientName}
                           onChange={e => setClientName(e.target.value)}
-                          placeholder="Contoh: PT INDO MURO KENCANA"
+                          placeholder="Contoh: PT Pemilik Proyek Utama"
                           className="w-full rounded-lg border border-slate-300 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-950"
                         />
                       </div>
@@ -834,7 +834,7 @@ export const CompanyConsole: React.FC = () => {
                 <div className="mb-4">
                   <h2 className="font-bold text-base text-slate-900 dark:text-slate-100">Profil Perusahaan & Legalitas</h2>
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Nama Legal Resmi: <b>{currentCompanyLegalName || 'CV. MENARA MEGAH'}</b>.
+                    Nama Legal Resmi: <b>{currentCompanyLegalName || 'Perusahaan'}</b>.
                     Perubahan nama legal atau NPWP akan dikirim untuk peninjauan resmi Platform Super Admin.
                   </p>
                 </div>

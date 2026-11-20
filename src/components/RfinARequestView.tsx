@@ -163,7 +163,7 @@ export const RfinARequestView: React.FC = () => {
               disabled={busy}
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
-              placeholder="Contoh: PT Menara Megah Konstruksi"
+              placeholder="Contoh: PT Karya Konstruksi Nusantara"
               className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"
             />
           </div>

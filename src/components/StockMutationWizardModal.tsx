@@ -18,6 +18,7 @@ import {
   MutasiBarang,
   PhysicalMaterialItem
 } from '../types';
+import { useApp } from '../context/AppContext';
 import {
   buildStockMutationPayload,
   computeWizardSteps,
@@ -59,8 +60,20 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
   onSubmitPayload,
   onSuccessNotice
 }) => {
+  const { tenantBranding } = useApp();
+  const providerLabels = useMemo(
+    () => ({
+      contractorName: tenantBranding.contractorName,
+      clientName: tenantBranding.clientName
+    }),
+    [tenantBranding.contractorName, tenantBranding.clientName]
+  );
+
   const [answers, setAnswers] = useState<StockWizardAnswers>(() =>
-    createInitialWizardAnswers(mutationType, defaultPicName, preselectedMaterial, preselectedLineId)
+    createInitialWizardAnswers(mutationType, defaultPicName, preselectedMaterial, preselectedLineId, {
+      contractorName: tenantBranding.contractorName,
+      clientName: tenantBranding.clientName
+    })
   );
   const [stepIndex, setStepIndex] = useState<number>(preselectedMaterial ? 1 : 0);
   const [isDoneNext, setIsDoneNext] = useState<boolean>(false);
@@ -77,7 +90,8 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
       mutationType,
       defaultPicName,
       preselectedMaterial,
-      preselectedLineId
+      preselectedLineId,
+      providerLabels
     );
     setAnswers(init);
     setStepIndex(preselectedMaterial ? 1 : 0);
@@ -159,7 +173,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
     return scored.slice(0, 6).map((x) => x.ci);
   }, [hasTypedSearch, trimmedQuery, existingCustomItems, answers.mutationType]);
 
-  const processed = useMemo(() => buildStockMutationPayload(answers), [answers]);
+  const processed = useMemo(() => buildStockMutationPayload(answers, providerLabels), [answers, providerLabels]);
 
   if (!isOpen) return null;
 
@@ -174,7 +188,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
       : answers.customItemName.trim();
 
   const handleSelectBoqItem = (pm: PhysicalMaterialItem) => {
-    const prov = getProviderMetaForMaterial(pm);
+    const prov = getProviderMetaForMaterial(pm, providerLabels);
     const nextAnswers: StockWizardAnswers = {
       ...answers,
       itemSource: 'BOQ',
@@ -241,7 +255,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
     const preservedDate = answers.mutationDate;
     const preservedPic = answers.pic || defaultPicName;
     const preservedSuratJalan = answers.suratJalan;
-    const fresh = createInitialWizardAnswers(nextType, preservedPic, null, undefined);
+    const fresh = createInitialWizardAnswers(nextType, preservedPic, null, undefined, providerLabels);
     setAnswers({
       ...fresh,
       mutationDate: preservedDate,
@@ -285,7 +299,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
     setSubmitting(true);
     setStepError(null);
     try {
-      const finalData = buildStockMutationPayload(answers);
+      const finalData = buildStockMutationPayload(answers, providerLabels);
       const res = await onSubmitPayload(finalData.payload);
       if (!res.success) {
         setStepError(res.message);
@@ -324,10 +338,10 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
   ) {
     contextChips.push(
       answers.asalBarang === 'KLIEN'
-        ? 'Klien (PT IMK)'
+        ? `Klien (${tenantBranding.clientName})`
         : answers.asalBarang === 'TOKO_BEBAS'
         ? answers.tokoBebasName.trim() || 'Lainnya'
-        : 'Kontraktor'
+        : tenantBranding.contractorName
     );
   }
 
@@ -463,7 +477,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
               {hasTypedSearch && (
                 <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/70 max-h-72 overflow-y-auto divide-y divide-slate-200/70 dark:divide-slate-700/60">
                   {filteredBoqMatches.map((pm) => {
-                    const prov = getProviderMetaForMaterial(pm);
+                    const prov = getProviderMetaForMaterial(pm, providerLabels);
                     const totalTgt = pm.total_qty_boq || 0;
                     const totalIn = pm.total_qty_masuk || 0;
                     const kurang = Math.max(0, totalTgt - totalIn);
@@ -488,10 +502,10 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                               }`}
                             >
                               {prov.defaultAsal === 'KLIEN' && !prov.isMixed
-                                ? '👤 Klien (PT IMK)'
+                                ? `👤 Klien (${tenantBranding.clientName})`
                                 : prov.isMixed
-                                ? '🏢 Kontraktor & PT IMK'
-                                : '🏢 Kontraktor'}
+                                ? `🏢 ${tenantBranding.contractorName} & ${tenantBranding.clientName}`
+                                : `🏢 ${tenantBranding.contractorName}`}
                             </span>
                             <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">
                               Barang BOQ
@@ -744,10 +758,10 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                 {answers.itemSource === 'BOQ' && answers.physicalMaterial && (
                   <p className="mt-1.5 text-sm text-teal-800 dark:text-teal-200 font-semibold">
                     {(() => {
-                      const meta = getProviderMetaForMaterial(answers.physicalMaterial);
+                      const meta = getProviderMetaForMaterial(answers.physicalMaterial, providerLabels);
                       if (meta.isMixed) {
                         const fmt = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 3 });
-                        return `ℹ️ Jatah BOQ campuran — Kontraktor: ${fmt(meta.kontraktorQty)} ${activeUom} · PT IMK: ${fmt(meta.imkQty)} ${activeUom}. Pilih penyedia sesuai kenyataan lapangan.`;
+                        return `ℹ️ Jatah BOQ campuran — ${tenantBranding.contractorName}: ${fmt(meta.kontraktorQty)} ${activeUom} · ${tenantBranding.clientName}: ${fmt(meta.imkQty)} ${activeUom}. Pilih penyedia sesuai kenyataan lapangan.`;
                       }
                       return answers.asalBarang === meta.defaultAsal
                         ? `✓ Otomatis sesuai kontrak BOQ (${meta.label}). Ubah hanya jika kondisi lapangan berbeda.`
@@ -759,8 +773,8 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                 {[
-                  { id: 'KONTRAKTOR' as const, icon: '🏢', title: 'Kontraktor', sub: 'CV Menara Megah' },
-                  { id: 'KLIEN' as const, icon: '👤', title: 'Klien', sub: 'PT IMK' },
+                  { id: 'KONTRAKTOR' as const, icon: '🏢', title: 'Kontraktor', sub: tenantBranding.contractorName },
+                  { id: 'KLIEN' as const, icon: '👤', title: 'Klien', sub: tenantBranding.clientName },
                   { id: 'TOKO_BEBAS' as const, icon: '🏪', title: 'Lainnya', sub: 'Toko / Pihak Ketiga' }
                 ].map((opt) => {
                   const selected = answers.asalBarang === opt.id;
@@ -883,7 +897,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                     id: 'BONUS_KLIEN' as const,
                     icon: '🎁',
                     title: 'Bonus Klien',
-                    sub: 'Gratis (beban CV Menara Megah)'
+                    sub: `Gratis (beban ${tenantBranding.contractorName})`
                   }
                 ].map((opt) => {
                   const selected = answers.tujuanPengeluaran === opt.id;

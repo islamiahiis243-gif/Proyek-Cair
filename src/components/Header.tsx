@@ -195,7 +195,7 @@ export const Header: React.FC = () => {
           <div className="min-w-0 pr-1 text-left">
             <div className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase leading-none truncate max-w-[140px] sm:max-w-[200px]">
               {appMode === 'IMPERSONATE'
-                ? (activeCompany.name || 'CV MENARA MEGAH')
+                ? (activeCompany.name || 'Perusahaan')
                 : appMode === 'CSA'
                 ? (activeCompany.npwp || 'KONSOL PERUSAHAAN')
                 : appMode === 'PSA'
@@ -204,7 +204,7 @@ export const Header: React.FC = () => {
             </div>
             <div className="text-xs font-bold text-white tracking-wide leading-tight truncate max-w-[140px] sm:max-w-[200px] mt-0.5">
               {appMode === 'IMPERSONATE'
-                ? (activeProject?.name || 'UDU Project')
+                ? (activeProject?.name || 'Proyek Aktif')
                 : appMode === 'CSA'
                 ? activeCompany.name
                 : appMode === 'PSA'

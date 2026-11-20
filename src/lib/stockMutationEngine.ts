@@ -97,8 +97,56 @@ export const formatIndonesianDate = (dateStr: string): string => {
   });
 };
 
+export interface ProviderLabels {
+  contractorName?: string;
+  clientName?: string;
+}
+
+const resolveProviderLabels = (labels?: ProviderLabels) => {
+  const contractor = (labels?.contractorName || '').trim() || 'Kontraktor';
+  const client = (labels?.clientName || '').trim() || 'Klien';
+  return { contractor, client };
+};
+
+/**
+ * Deteksi generik apakah sebuah pos BOQ merupakan barang free-issue / pasokan Klien.
+ * Mendukung pola umum ('by klien', 'by client', 'by owner', 'free-issue', 'pemilik')
+ * maupun nama klien proyek aktif (termasuk singkatan seperti 'imk').
+ */
+export const isClientProvidedRemark = (remark?: string, clientName?: string): boolean => {
+  const lower = (remark || '').toLowerCase();
+  if (!lower) return false;
+  if (
+    lower.includes('by klien') ||
+    lower.includes('by client') ||
+    lower.includes('by owner') ||
+    lower.includes('free-issue') ||
+    lower.includes('free issue') ||
+    lower.includes('klien') ||
+    lower.includes('client') ||
+    lower.includes('owner') ||
+    lower.includes('pemilik') ||
+    /\bimk\b/.test(lower)
+  ) {
+    return true;
+  }
+  if (clientName) {
+    const stopWords = new Set(['pt', 'cv', 'tbk', 'persero', 'ltd', 'inc', 'co', 'dan', 'the']);
+    const tokens = clientName
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length >= 3 && !stopWords.has(t));
+    if (tokens.some((t) => lower.includes(t))) {
+      return true;
+    }
+  }
+  return false;
+};
+
 export const getProviderMetaForMaterial = (
-  pm: PhysicalMaterialItem | null
+  pm: PhysicalMaterialItem | null,
+  labels?: ProviderLabels
 ): {
   defaultAsal: 'KONTRAKTOR' | 'KLIEN';
   isMixed: boolean;
@@ -106,8 +154,9 @@ export const getProviderMetaForMaterial = (
   kontraktorQty: number;
   imkQty: number;
 } => {
+  const { contractor, client } = resolveProviderLabels(labels);
   if (!pm || !pm.budget_lines || pm.budget_lines.length === 0) {
-    return { defaultAsal: 'KONTRAKTOR', isMixed: false, label: 'Kontraktor', kontraktorQty: 0, imkQty: 0 };
+    return { defaultAsal: 'KONTRAKTOR', isMixed: false, label: contractor, kontraktorQty: 0, imkQty: 0 };
   }
   let imkQty = 0;
   let kontraktorQty = 0;
@@ -115,9 +164,9 @@ export const getProviderMetaForMaterial = (
   let kontraktorCount = 0;
 
   pm.budget_lines.forEach((bl) => {
-    const isImk = (bl.keterangan || '').toLowerCase().includes('imk');
+    const isClient = isClientProvidedRemark(bl.keterangan, labels?.clientName);
     const q = Number(bl.qty_boq || 0);
-    if (isImk) {
+    if (isClient) {
       imkQty += q;
       imkCount += 1;
     } else {
@@ -126,22 +175,22 @@ export const getProviderMetaForMaterial = (
     }
   });
 
-  const hasImk = imkQty > 0 || imkCount > 0;
+  const hasClient = imkQty > 0 || imkCount > 0;
   const hasKontraktor = kontraktorQty > 0 || kontraktorCount > 0;
 
-  if (hasImk && !hasKontraktor) {
-    return { defaultAsal: 'KLIEN', isMixed: false, label: 'Klien (PT IMK)', kontraktorQty: 0, imkQty };
+  if (hasClient && !hasKontraktor) {
+    return { defaultAsal: 'KLIEN', isMixed: false, label: client, kontraktorQty: 0, imkQty };
   }
-  if (hasImk && hasKontraktor) {
+  if (hasClient && hasKontraktor) {
     return {
       defaultAsal: imkQty > kontraktorQty ? 'KLIEN' : 'KONTRAKTOR',
       isMixed: true,
-      label: 'Kontraktor & PT IMK',
+      label: `${contractor} & ${client}`,
       kontraktorQty,
       imkQty
     };
   }
-  return { defaultAsal: 'KONTRAKTOR', isMixed: false, label: 'Kontraktor', kontraktorQty, imkQty: 0 };
+  return { defaultAsal: 'KONTRAKTOR', isMixed: false, label: contractor, kontraktorQty, imkQty: 0 };
 };
 
 export interface ProviderDiscrepancyInfo {
@@ -154,37 +203,35 @@ export interface ProviderDiscrepancyInfo {
 }
 
 const isActualClientMutation = (
-  mut: Pick<MutasiBarang, 'source_name' | 'owner_type'>
+  mut: Pick<MutasiBarang, 'source_name' | 'owner_type'>,
+  clientName?: string
 ): boolean => {
-  const actualLower = (mut.source_name || '').trim().toLowerCase();
-  return (
-    mut.owner_type === 'KLIEN' ||
-    actualLower.includes('klien') ||
-    actualLower.includes('imk') ||
-    actualLower.includes('owner')
-  );
+  if (mut.owner_type === 'KLIEN') return true;
+  return isClientProvidedRemark(mut.source_name, clientName);
 };
 
 /**
  * Deteksi otomatis selisih penyedia antara Kontrak BOQ vs Realisasi Barang Masuk di lapangan.
- * Mendukung barang murni 1 penyedia MAUPUN barang campuran (Kontraktor & PT IMK) jika melampaui kuota penyedia.
+ * Mendukung barang murni 1 penyedia MAUPUN barang campuran (Kontraktor & Klien) jika melampaui kuota penyedia.
  */
 export const analyzeIncomingProviderDiscrepancy = (
   mut: Pick<MutasiBarang, 'id' | 'tanggal' | 'barang_id' | 'nama_barang' | 'jenis' | 'jumlah' | 'satuan' | 'is_custom_item' | 'source_name' | 'owner_type'>,
   physicalMaterials: PhysicalMaterialItem[],
-  allMutations?: MutasiBarang[]
+  allMutations?: MutasiBarang[],
+  labels?: ProviderLabels
 ): ProviderDiscrepancyInfo => {
+  const { contractor, client } = resolveProviderLabels(labels);
   const actualRaw = (mut.source_name || '').trim();
   const actualLower = actualRaw.toLowerCase();
-  const isActualClient = isActualClientMutation(mut);
+  const isActualClient = isActualClientMutation(mut, labels?.clientName);
   const isActualOther =
     !isActualClient && (actualLower.includes('lainnya') || actualLower.includes('toko'));
 
   const actualProviderLabel = isActualClient
-    ? 'Klien (PT IMK)'
+    ? `Klien (${client})`
     : isActualOther
     ? actualRaw || 'Lainnya / Toko Bebas'
-    : 'Kontraktor (CV Menara Megah)';
+    : `Kontraktor (${contractor})`;
 
   if (mut.jenis !== 'MASUK' || mut.is_custom_item) {
     return {
@@ -216,37 +263,37 @@ export const analyzeIncomingProviderDiscrepancy = (
     };
   }
 
-  const prov = getProviderMetaForMaterial(matchedPm);
+  const prov = getProviderMetaForMaterial(matchedPm, labels);
 
-  // 1) Jatah murni Klien (PT IMK), tetapi realisasi lapangan masuk oleh Kontraktor / Lainnya
+  // 1) Jatah murni Klien, tetapi realisasi lapangan masuk oleh Kontraktor / Lainnya
   if (!prov.isMixed && prov.defaultAsal === 'KLIEN' && !isActualClient) {
     const label = isActualOther
-      ? `Pengadaan Lainnya (Jatah BOQ: PT IMK)`
-      : `Talangan Kontraktor (Jatah BOQ: PT IMK)`;
+      ? `Pengadaan Lainnya (Jatah BOQ: ${client})`
+      : `Talangan Kontraktor (Jatah BOQ: ${client})`;
     return {
       isMismatch: true,
       kind: 'TALANGAN_KONTRAKTOR',
-      contractProviderLabel: 'Klien (PT IMK)',
+      contractProviderLabel: client,
       actualProviderLabel,
       shortBadge: label,
       pdfNote: label
     };
   }
 
-  // 2) Jatah murni Kontraktor (CV Menara Megah), tetapi realisasi lapangan dipasok Klien (PT IMK)
+  // 2) Jatah murni Kontraktor, tetapi realisasi lapangan dipasok Klien
   if (!prov.isMixed && prov.defaultAsal === 'KONTRAKTOR' && isActualClient) {
-    const label = `Dipasok Klien PT IMK (Jatah BOQ: Kontraktor)`;
+    const label = `Dipasok ${client} (Jatah BOQ: ${contractor})`;
     return {
       isMismatch: true,
       kind: 'DIPASOK_KLIEN',
-      contractProviderLabel: 'Kontraktor (CV Menara Megah)',
+      contractProviderLabel: contractor,
       actualProviderLabel,
       shortBadge: label,
       pdfNote: label
     };
   }
 
-  // 3) Material Campuran (Kontraktor & PT IMK): cek apakah kumulatif masuk penyedia ini melampaui kuota BOQ-nya
+  // 3) Material Campuran (Kontraktor & Klien): cek apakah kumulatif masuk penyedia ini melampaui kuota BOQ-nya
   if (prov.isMixed && allMutations && allMutations.length > 0) {
     const lineIds = new Set([matchedPm.id, ...matchedPm.budget_lines.map((bl) => bl.id)]);
     const relatedIn = allMutations
@@ -268,18 +315,18 @@ export const analyzeIncomingProviderDiscrepancy = (
     let cumKontraktor = 0;
     let cumKlien = 0;
     for (const m of relatedIn) {
-      const mIsClient = isActualClientMutation(m);
+      const mIsClient = isActualClientMutation(m, labels?.clientName);
       if (mIsClient) cumKlien += Number(m.jumlah || 0);
       else cumKontraktor += Number(m.jumlah || 0);
 
       if (m.id === mut.id) {
         if (!mIsClient && cumKontraktor > prov.kontraktorQty + 0.0001) {
           const excess = Math.min(Number(mut.jumlah || 0), cumKontraktor - prov.kontraktorQty);
-          const label = `Talangan Kontraktor +${excess.toLocaleString('id-ID', { maximumFractionDigits: 3 })} ${mut.satuan} (Melebihi Kuota Kontraktor · Jatah PT IMK)`;
+          const label = `Talangan Kontraktor +${excess.toLocaleString('id-ID', { maximumFractionDigits: 3 })} ${mut.satuan} (Melebihi Kuota Kontraktor · Jatah ${client})`;
           return {
             isMismatch: true,
             kind: 'TALANGAN_KONTRAKTOR',
-            contractProviderLabel: 'Kontraktor & PT IMK',
+            contractProviderLabel: `${contractor} & ${client}`,
             actualProviderLabel,
             shortBadge: label,
             pdfNote: label
@@ -287,11 +334,11 @@ export const analyzeIncomingProviderDiscrepancy = (
         }
         if (mIsClient && cumKlien > prov.imkQty + 0.0001) {
           const excess = Math.min(Number(mut.jumlah || 0), cumKlien - prov.imkQty);
-          const label = `Dipasok Klien PT IMK +${excess.toLocaleString('id-ID', { maximumFractionDigits: 3 })} ${mut.satuan} (Melebihi Kuota PT IMK · Jatah Kontraktor)`;
+          const label = `Dipasok ${client} +${excess.toLocaleString('id-ID', { maximumFractionDigits: 3 })} ${mut.satuan} (Melebihi Kuota Klien · Jatah ${contractor})`;
           return {
             isMismatch: true,
             kind: 'DIPASOK_KLIEN',
-            contractProviderLabel: 'Kontraktor & PT IMK',
+            contractProviderLabel: `${contractor} & ${client}`,
             actualProviderLabel,
             shortBadge: label,
             pdfNote: label
@@ -327,9 +374,11 @@ export interface MaterialDiscrepancySummary {
  */
 export const summarizeMaterialIncomingDiscrepancy = (
   pm: PhysicalMaterialItem,
-  stockMutations: MutasiBarang[]
+  stockMutations: MutasiBarang[],
+  labels?: ProviderLabels
 ): MaterialDiscrepancySummary => {
-  const prov = getProviderMetaForMaterial(pm);
+  const { contractor, client } = resolveProviderLabels(labels);
+  const prov = getProviderMetaForMaterial(pm, labels);
   const lineIds = new Set([pm.id, ...pm.budget_lines.map((bl) => bl.id)]);
   const normName = pm.nama_barang.trim().toLowerCase();
 
@@ -343,7 +392,7 @@ export const summarizeMaterialIncomingDiscrepancy = (
     const match = (m.barang_id && lineIds.has(m.barang_id)) || (m.nama_barang || '').trim().toLowerCase() === normName;
     if (!match) continue;
 
-    if (isActualClientMutation(m)) {
+    if (isActualClientMutation(m, labels?.clientName)) {
       masukKlien += Number(m.jumlah || 0);
     } else {
       masukKontraktor += Number(m.jumlah || 0);
@@ -353,7 +402,7 @@ export const summarizeMaterialIncomingDiscrepancy = (
   const fmt = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 3 });
 
   if (prov.isMixed) {
-    const mixedBreakdownText = `Porsi Masuk — Kontraktor: ${fmt(masukKontraktor)}/${fmt(prov.kontraktorQty)} · PT IMK: ${fmt(masukKlien)}/${fmt(prov.imkQty)} ${pm.satuan}`;
+    const mixedBreakdownText = `Porsi Masuk — ${contractor}: ${fmt(masukKontraktor)}/${fmt(prov.kontraktorQty)} · ${client}: ${fmt(masukKlien)}/${fmt(prov.imkQty)} ${pm.satuan}`;
 
     if (masukKontraktor > prov.kontraktorQty + 0.0001) {
       const excess = masukKontraktor - prov.kontraktorQty;
@@ -362,8 +411,8 @@ export const summarizeMaterialIncomingDiscrepancy = (
         kind: 'TALANGAN_KONTRAKTOR',
         mismatchQty: excess,
         contractProviderLabel: prov.label,
-        actualProviderLabel: 'Kontraktor',
-        summaryText: `Talangan Kontraktor: +${fmt(excess)} ${pm.satuan} melebihi porsi Kontraktor (Jatah PT IMK)`,
+        actualProviderLabel: contractor,
+        summaryText: `Talangan Kontraktor: +${fmt(excess)} ${pm.satuan} melebihi porsi Kontraktor (Jatah ${client})`,
         mixedBreakdownText
       };
     }
@@ -375,8 +424,8 @@ export const summarizeMaterialIncomingDiscrepancy = (
         kind: 'DIPASOK_KLIEN',
         mismatchQty: excess,
         contractProviderLabel: prov.label,
-        actualProviderLabel: 'Klien (PT IMK)',
-        summaryText: `Dipasok Klien PT IMK: +${fmt(excess)} ${pm.satuan} melebihi porsi PT IMK (Jatah Kontraktor)`,
+        actualProviderLabel: client,
+        summaryText: `Dipasok ${client}: +${fmt(excess)} ${pm.satuan} melebihi porsi Klien (Jatah ${contractor})`,
         mixedBreakdownText
       };
     }
@@ -397,9 +446,9 @@ export const summarizeMaterialIncomingDiscrepancy = (
       hasMismatch: true,
       kind: 'TALANGAN_KONTRAKTOR',
       mismatchQty: masukKontraktor,
-      contractProviderLabel: 'Klien (PT IMK)',
-      actualProviderLabel: 'Kontraktor',
-      summaryText: `Talangan Kontraktor: ${fmt(masukKontraktor)} ${pm.satuan} (Jatah BOQ: PT IMK)`,
+      contractProviderLabel: client,
+      actualProviderLabel: contractor,
+      summaryText: `Talangan Kontraktor: ${fmt(masukKontraktor)} ${pm.satuan} (Jatah BOQ: ${client})`,
       mixedBreakdownText: ''
     };
   }
@@ -409,9 +458,9 @@ export const summarizeMaterialIncomingDiscrepancy = (
       hasMismatch: true,
       kind: 'DIPASOK_KLIEN',
       mismatchQty: masukKlien,
-      contractProviderLabel: 'Kontraktor',
-      actualProviderLabel: 'Klien (PT IMK)',
-      summaryText: `Dipasok Klien PT IMK: ${fmt(masukKlien)} ${pm.satuan} (Jatah BOQ: Kontraktor)`,
+      contractProviderLabel: contractor,
+      actualProviderLabel: client,
+      summaryText: `Dipasok ${client}: ${fmt(masukKlien)} ${pm.satuan} (Jatah BOQ: ${contractor})`,
       mixedBreakdownText: ''
     };
   }
@@ -431,7 +480,8 @@ export const createInitialWizardAnswers = (
   type: JenisMutasiBarang,
   picName: string,
   preselectedPm?: PhysicalMaterialItem | null,
-  explicitLineId?: string
+  explicitLineId?: string,
+  labels?: ProviderLabels
 ): StockWizardAnswers => {
   const base: StockWizardAnswers = {
     mutationType: type,
@@ -454,7 +504,7 @@ export const createInitialWizardAnswers = (
   };
 
   if (preselectedPm) {
-    const prov = getProviderMetaForMaterial(preselectedPm);
+    const prov = getProviderMetaForMaterial(preselectedPm, labels);
     const matchedLine =
       (explicitLineId && preselectedPm.budget_lines.find((bl) => bl.id === explicitLineId)) ||
       preselectedPm.budget_lines[0] ||
@@ -603,8 +653,10 @@ export interface ProcessedStockSubmission {
  * Menerjemahkan jawaban percakapan manusiawi dari Clerk menjadi payload database terstruktur.
  */
 export const buildStockMutationPayload = (
-  answers: StockWizardAnswers
+  answers: StockWizardAnswers,
+  labels?: ProviderLabels
 ): ProcessedStockSubmission => {
+  const { contractor, client } = resolveProviderLabels(labels);
   const isCustom =
     answers.itemSource === 'CUSTOM_EXISTING' || answers.itemSource === 'CUSTOM_NEW';
   const pm = answers.physicalMaterial;
@@ -625,22 +677,22 @@ export const buildStockMutationPayload = (
 
   const targetItemId = isCustom ? '' : selectedLine?.id || pm?.id || '';
 
-  let calculatedSourceName = 'Pengadaan Kontraktor (CV Menara Megah)';
+  let calculatedSourceName = `Pengadaan Kontraktor (${contractor})`;
   let calculatedOwnerType: 'KONTRAKTOR' | 'KLIEN' = 'KONTRAKTOR';
   let calculatedBeban: BebanBiaya = 'KONTRAKTOR';
   let finalPurpose = 'Penyediaan Material Kontrak BOQ';
   let destinationName = answers.mutationType === 'MASUK' ? 'Gudang Utama Proyek' : 'Area Proyek';
 
   let detailLabel = 'Asal Barang';
-  let detailValue = 'Kontraktor (CV Menara Megah)';
+  let detailValue = `Kontraktor (${contractor})`;
   let extraLabel: string | undefined;
   let extraValue: string | undefined;
 
   if (answers.mutationType === 'MASUK') {
     if (answers.asalBarang === 'KLIEN') {
-      calculatedSourceName = 'Disediakan Klien / Owner';
+      calculatedSourceName = `Disediakan Klien (${client})`;
       calculatedOwnerType = 'KLIEN';
-      detailValue = 'Klien (PT IMK)';
+      detailValue = `Klien (${client})`;
     } else if (answers.asalBarang === 'TOKO_BEBAS') {
       calculatedSourceName = answers.tokoBebasName.trim()
         ? `Lainnya: ${answers.tokoBebasName.trim()}`
@@ -656,19 +708,19 @@ export const buildStockMutationPayload = (
       extraLabel = 'Rencana Keperluan Masuk';
       extraValue = finalPurpose;
     } else {
-      const prov = getProviderMetaForMaterial(pm);
+      const prov = getProviderMetaForMaterial(pm, labels);
       if (!prov.isMixed && prov.defaultAsal === 'KLIEN' && answers.asalBarang === 'KONTRAKTOR') {
-        finalPurpose = 'Penyediaan Material Kontrak BOQ — Talangan Kontraktor (Jatah BOQ: PT IMK)';
+        finalPurpose = `Penyediaan Material Kontrak BOQ — Talangan Kontraktor (Jatah BOQ: ${client})`;
         extraLabel = 'Selisih Penyedia (Otomatis)';
-        extraValue = 'Jatah BOQ: PT IMK · Realisasi Masuk: Kontraktor (CV Menara Megah)';
+        extraValue = `Jatah BOQ: ${client} · Realisasi Masuk: Kontraktor (${contractor})`;
       } else if (!prov.isMixed && prov.defaultAsal === 'KLIEN' && answers.asalBarang === 'TOKO_BEBAS') {
-        finalPurpose = 'Penyediaan Material Kontrak BOQ — Pengadaan Lainnya (Jatah BOQ: PT IMK)';
+        finalPurpose = `Penyediaan Material Kontrak BOQ — Pengadaan Lainnya (Jatah BOQ: ${client})`;
         extraLabel = 'Selisih Penyedia (Otomatis)';
-        extraValue = `Jatah BOQ: PT IMK · Realisasi Masuk: ${detailValue}`;
+        extraValue = `Jatah BOQ: ${client} · Realisasi Masuk: ${detailValue}`;
       } else if (!prov.isMixed && prov.defaultAsal === 'KONTRAKTOR' && answers.asalBarang === 'KLIEN') {
-        finalPurpose = 'Penyediaan Material Kontrak BOQ — Dipasok Klien PT IMK (Jatah BOQ: Kontraktor)';
+        finalPurpose = `Penyediaan Material Kontrak BOQ — Dipasok ${client} (Jatah BOQ: ${contractor})`;
         extraLabel = 'Selisih Penyedia (Otomatis)';
-        extraValue = 'Jatah BOQ: Kontraktor · Realisasi Masuk: Klien (PT IMK)';
+        extraValue = `Jatah BOQ: ${contractor} · Realisasi Masuk: Klien (${client})`;
       } else {
         finalPurpose = 'Penyediaan Material Kontrak BOQ';
         extraLabel = 'Aturan Gudang';
@@ -708,7 +760,7 @@ export const buildStockMutationPayload = (
       extraValue = finalPurpose;
     } else if (answers.tujuanPengeluaran === 'BONUS_KLIEN') {
       calculatedBeban = 'BONUS_KLIEN';
-      finalPurpose = answers.exitNote.trim() || 'Bonus untuk Klien (Gratis / Beban Menara Megah)';
+      finalPurpose = answers.exitNote.trim() || `Bonus untuk Klien (Gratis / Beban ${contractor})`;
       detailValue = 'Bonus untuk Klien (Gratis)';
       extraLabel = 'Keterangan';
       extraValue = finalPurpose;

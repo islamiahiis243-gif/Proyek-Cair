@@ -138,7 +138,7 @@ export const RfinBInputView: React.FC = () => {
               <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">Perusahaan</span>
               <div className="font-semibold text-sm text-slate-900 dark:text-white flex items-center gap-1.5 mt-0.5">
                 <Building2 className="h-4 w-4 text-blue-500" />
-                {preview.company_name || 'CV Menara Megah'}
+                {preview.company_name || 'Perusahaan Terkait'}
               </div>
             </div>
 

@@ -96,7 +96,7 @@ export const Sidebar: React.FC = () => {
     ];
   } else {
     // Mode Impersonate (Karyawan / Anggota Proyek)
-    modeTitle = activeProject?.name || activeCompany.name || 'UDU Project';
+    modeTitle = activeProject?.name || activeCompany.name || 'Proyek Aktif';
     modeSubtitle = `${activeCompany.name || 'Perusahaan'} · Jabatan: ${activeRole}`;
     ModeIcon = activeRole === 'Viewer/Pengamat' ? Eye : Hexagon;
     themeAccent = activeRole === 'Viewer/Pengamat' ? 'cyan' : 'amber';
