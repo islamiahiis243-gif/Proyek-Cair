@@ -519,6 +519,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const prId = activeProjectId || (activeContext?.projects[0]?.id as string);
 
       const { error } = await client.from('inventory_transactions').insert({
+        idempotency_key: crypto.randomUUID(),
         workspace_id: wsId,
         project_id: prId,
         item_id: data.barang_id || null,
@@ -578,6 +579,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // 1. Masukkan mutasi baru
       const { data: newRow, error: insertErr } = await client.from('inventory_transactions').insert({
+        idempotency_key: crypto.randomUUID(),
         workspace_id: wsId,
         project_id: prId,
         item_id: newMutation.barang_id || null,
@@ -654,6 +656,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const prId = activeProjectId || (activeContext?.projects[0]?.id as string);
 
       const { error } = await client.from('cash_transactions').insert({
+        idempotency_key: crypto.randomUUID(),
         workspace_id: wsId,
         project_id: prId,
         transaction_type: data.jenis,
@@ -703,6 +706,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const prId = activeProjectId || (activeContext?.projects[0]?.id as string);
 
       const { data: newRow, error: insertErr } = await client.from('cash_transactions').insert({
+        idempotency_key: crypto.randomUUID(),
         workspace_id: wsId,
         project_id: prId,
         transaction_type: newMutation.jenis,

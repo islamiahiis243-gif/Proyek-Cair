@@ -243,7 +243,7 @@ export async function generateStockMutationPDF(params: {
   doc.setFont('helvetica', 'bold');
   doc.text('Spv. / Pengawas', col2X, signY + 4);
   doc.setTextColor(15, 23, 42);
-  doc.text('Sumarlin', col2X, signY + 22);
+  doc.text('Pengawas Lapangan', col2X, signY + 22);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
@@ -256,7 +256,7 @@ export async function generateStockMutationPDF(params: {
   doc.setFont('helvetica', 'bold');
   doc.text('Dept. Manager', col3X, signY + 4);
   doc.setTextColor(15, 23, 42);
-  doc.text('Sumarlin', col3X, signY + 22);
+  doc.text('Manajer Terkait', col3X, signY + 22);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
@@ -478,7 +478,7 @@ export async function generateCashflowPDF(params: {
   doc.setFont('helvetica', 'bold');
   doc.text('Spv. / Pengawas', col2X, signY + 4);
   doc.setTextColor(15, 23, 42);
-  doc.text('Sumarlin', col2X, signY + 22);
+  doc.text('Pengawas Lapangan', col2X, signY + 22);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
@@ -491,7 +491,7 @@ export async function generateCashflowPDF(params: {
   doc.setFont('helvetica', 'bold');
   doc.text('Dept. Manager', col3X, signY + 4);
   doc.setTextColor(15, 23, 42);
-  doc.text('Sumarlin', col3X, signY + 22);
+  doc.text('Manajer Terkait', col3X, signY + 22);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
@@ -752,11 +752,11 @@ export async function generateBOQReportPDF(params: {
   doc.setFont('helvetica', 'bold');
   doc.text('Foreman Lapangan', col2X, signY + 4);
   doc.setTextColor(15, 23, 42);
-  doc.text('Ahmad Fauzi', col2X, signY + 18);
+  doc.text('Tim Pengawas Lapangan', col2X, signY + 18);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6);
   doc.setTextColor(100, 116, 139);
-  doc.text('foreman@menaramegah.co.id', col2X, signY + 22);
+  doc.text('Status: Terverifikasi Lapangan', col2X, signY + 22);
 
   // 3. Diverifikasi (Site Engineer / PM)
   const col3X = 14 + colWidth * 2;
@@ -765,13 +765,13 @@ export async function generateBOQReportPDF(params: {
   doc.setTextColor(100, 116, 139);
   doc.text('Diverifikasi Oleh,', col3X, signY);
   doc.setFont('helvetica', 'bold');
-  doc.text('Project Manager / SE', col3X, signY + 4);
+  doc.text('Site Engineer / PM', col3X, signY + 4);
   doc.setTextColor(15, 23, 42);
-  doc.text('Ir. Bambang H.', col3X, signY + 18);
+  doc.text('Tim Teknis Proyek', col3X, signY + 18);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6);
   doc.setTextColor(100, 116, 139);
-  doc.text('pm@menaramegah.co.id', col3X, signY + 22);
+  doc.text('Status: Sesuai Gambar & Spesifikasi', col3X, signY + 22);
 
   // 4. Disetujui (Direktur Utama)
   const col4X = 14 + colWidth * 3;

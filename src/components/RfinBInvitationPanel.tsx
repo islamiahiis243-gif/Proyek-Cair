@@ -229,7 +229,7 @@ export const RfinBInvitationPanel: React.FC<{
                 disabled={busy}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="nama@perusahaan.co.id"
+                placeholder="contoh: staf@email.com"
                 className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"
               />
               <p className="mt-1 text-[11px] text-slate-400">
