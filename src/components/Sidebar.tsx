@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   User,
   Hexagon,
+  Eye,
   ChevronLeft,
   ChevronRight,
   type LucideIcon
@@ -96,8 +97,8 @@ export const Sidebar: React.FC = () => {
     // Mode Impersonate (Karyawan / Anggota Proyek)
     modeTitle = activeProject?.name || activeCompany.name || 'UDU Project';
     modeSubtitle = `${activeCompany.name || 'Perusahaan'} · Jabatan: ${activeRole}`;
-    ModeIcon = Hexagon;
-    themeAccent = 'amber';
+    ModeIcon = activeRole === 'Viewer/Pengamat' ? Eye : Hexagon;
+    themeAccent = activeRole === 'Viewer/Pengamat' ? 'cyan' : 'amber';
     navItems = [
       { id: 'dashboard', label: 'Dasbor & Analitik', icon: LayoutDashboard },
       { id: 'rfin-b-input', label: 'Aktivasi RFIN-B', icon: KeyRound },
@@ -128,6 +129,8 @@ export const Sidebar: React.FC = () => {
             } ${
               themeAccent === 'amber'
                 ? 'border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20'
+                : themeAccent === 'cyan'
+                ? 'border-cyan-500/30 bg-cyan-50/50 dark:bg-cyan-950/20'
                 : themeAccent === 'purple'
                 ? 'border-purple-500/30 bg-purple-50/50 dark:bg-purple-950/20'
                 : themeAccent === 'emerald'
@@ -140,6 +143,8 @@ export const Sidebar: React.FC = () => {
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
                 themeAccent === 'amber'
                   ? 'bg-amber-500/20 text-amber-500'
+                  : themeAccent === 'cyan'
+                  ? 'bg-cyan-500/20 text-cyan-500 dark:text-cyan-400'
                   : themeAccent === 'purple'
                   ? 'bg-purple-500/20 text-purple-400'
                   : themeAccent === 'emerald'

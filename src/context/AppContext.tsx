@@ -49,6 +49,8 @@ export function getRolePermissions(role: ImpersonateRole): RolePermissions {
       return { canRead: true, canIssue: false, canInitiateBatalGanti: false, canInstructBatalGanti: true, canCheck: false, canApprove: false, canAcknowledge: true };
     case 'CEO/Direktur':
       return { canRead: true, canIssue: false, canInitiateBatalGanti: false, canInstructBatalGanti: true, canCheck: false, canApprove: false, canAcknowledge: true };
+    case 'Viewer/Pengamat':
+      return { canRead: true, canIssue: false, canInitiateBatalGanti: false, canInstructBatalGanti: false, canCheck: false, canApprove: false, canAcknowledge: false };
   }
 }
 
@@ -147,7 +149,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeRole, setActiveRoleState] = useState<ImpersonateRole>(() => {
     try {
       const saved = localStorage.getItem(ACTIVE_ROLE_KEY) as ImpersonateRole;
-      if (['Clerk', 'Foreman', 'Spv.', 'Dept. Manager', 'KTT/Proj. Manager', 'CEO/Direktur'].includes(saved)) {
+      if (['Clerk', 'Foreman', 'Spv.', 'Dept. Manager', 'KTT/Proj. Manager', 'CEO/Direktur', 'Viewer/Pengamat'].includes(saved)) {
         return saved;
       }
     } catch {}
@@ -215,8 +217,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cashMutations, setCashMutations] = useState<MutasiKas[]>([]);
   const [documents, setDocuments] = useState<DokumenLaporan[]>([]);
 
-  const cashWriteAccess = Boolean(activeProject?.permissions.includes('cash.transaction.create')) || rolePermissions.canIssue;
-  const stockWriteAccess = Boolean(activeProject?.permissions.includes('inventory.movement.create')) || rolePermissions.canIssue;
+  const cashWriteAccess = appMode === 'IMPERSONATE'
+    ? rolePermissions.canIssue
+    : (Boolean(activeProject?.permissions.includes('cash.transaction.create')) || rolePermissions.canIssue);
+  const stockWriteAccess = appMode === 'IMPERSONATE'
+    ? rolePermissions.canIssue
+    : (Boolean(activeProject?.permissions.includes('inventory.movement.create')) || rolePermissions.canIssue);
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     try {

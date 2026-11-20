@@ -1,7 +1,7 @@
 export type AvailabilityStatus = 'Belum Dicatat' | 'Tersedia' | 'Stok Menipis' | 'Tidak Tersedia';
 
 export type AppMode = 'PERSONAL' | 'IMPERSONATE' | 'CSA' | 'PSA';
-export type ImpersonateRole = 'Clerk' | 'Foreman' | 'Spv.' | 'Dept. Manager' | 'KTT/Proj. Manager' | 'CEO/Direktur';
+export type ImpersonateRole = 'Clerk' | 'Foreman' | 'Spv.' | 'Dept. Manager' | 'KTT/Proj. Manager' | 'CEO/Direktur' | 'Viewer/Pengamat';
 export type StatusDokumenWorkflow = 'DRAFT' | 'DITERBITKAN' | 'DIPERIKSA' | 'DISETUJUI' | 'MENGETAHUI' | 'BATAL' | 'DIGANTI';
 
 export interface ItemBarang {

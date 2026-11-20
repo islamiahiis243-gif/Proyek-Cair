@@ -13,7 +13,8 @@ import {
   Wallet,
   CheckCircle2,
   Database,
-  FolderKanban
+  FolderKanban,
+  Eye
 } from 'lucide-react';
 import { formatRupiah } from '../lib/pdfGenerator';
 import { ImpersonateRole, AppMode } from '../types';
@@ -34,6 +35,7 @@ export const Header: React.FC = () => {
     setActiveCompany,
     activeProjectId,
     activeProject,
+    activeWorkspaceId,
     setActiveProjectId,
     setActiveWorkspaceId,
     activeContext,
@@ -64,8 +66,19 @@ export const Header: React.FC = () => {
     if (upper === 'DEPT_MANAGER' || upper === 'MANAGER') return 'Dept. Manager';
     if (upper === 'KTT_PM' || upper === 'PM') return 'KTT/Proj. Manager';
     if (upper === 'CEO' || upper === 'DIRECTOR' || upper === 'DIREKTUR') return 'CEO/Direktur';
+    if (upper === 'VIEWER' || upper === 'PENGAMAT' || upper === 'OBSERVER') return 'Viewer/Pengamat';
     return 'Clerk';
   };
+
+  const ALL_PERSONA_ROLES: { role: ImpersonateRole; label: string; desc: string; icon: string }[] = [
+    { role: 'Clerk', label: 'Clerk / Juru Tulis', desc: 'Entri data material & kas (Draf)', icon: '📝' },
+    { role: 'Foreman', label: 'Foreman / Mandor', desc: 'Pemeriksaan fisik lapangan (Diperiksa)', icon: '👷' },
+    { role: 'Spv.', label: 'Supervisor (Spv.)', desc: 'Verifikasi & persetujuan divisi', icon: '🔍' },
+    { role: 'Dept. Manager', label: 'Dept. Manager', desc: 'Persetujuan manajerial & TTE QR', icon: '📋' },
+    { role: 'KTT/Proj. Manager', label: 'KTT / Project Manager', desc: 'Pengesahan tertinggi proyek & TTE QR', icon: '🏗️' },
+    { role: 'CEO/Direktur', label: 'CEO / Direktur Utama', desc: 'Otorisasi legal korporasi & TTE QR', icon: '🏛️' },
+    { role: 'Viewer/Pengamat', label: 'Viewer / Pengamat', desc: 'Akses pantau read-only (Konsultan, Pendana, Klien)', icon: '👁️' },
+  ];
 
   const userAssignments = activeContext?.projects || [];
   const isCSA = (activeContext?.workspaces || []).some(
@@ -73,25 +86,23 @@ export const Header: React.FC = () => {
   );
   const isPSA = Boolean(activeContext?.is_platform_super_admin || user.email === 'islamiahiis243@gmail.com');
 
-  // Auto-snap: jika di mode jabatan tapi peran aktif tidak ada di penugasan sah, kunci ke penugasan pertama
+  // Auto-snap penugasan proyek jika belum ada proyek aktif yang terpilih
   useEffect(() => {
     if (appMode === 'IMPERSONATE' && userAssignments.length > 0) {
-      const validRoles = userAssignments.map(a => mapRoleCode(a.role_code));
-      if (!validRoles.includes(activeRole)) {
-        const first = userAssignments[0];
-        setActiveRole(mapRoleCode(first.role_code));
-        if (first.id) setActiveProjectId(first.id);
-        if (first.workspace_id) setActiveWorkspaceId(first.workspace_id);
-        if (first.company_id && first.company_name) {
-          setActiveCompany({
-            id: first.company_id,
-            name: first.company_name,
-            npwp: first.company_npwp || activeCompany.npwp
-          });
-        }
+      if (!activeProjectId && userAssignments[0]?.id) {
+        setActiveProjectId(userAssignments[0].id);
+      }
+      if (!activeWorkspaceId && userAssignments[0]?.workspace_id) {
+        setActiveWorkspaceId(userAssignments[0].workspace_id);
       }
     }
-  }, [userAssignments, appMode, activeRole]);
+  }, [userAssignments, appMode, activeProjectId, activeWorkspaceId]);
+
+  const handleSelectRoleDirect = (role: ImpersonateRole) => {
+    setActiveRole(role);
+    setAppMode('IMPERSONATE');
+    setDropdownOpen(false);
+  };
 
   const handleSelectAssignment = (proj: any) => {
     const role = mapRoleCode(proj.role_code);
@@ -160,7 +171,9 @@ export const Header: React.FC = () => {
           onClick={() => setDropdownOpen(v => !v)}
           className={`flex items-center gap-2.5 rounded-xl px-3 py-1.5 border transition-all text-left shadow-sm ${
             appMode === 'IMPERSONATE'
-              ? 'bg-slate-950/90 border-amber-500/40 hover:border-amber-400/80 ring-1 ring-amber-500/20'
+              ? activeRole === 'Viewer/Pengamat'
+                ? 'bg-slate-950/90 border-cyan-500/40 hover:border-cyan-400/80 ring-1 ring-cyan-500/20'
+                : 'bg-slate-950/90 border-amber-500/40 hover:border-amber-400/80 ring-1 ring-amber-500/20'
               : appMode === 'CSA'
               ? 'bg-slate-950/90 border-blue-500/40 hover:border-blue-400/80 ring-1 ring-blue-500/20'
               : appMode === 'PSA'
@@ -174,10 +187,17 @@ export const Header: React.FC = () => {
           {/* Ikon Hexagon / Identitas */}
           <div className="flex items-center justify-center shrink-0">
             {appMode === 'IMPERSONATE' ? (
-              <div className="relative">
-                <Hexagon className="w-6 h-6 text-amber-400 fill-amber-400/10 stroke-[1.8]" />
-                <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 border border-slate-950" />
-              </div>
+              activeRole === 'Viewer/Pengamat' ? (
+                <div className="relative">
+                  <Eye className="w-5 h-5 text-cyan-400 stroke-[2]" />
+                  <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-cyan-400 border border-slate-950 animate-pulse" />
+                </div>
+              ) : (
+                <div className="relative">
+                  <Hexagon className="w-6 h-6 text-amber-400 fill-amber-400/10 stroke-[1.8]" />
+                  <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 border border-slate-950" />
+                </div>
+              )
             ) : appMode === 'CSA' ? (
               <ShieldAlert className="w-5 h-5 text-blue-400" />
             ) : appMode === 'PSA' ? (
@@ -213,7 +233,9 @@ export const Header: React.FC = () => {
           <div
             className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase border transition-colors ${
               appMode === 'IMPERSONATE'
-                ? 'border-amber-500/70 text-amber-300 bg-amber-500/10'
+                ? activeRole === 'Viewer/Pengamat'
+                  ? 'border-cyan-500/70 text-cyan-300 bg-cyan-500/10'
+                  : 'border-amber-500/70 text-amber-300 bg-amber-500/10'
                 : appMode === 'CSA'
                 ? 'border-blue-500/70 text-blue-300 bg-blue-500/10'
                 : appMode === 'PSA'
@@ -223,7 +245,7 @@ export const Header: React.FC = () => {
           >
             <span>
               {appMode === 'IMPERSONATE'
-                ? activeRole
+                ? (activeRole === 'Viewer/Pengamat' ? 'VIEWER' : activeRole)
                 : appMode === 'CSA'
                 ? 'CSA'
                 : appMode === 'PSA'
@@ -320,6 +342,52 @@ export const Header: React.FC = () => {
                   </p>
                 </div>
               )}
+
+              {/* 7 Tingkat Jabatan Proyek (Simulasi & Uji Coba Lapangan) */}
+              <div className="mt-3 pt-2.5 border-t border-slate-800/80">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2 px-1 flex items-center justify-between">
+                  <span>7 Tingkat Jabatan Proyek</span>
+                  <span className="text-[9px] text-amber-400 font-medium">Beralih Cepat</span>
+                </div>
+                <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                  {ALL_PERSONA_ROLES.map((item) => {
+                    const isSelected = appMode === 'IMPERSONATE' && activeRole === item.role;
+                    return (
+                      <button
+                        key={item.role}
+                        type="button"
+                        onClick={() => handleSelectRoleDirect(item.role)}
+                        className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-left transition-all border ${
+                          isSelected
+                            ? item.role === 'Viewer/Pengamat'
+                              ? 'bg-cyan-950/60 border-cyan-500/50 text-cyan-200 font-semibold shadow-xs'
+                              : 'bg-amber-950/60 border-amber-500/50 text-amber-200 font-semibold shadow-xs'
+                            : 'border-slate-800/60 hover:bg-slate-800/80 text-slate-300'
+                        }`}
+                      >
+                        <div className="min-w-0 flex items-center gap-2">
+                          <span className="text-sm shrink-0">{item.icon}</span>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold leading-tight truncate">
+                              {item.label}
+                            </div>
+                            <div className="text-[10px] text-slate-400 leading-tight truncate mt-0.5">
+                              {item.desc}
+                            </div>
+                          </div>
+                        </div>
+                        {isSelected && (
+                          <CheckCircle2
+                            className={`w-4 h-4 shrink-0 ${
+                              item.role === 'Viewer/Pengamat' ? 'text-cyan-400' : 'text-amber-400'
+                            }`}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
             {/* 3. Konsol Pengelola (Hanya muncul jika pengguna sah memegang kursi CSA atau PSA) */}

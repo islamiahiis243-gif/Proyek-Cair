@@ -25,7 +25,8 @@ const ROLES = [
   { code: 'SUPERVISOR', name: 'Spv. (Supervisor)', desc: 'Pemeriksaan & Persetujuan (Disetujui Oleh), instruksi Batal / Ganti' },
   { code: 'DEPT_MANAGER', name: 'Dept. Manager (Manajer Bagian)', desc: 'Persetujuan & Mengetahui / TTE QR, instruksi Batal / Ganti' },
   { code: 'KTT_PM', name: 'KTT / Project Manager', desc: 'Pengesahan utama proyek (Mengetahui + TTE / QR), instruksi Batal / Ganti' },
-  { code: 'CEO', name: 'CEO / Direktur', desc: 'Otorisasi puncak perusahaan (Mengetahui + TTE / QR), instruksi Batal / Ganti' }
+  { code: 'CEO', name: 'CEO / Direktur', desc: 'Otorisasi puncak perusahaan (Mengetahui + TTE / QR), instruksi Batal / Ganti' },
+  { code: 'VIEWER', name: 'Viewer / Pengamat (Auditor, Konsultan, Pengawas Klien, Pendana)', desc: 'Akses pantau read-only: dasbor analitik, rekapitulasi, buku mutasi, dan ekspor PDF' }
 ];
 
 export const RfinBInvitationPanel: React.FC<{

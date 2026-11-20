@@ -833,6 +833,16 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
       {!modalOnly && (
         <>
+          {/* Banner Viewer / Pengamat */}
+          {activeRole === 'Viewer/Pengamat' && (
+            <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-cyan-950/40 border border-cyan-500/30 text-cyan-200 text-xs">
+              <Eye className="w-4 h-4 text-cyan-400 shrink-0" />
+              <div className="flex-1 leading-relaxed">
+                <span className="font-bold text-cyan-300">Mode Viewer / Pengamat Aktif:</span> Anda memiliki akses transparansi penuh untuk mengamati progres realisasi BOQ, mutasi fisik, riwayat transaksi, dan ekspor laporan PDF. Fitur entri dan persetujuan dinonaktifkan untuk menjaga integritas data.
+              </div>
+            </div>
+          )}
+
           {/* Header Panel */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
             <div>
