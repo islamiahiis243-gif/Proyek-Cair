@@ -596,12 +596,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       return;
     }
 
-    // Material BOQ: Pemasukan disatukan (agregat), Pengeluaran dirincikan (pos BOQ jika pilih Proyek)
+    // Material BOQ: Gunakan pos BOQ spesifik jika dipilih dari baris, atau pos pertama dari material fisik
     const targetItemId = isCustomMode
       ? ''
-      : (mutationType === 'KELUAR' && tujuanPengeluaran === 'PROYEK_BOQ')
-      ? (selectedAllocationItemId || currentPhysicalMaterial?.id || '')
-      : (currentPhysicalMaterial?.id || '');
+      : (selectedAllocationItemId || selectedItemId || currentPhysicalMaterial?.id || '');
 
     const itemName = isCustomMode ? customItemName.trim() : (currentPhysicalMaterial?.nama_barang || 'Material');
     const itemSatuan = isCustomMode ? customItemUom.trim() : (currentPhysicalMaterial?.satuan || 'Unit');
