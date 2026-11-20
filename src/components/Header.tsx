@@ -382,18 +382,20 @@ export const Header: React.FC = () => {
       <div className="flex items-center gap-2 sm:gap-4 shrink-0">
         {/* Saldo Kas (Hanya relevan di mode operasional) */}
         {appMode === 'IMPERSONATE' && (
-          <div className="hidden lg:flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs">
-            <Wallet className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="text-slate-400">Saldo Kas:</span>
-            <span className="font-semibold text-emerald-400 font-mono">
+          <div className="hidden lg:flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs min-w-[135px] justify-between">
+            <div className="flex items-center gap-1.5">
+              <Wallet className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="text-slate-400">Saldo:</span>
+            </div>
+            <span className="font-semibold text-emerald-400 font-mono tabular-nums">
               {cashAccess ? formatRupiah(currentCashBalance) : 'Terbatas'}
             </span>
           </div>
         )}
 
         {/* Status Database */}
-        <div className="hidden md:flex items-center gap-1.5 text-[11px] text-slate-400" title="Koneksi Supabase">
-          <Database className={`w-3.5 h-3.5 ${supabaseConfig.isConnected ? 'text-emerald-400' : 'text-slate-500'}`} />
+        <div className="hidden md:flex items-center gap-1.5 text-[11px] text-slate-400 min-w-[90px]" title="Koneksi Supabase">
+          <Database className={`w-3.5 h-3.5 shrink-0 ${supabaseConfig.isConnected ? 'text-emerald-400' : 'text-slate-500'}`} />
           <span className="hidden xl:inline">{supabaseConfig.isConnected ? 'Terkoneksi' : 'Offline'}</span>
         </div>
 

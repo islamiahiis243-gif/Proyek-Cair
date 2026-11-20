@@ -206,7 +206,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <div className="mt-2 flex items-center justify-between text-[10px] text-purple-600 dark:text-purple-400 border-t border-slate-100 dark:border-slate-800 pt-2 font-medium">
             <span>+ Aset Klien (IMK): Rp 177,57 Jt</span>
-            <span className="text-slate-400 dark:text-slate-500 font-normal">Bruto: Rp 895,97 Jt</span>
+            <span className="text-slate-500 dark:text-slate-400 font-normal">Bruto: Rp 895,97 Jt</span>
           </div>
         </div>
 
@@ -226,11 +226,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{items.length}</span>
+            <span className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums inline-block min-w-[45px]">{items.length}</span>
             <span className="text-xs text-slate-500 dark:text-slate-400">Pos Pekerjaan & Material</span>
           </div>
-          <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-            <span className="font-semibold text-blue-600 dark:text-blue-400">{contractorItemCount} Menara Megah</span> ·{' '}
+          <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+            <span className="font-semibold text-blue-600 dark:text-blue-400 inline-block min-w-[105px]">{contractorItemCount} Menara Megah</span>
+            <span>·</span>
             <span className="font-semibold text-purple-600 dark:text-purple-400">{imkItemCount} Free-Issue Klien</span>
           </div>
           <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-2">
@@ -277,7 +278,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="divide-y divide-slate-100 dark:divide-slate-800 flex-1">
             {stockMutations.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-400 dark:text-slate-500">
+              <div className="p-8 text-center text-xs text-slate-500 dark:text-slate-400 font-medium">
                 Belum ada transaksi mutasi barang.
               </div>
             ) : (
@@ -300,7 +301,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
                         {mut.tujuan_keperluan}
                       </div>
-                      <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 flex items-center gap-2">
+                      <div className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5 flex items-center gap-2">
                         <span>PIC: {mut.pic_penerima_penyerah}</span>
                         <span>·</span>
                         <span>{formatDateTime(mut.tanggal)}</span>
@@ -316,7 +317,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     >
                       {mut.jenis === 'MASUK' ? '+' : '-'} {mut.jumlah} {mut.satuan}
                     </div>
-                    <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 font-mono">
+                    <div className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5 font-mono">
                       Sisa: {mut.stok_sesudah} {mut.satuan}
                     </div>
                   </div>
@@ -344,7 +345,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="divide-y divide-slate-100 dark:divide-slate-800 flex-1">
             {cashMutations.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-400 dark:text-slate-500">
+              <div className="p-8 text-center text-xs text-slate-500 dark:text-slate-400 font-medium">
                 {cashAccess?'Belum ada transaksi kas.':'Data kas tidak tersedia untuk role akun ini.'}
               </div>
             ) : (
@@ -369,7 +370,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <span>·</span>
                         <span>PIC: {c.pic}</span>
                       </div>
-                      <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                      <div className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5">
                         {formatDateTime(c.tanggal)}
                       </div>
                     </div>
@@ -383,7 +384,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     >
                       {c.jenis === 'MASUK' ? '+' : '-'} {formatRupiah(c.jumlah_rp)}
                     </div>
-                    <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 font-mono">
+                    <div className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5 font-mono">
                       Saldo: {formatRupiah(c.saldo_setelah)}
                     </div>
                   </div>
