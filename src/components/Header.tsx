@@ -405,20 +405,22 @@ export const Header: React.FC = () => {
           <span className="hidden xl:inline">{supabaseConfig.isConnected ? 'Terkoneksi' : 'Offline'}</span>
         </div>
 
-        {/* Toggle Mode Terang/Gelap */}
-        <button
-          type="button"
-          onClick={toggleTheme}
-          aria-label={theme === 'dark' ? 'Beralih ke Mode Terang' : 'Beralih ke Mode Gelap'}
-          title={theme === 'dark' ? 'Beralih ke Mode Terang' : 'Beralih ke Mode Gelap'}
-          className="p-2 rounded-xl border border-slate-800 bg-slate-950 text-slate-300 hover:text-white hover:border-slate-700 transition-colors cursor-pointer"
-        >
-          {theme === 'dark' ? (
-            <Sun className="w-4 h-4 text-amber-400" />
-          ) : (
-            <Moon className="w-4 h-4 text-slate-300" />
-          )}
-        </button>
+        {/* Toggle Mode Terang/Gelap (Khusus Mode Personal/Admin - Bebas Pengaturan di Impersonate) */}
+        {appMode !== 'IMPERSONATE' && (
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Beralih ke Mode Terang' : 'Beralih ke Mode Gelap'}
+            title={theme === 'dark' ? 'Beralih ke Mode Terang' : 'Beralih ke Mode Gelap'}
+            className="p-2 rounded-xl border border-slate-800 bg-slate-950 text-slate-300 hover:text-white hover:border-slate-700 transition-colors cursor-pointer"
+          >
+            {theme === 'dark' ? (
+              <Sun className="w-4 h-4 text-amber-400" />
+            ) : (
+              <Moon className="w-4 h-4 text-slate-300" />
+            )}
+          </button>
+        )}
 
         {/* Tombol Logout */}
         {user.id && (

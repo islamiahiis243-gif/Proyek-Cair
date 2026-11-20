@@ -19,6 +19,7 @@ import {
 import {
   getStoredConfig,
   getStoredUser,
+  saveStoredUser,
   DEFAULT_USER,
   getSupabaseClient,
   signOutSupabase,
@@ -109,6 +110,7 @@ interface AppContextType {
   ) => Promise<{ success: boolean; message: string }>;
   addDocument: (doc: DokumenLaporan) => Promise<void>;
   logout: () => Promise<void>;
+  updateUserProfile: (updates: Partial<UserProfile>) => Promise<void>;
   totalStockAssetValue: number;
   currentCashBalance: number;
   outOfStockCount: number;
@@ -1151,6 +1153,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const updateUserProfile = async (updates: Partial<UserProfile>) => {
+    const updatedUser = { ...user, ...updates };
+    setUser(updatedUser);
+    saveStoredUser(updatedUser);
+
+    try {
+      const client = getSupabaseClient();
+      if (user.id) {
+        await client.auth.updateUser({
+          data: {
+            full_name: updates.name ?? user.name,
+            avatar_url: updates.avatar_url ?? user.avatar_url
+          }
+        });
+        if (updates.name) {
+          await client.from('profiles').update({ full_name: updates.name }).eq('id', user.id);
+        }
+      }
+    } catch (err) {
+      console.warn('Sinkronisasi profil Supabase:', err);
+    }
+  };
+
   const stockItems = items.filter(x => x.is_stock_item);
   const totalStockAssetValue = stockItems.reduce((s, x) => s + x.stok_saat_ini * x.harga_satuan, 0);
   const currentCashBalance = cashMutations[0]?.saldo_setelah ?? 0;
@@ -1214,6 +1239,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         gantiOfficialDocument,
         addDocument,
         logout,
+        updateUserProfile,
         totalStockAssetValue,
         currentCashBalance,
         outOfStockCount,

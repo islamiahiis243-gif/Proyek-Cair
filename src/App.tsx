@@ -83,7 +83,8 @@ const MainApp: React.FC = () => {
                   defaultType={preselectedCashType}
                 />
               )}
-              {currentView === 'settings' && <SettingsView />}
+              {/* Di Mode Impersonate tidak ada Settings; jika diarahkan ke settings, tampilkan dashboard */}
+              {currentView === 'settings' && <DashboardView onOpenStockModal={handleOpenStockModal} onOpenCashModal={handleOpenCashModal} />}
             </>
           )}
         </main>

@@ -92,10 +92,10 @@ export const Sidebar: React.FC = () => {
       { id: 'dashboard', label: 'Dasbor Personal', icon: LayoutDashboard },
       { id: 'rfin-b-input', label: 'Aktivasi RFIN-B', icon: KeyRound },
       { id: 'rfin-a-request', label: 'Pengajuan RFIN-A', icon: Building2 },
-      { id: 'settings', label: 'Pengaturan Akun', icon: Settings }
+      { id: 'settings', label: 'Pengaturan Akun & Aplikasi', icon: Settings }
     ];
   } else {
-    // Mode Impersonate (Karyawan / Anggota Proyek)
+    // Mode Impersonate (Karyawan / Anggota Proyek) - Murni Operasional, Tanpa Menu Pengaturan
     modeTitle = activeProject?.name || activeCompany.name || 'Proyek Aktif';
     modeSubtitle = `${activeCompany.name || 'Perusahaan'} · Jabatan: ${activeRole}`;
     ModeIcon = activeRole === 'Viewer/Pengamat' ? Eye : Hexagon;
@@ -109,8 +109,7 @@ export const Sidebar: React.FC = () => {
         icon: Boxes,
         badge: outOfStockCount > 0 ? `${outOfStockCount} Kosong` : null
       },
-      { id: 'cashflow', label: 'Modul Mutasi Dana', icon: WalletCards },
-      { id: 'settings', label: 'Pengaturan Karyawan & TTE', icon: Settings }
+      { id: 'cashflow', label: 'Modul Mutasi Dana', icon: WalletCards }
     ];
   }
 
