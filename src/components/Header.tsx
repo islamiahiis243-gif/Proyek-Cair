@@ -263,9 +263,22 @@ export const Header: React.FC = () => {
                     : 'hover:bg-slate-800 text-slate-300'
                 }`}
               >
-                <div className="min-w-0">
-                  <div className="text-xs font-bold truncate">{user.name || 'Pengguna Pribadi'}</div>
-                  <div className="text-[10px] text-slate-400 truncate">{user.email} · Mode Personal</div>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {user.avatar_url ? (
+                    <img
+                      src={user.avatar_url}
+                      alt={user.name || 'Personal'}
+                      className="w-7 h-7 rounded-full object-cover border border-emerald-500/40 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-7 h-7 rounded-full bg-emerald-900/60 border border-emerald-500/40 text-emerald-200 flex items-center justify-center font-bold text-xs shrink-0">
+                      {user.name?.charAt(0).toUpperCase() || 'P'}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold truncate">{user.name || 'Pengguna Pribadi'}</div>
+                    <div className="text-[10px] text-slate-400 truncate">{user.email} · Mode Personal</div>
+                  </div>
                 </div>
                 {appMode === 'PERSONAL' && (
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />

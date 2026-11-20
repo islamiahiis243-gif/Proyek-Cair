@@ -1177,8 +1177,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             avatar_url: updates.avatar_url ?? user.avatar_url
           }
         });
-        if (updates.name) {
-          await client.from('profiles').update({ full_name: updates.name }).eq('id', user.id);
+        const profileUpdates: Record<string, any> = {};
+        if (updates.name) profileUpdates.full_name = updates.name;
+        if (updates.avatar_url !== undefined) profileUpdates.avatar_url = updates.avatar_url;
+        if (Object.keys(profileUpdates).length > 0) {
+          await client.from('profiles').update(profileUpdates).eq('id', user.id);
         }
       }
     } catch (err) {

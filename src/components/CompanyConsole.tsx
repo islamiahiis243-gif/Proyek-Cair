@@ -37,7 +37,17 @@ type CompanyDashboard = {
 };
 type CoveragePermission = { permission_code: string; module: string; action: string; risk_level: string; requires_authority_check: boolean; description: string };
 type CoverageRole = { role_code: string; display_name: string };
-type CoverageMember = { project_membership_id: string; company_membership_id: string; user_id: string; full_name: string; email?: string; membership_status: string; roles?: CoverageRole[]; permissions: CoveragePermission[] };
+type CoverageMember = {
+  project_membership_id: string;
+  company_membership_id: string;
+  user_id: string;
+  full_name: string;
+  email?: string;
+  avatar_url?: string | null;
+  membership_status: string;
+  roles?: CoverageRole[];
+  permissions: CoveragePermission[];
+};
 type CoverageProject = { id: string; project_code: string; name: string; status: string; active_member_count: number; members_without_permissions: number; permission_code_count: number; members: CoverageMember[] };
 type ProjectCoverage = {
   active_company_members: number;
@@ -46,7 +56,13 @@ type ProjectCoverage = {
   members_without_active_project: number;
   active_members_without_permissions: number;
   projects: CoverageProject[];
-  unassigned_members: { company_membership_id: string; user_id: string; full_name: string; activated_at: string | null }[];
+  unassigned_members: {
+    company_membership_id: string;
+    user_id: string;
+    full_name: string;
+    avatar_url?: string | null;
+    activated_at: string | null;
+  }[];
 };
 
 export const CompanyConsole: React.FC = () => {
@@ -612,16 +628,28 @@ export const CompanyConsole: React.FC = () => {
                               {project.members?.map(member => (
                                 <div key={member.project_membership_id} className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900 shadow-xs">
                                   <div className="flex items-start justify-between gap-2">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 flex items-center justify-center font-bold text-xs">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      {member.avatar_url ? (
+                                        <img
+                                          src={member.avatar_url}
+                                          alt={member.full_name}
+                                          className="w-7 h-7 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                                          onError={(e) => {
+                                            // Fallback graceful jika URL gambar gagal dimuat
+                                            e.currentTarget.style.display = 'none';
+                                            e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                                          }}
+                                        />
+                                      ) : null}
+                                      <div className={`w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 flex items-center justify-center font-bold text-xs shrink-0 ${member.avatar_url ? 'hidden' : ''}`}>
                                         {member.full_name?.charAt(0).toUpperCase() || 'U'}
                                       </div>
-                                      <div>
-                                        <p className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight">{member.full_name}</p>
-                                        <p className="text-[10px] text-slate-600 dark:text-slate-300 font-medium break-all">{member.email || 'Email tidak tersedia'}</p>
+                                      <div className="min-w-0">
+                                        <p className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight truncate">{member.full_name}</p>
+                                        <p className="text-[10px] text-slate-600 dark:text-slate-300 font-medium break-all truncate">{member.email || 'Email tidak tersedia'}</p>
                                       </div>
                                     </div>
-                                    <span className="px-1.5 py-0.5 text-[9px] font-semibold rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                    <span className="px-1.5 py-0.5 text-[9px] font-semibold rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
                                       Aktif
                                     </span>
                                   </div>
@@ -675,9 +703,25 @@ export const CompanyConsole: React.FC = () => {
                         <div className="mt-3 space-y-2">
                           {projectCoverage.unassigned_members.map(member => (
                             <div key={member.company_membership_id} className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
-                              <div>
-                                <p className="font-semibold text-slate-900 dark:text-slate-100">{member.full_name}</p>
-                                <p className="text-[10px] text-slate-500">{member.activated_at ? `Bergabung: ${new Date(member.activated_at).toLocaleDateString('id-ID')}` : ''}</p>
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                {member.avatar_url ? (
+                                  <img
+                                    src={member.avatar_url}
+                                    alt={member.full_name}
+                                    className="w-7 h-7 rounded-full object-cover border border-amber-200 dark:border-amber-700 shrink-0"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = 'none';
+                                      e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                                    }}
+                                  />
+                                ) : null}
+                                <div className={`w-7 h-7 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 flex items-center justify-center font-bold text-xs shrink-0 ${member.avatar_url ? 'hidden' : ''}`}>
+                                  {member.full_name?.charAt(0).toUpperCase() || 'U'}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-semibold text-slate-900 dark:text-slate-100 truncate">{member.full_name}</p>
+                                  <p className="text-[10px] text-slate-500">{member.activated_at ? `Bergabung: ${new Date(member.activated_at).toLocaleDateString('id-ID')}` : ''}</p>
+                                </div>
                               </div>
                               <div className="flex items-center gap-2">
                                 <select
