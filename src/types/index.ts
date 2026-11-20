@@ -24,6 +24,9 @@ export interface ItemBarang {
   qty_masuk_total: number;
   qty_keluar_total: number;
   qty_pemenuhan_sisa: number;
+  total_boq_material_gabungan?: number;
+  jumlah_pos_material_gabungan?: number;
+  sisa_belum_tiba_gudang?: number;
   progress_pemenuhan: number;
   status_pemenuhan: 'Belum dipenuhi' | 'Dalam pemenuhan' | 'Terpenuhi' | 'Melebihi BOQ';
   harga_satuan: number;

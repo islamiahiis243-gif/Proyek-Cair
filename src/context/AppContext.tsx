@@ -355,24 +355,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const reversedIds = new Set((reversalsRes.data || []).map((r: any) => r.original_transaction_id));
 
-    // 1. Indeks Material Fisik dari data mentah boq_items
+    // 1. Indeks Material Fisik dari data mentah boq_items (Prinsip: Satukan Masuk, Bedakan Keluar)
     const rawBoq = boqRes.data || [];
     const itemToKey = new Map<string, string>();
     const itemById = new Map<string, any>();
-    const rowsByKey = new Map<string, any[]>();
+    const totalBoqByKey = new Map<string, number>();
+    const posCountByKey = new Map<string, number>();
     rawBoq.forEach((b: any) => {
       itemById.set(b.id, b);
       const key = `${(b.description || '').trim().toLowerCase().replace(/\s+/g, ' ')}|${(b.uom || '').trim().toLowerCase()}`;
       itemToKey.set(b.id, key);
-      if (!rowsByKey.has(key)) rowsByKey.set(key, []);
-      rowsByKey.get(key)!.push(b);
+      totalBoqByKey.set(key, (totalBoqByKey.get(key) || 0) + (Number(b.quantity) || 0));
+      posCountByKey.set(key, (posCountByKey.get(key) || 0) + 1);
     });
 
-    // 2. Lacak Saldo Fisik Gudang & Alokasi Bertahap (Waterfall/FIFO) per Pos BOQ
+    // 2. Lacak Saldo Fisik Gudang Bersama (Satukan Masuk) & Serapan per Pos BOQ (Bedakan Keluar)
     const physicalBalance = new Map<string, number>();
     const physicalReceived = new Map<string, number>();
     const physicalConsumed = new Map<string, number>();
-    const boqItemReceived = new Map<string, number>();
     const boqItemConsumed = new Map<string, number>();
     const stockHistory = new Set<string>();
 
@@ -393,48 +393,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         physicalBalance.set(key, afterPhysical);
         if (incoming) {
           physicalReceived.set(key, (physicalReceived.get(key) || 0) + qtyNum);
-
-          // Alokasikan barang masuk ke pos BOQ secara proporsional/bertahap (tidak diduplikasi ke semua baris)
-          const groupRows = rowsByKey.get(key) || [];
-          let remainingToAllocate = qtyNum;
-
-          // Tahap 1: Prioritaskan pos BOQ spesifik yang dituju (jika masih butuh pasokan)
-          if (t.item_id && itemById.has(t.item_id)) {
-            const targetBoqRow = itemById.get(t.item_id);
-            const targetCap = Math.max(0, Number(targetBoqRow.quantity || 0) - (boqItemReceived.get(targetBoqRow.id) || 0));
-            const alloc = Math.min(remainingToAllocate, targetCap);
-            if (alloc > 0) {
-              boqItemReceived.set(targetBoqRow.id, (boqItemReceived.get(targetBoqRow.id) || 0) + alloc);
-              stockHistory.add(targetBoqRow.id);
-              remainingToAllocate -= alloc;
-            }
-          }
-
-          // Tahap 2: Limpahkan sisa barang masuk secara berurutan (FIFO) ke pos BOQ berikutnya yang belum terpenuhi
-          if (remainingToAllocate > 0 && groupRows.length > 0) {
-            for (const r of groupRows) {
-              if (remainingToAllocate <= 0) break;
-              const cap = Math.max(0, Number(r.quantity || 0) - (boqItemReceived.get(r.id) || 0));
-              if (cap > 0) {
-                const alloc = Math.min(remainingToAllocate, cap);
-                boqItemReceived.set(r.id, (boqItemReceived.get(r.id) || 0) + alloc);
-                stockHistory.add(r.id);
-                remainingToAllocate -= alloc;
-              }
-            }
-          }
-
-          // Tahap 3: Jika seluruh pos BOQ untuk material ini sudah 100% terpenuhi, tambahkan kelebihan ke pos tujuan/terakhir
-          if (remainingToAllocate > 0 && groupRows.length > 0) {
-            const fallbackId = (t.item_id && itemById.has(t.item_id)) ? t.item_id : groupRows[groupRows.length - 1].id;
-            boqItemReceived.set(fallbackId, (boqItemReceived.get(fallbackId) || 0) + remainingToAllocate);
-            stockHistory.add(fallbackId);
-          }
         } else {
           physicalConsumed.set(key, (physicalConsumed.get(key) || 0) + qtyNum);
           boqItemConsumed.set(t.item_id, (boqItemConsumed.get(t.item_id) || 0) + qtyNum);
-          if (t.item_id) stockHistory.add(t.item_id);
         }
+        if (t.item_id) stockHistory.add(t.item_id);
       }
 
       return {
@@ -471,49 +434,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
 
-    // Hitung Saldo Fisik Tersisa per Pos BOQ (agar jumlah saldo fisik seluruh pos = stok fisik gudang)
-    const boqItemStock = new Map<string, number>();
-    rowsByKey.forEach((groupRows) => {
-      let deficitToCover = 0;
-      groupRows.forEach((r) => {
-        const rec = boqItemReceived.get(r.id) || 0;
-        const con = boqItemConsumed.get(r.id) || 0;
-        if (rec >= con) {
-          boqItemStock.set(r.id, rec - con);
-        } else {
-          boqItemStock.set(r.id, 0);
-          deficitToCover += con - rec;
-        }
-      });
-      if (deficitToCover > 0) {
-        for (const r of groupRows) {
-          if (deficitToCover <= 0) break;
-          const avail = boqItemStock.get(r.id) || 0;
-          if (avail > 0) {
-            const deduct = Math.min(avail, deficitToCover);
-            boqItemStock.set(r.id, avail - deduct);
-            deficitToCover -= deduct;
-          }
-        }
-      }
-    });
-
-    // 3. Petakan Item BOQ Terperinci
+    // 3. Petakan Item BOQ Terperinci (Satukan Masuk di Level Gudang, Bedakan Keluar per Pos Pekerjaan)
     const mappedItems: ItemBarang[] = rawBoq.map((b: any) => {
       const baseTarget = Number(b.quantity) || 0;
       const key = itemToKey.get(b.id)!;
-      const physicalStock = boqItemStock.get(b.id) || 0;
-      const masukFisik = boqItemReceived.get(b.id) || 0;
+      const totalBoqGabungan = totalBoqByKey.get(key) || baseTarget;
+      const jumlahPosGabungan = posCountByKey.get(key) || 1;
+      const physicalStock = Math.max(0, physicalBalance.get(key) || 0);
+      const masukGudang = physicalReceived.get(key) || 0;
       const terpakaiDiPosIni = boqItemConsumed.get(b.id) || 0;
-      const sisaTargetPos = Math.max(baseTarget - masukFisik, 0);
-      const progress = baseTarget > 0 ? Math.min((masukFisik / baseTarget) * 100, 100) : 0;
+      const sisaTargetPos = Math.max(baseTarget - terpakaiDiPosIni, 0);
+      const sisaBelumTibaGudang = Math.max(totalBoqGabungan - masukGudang, 0);
+      const progress = baseTarget > 0 ? Math.min((terpakaiDiPosIni / baseTarget) * 100, 100) : 0;
       const EPS = 0.0001;
       const statusPemenuhan: ItemBarang['status_pemenuhan'] =
-        masukFisik > baseTarget + EPS && baseTarget > 0
+        terpakaiDiPosIni > baseTarget + EPS && baseTarget > 0
           ? 'Melebihi BOQ'
-          : masukFisik + EPS >= baseTarget && baseTarget > 0
+          : terpakaiDiPosIni + EPS >= baseTarget && baseTarget > 0
           ? 'Terpenuhi'
-          : masukFisik > 0
+          : terpakaiDiPosIni > 0
           ? 'Dalam pemenuhan'
           : 'Belum dipenuhi';
 
@@ -532,17 +471,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         qty_tambahan_disetujui: 0,
         target_kebutuhan_total: baseTarget,
         is_stock_item: Boolean(b.is_stock_item),
-        has_stock_history: stockHistory.has(b.id) || masukFisik > 0 || terpakaiDiPosIni > 0,
-        qty_masuk_total: masukFisik,
+        has_stock_history: stockHistory.has(b.id) || masukGudang > 0 || terpakaiDiPosIni > 0,
+        qty_masuk_total: masukGudang,
         qty_keluar_total: terpakaiDiPosIni,
         qty_pemenuhan_sisa: sisaTargetPos,
+        total_boq_material_gabungan: totalBoqGabungan,
+        jumlah_pos_material_gabungan: jumlahPosGabungan,
+        sisa_belum_tiba_gudang: sisaBelumTibaGudang,
         progress_pemenuhan: progress,
         status_pemenuhan: statusPemenuhan,
         satuan: b.uom || 'Unit',
         harga_satuan: Number(b.unit_rate || 0),
         stok_saat_ini: physicalStock,
         stok_minimum: 0,
-        status: computeItemStatus(physicalStock, 0, stockHistory.has(b.id) || masukFisik > 0 || terpakaiDiPosIni > 0),
+        status: computeItemStatus(physicalStock, 0, stockHistory.has(b.id) || masukGudang > 0 || terpakaiDiPosIni > 0),
         keterangan: b.remarks || ''
       };
     });

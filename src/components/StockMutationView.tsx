@@ -417,7 +417,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     setCollapsedSubSections(allSubs);
   };
 
-  // Metrik Progres Kontrak BOQ Keseluruhan
+  // Metrik Progres Kontrak BOQ Keseluruhan (Satukan Masuk di Gudang, Bedakan Keluar per Pos BOQ)
   const boqMetrics = useMemo(() => {
     const totalItems = items.length;
     let fulfilledCount = 0;
@@ -426,6 +426,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     let overQuotaCount = 0;
     let totalImkItems = 0;
     let totalKontraktorItems = 0;
+    let arrivedPosCoverageCount = 0;
 
     items.forEach((it) => {
       if ((it.keterangan || '').toLowerCase().includes('imk')) {
@@ -434,12 +435,16 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         totalKontraktorItems++;
       }
 
+      if (it.qty_masuk_total > 0) arrivedPosCoverageCount++;
+
       if (it.status_pemenuhan === 'Terpenuhi') fulfilledCount++;
       else if (it.status_pemenuhan === 'Dalam pemenuhan') inProgressCount++;
       else if (it.status_pemenuhan === 'Melebihi BOQ') overQuotaCount++;
       else notStartedCount++;
     });
 
+    const arrivedMaterialTypesCount = (physicalMaterials || []).filter((pm) => pm.total_qty_masuk > 0).length;
+    const totalMaterialTypesCount = (physicalMaterials || []).filter((pm) => pm.is_stock_item).length;
     const progressPct = totalItems > 0 ? Math.round(((fulfilledCount + overQuotaCount + inProgressCount * 0.5) / totalItems) * 100) : 0;
 
     return {
@@ -450,9 +455,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       overQuotaCount,
       totalImkItems,
       totalKontraktorItems,
+      arrivedPosCoverageCount,
+      arrivedMaterialTypesCount,
+      totalMaterialTypesCount,
       progressPct
     };
-  }, [items]);
+  }, [items, physicalMaterials]);
 
   // Aksi Cepat Mutasi dari Baris Material BOQ
   const handleOpenItemMutation = (item: ItemBarang, type: JenisMutasiBarang) => {
@@ -496,8 +504,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     setFilterType('ALL');
   };
 
-  const renderBoqStatusBadge = (status: ItemBarang['status_pemenuhan']) => {
-    switch (status) {
+  const renderBoqStatusBadge = (item: ItemBarang) => {
+    switch (item.status_pemenuhan) {
       case 'Terpenuhi':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
@@ -520,6 +528,14 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           </span>
         );
       default:
+        if (item.stok_saat_ini > 0) {
+          return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-teal-50 text-teal-800 border border-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:border-teal-800">
+              <Boxes className="w-3 h-3 text-teal-600 dark:text-teal-400" />
+              <span>Stok di Gudang</span>
+            </span>
+          );
+        }
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700">
             <Clock className="w-3 h-3 text-slate-500 dark:text-slate-300" />
@@ -1013,27 +1029,27 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm cursor-pointer hover:border-emerald-400 dark:hover:border-emerald-600 transition-colors"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Realisasi Kedatangan</span>
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Kedatangan Material (Gudang)</span>
                     <ArrowDownLeft className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   </div>
                   <div className="mt-2 text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                    {boqMetrics.fulfilledCount + boqMetrics.inProgressCount + boqMetrics.overQuotaCount} Pos Terisi
+                    {boqMetrics.arrivedMaterialTypesCount} Jenis Material Tiba
                   </div>
                   <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
-                    {boqMetrics.fulfilledCount + boqMetrics.overQuotaCount} Terpenuhi · {boqMetrics.inProgressCount} Dalam Proses ({stockMutations.filter((m) => m.jenis === 'MASUK' && !m.is_batal).length} Trx Masuk)
+                    {stockMutations.filter((m) => m.jenis === 'MASUK' && !m.is_batal).length} Trx Masuk · Mencakup {boqMetrics.arrivedPosCoverageCount} Pos BOQ
                   </p>
                 </div>
 
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Belum Ada Pengiriman</span>
-                    <Clock className="w-4 h-4 text-amber-500" />
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Realisasi Pemakaian (Pos BOQ)</span>
+                    <ArrowUpRight className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                   </div>
-                  <div className="mt-2 text-xl font-bold text-amber-600 dark:text-amber-400">
-                    {boqMetrics.notStartedCount} Item
+                  <div className="mt-2 text-xl font-bold text-blue-600 dark:text-blue-400">
+                    {boqMetrics.fulfilledCount + boqMetrics.inProgressCount + boqMetrics.overQuotaCount} Pos Terpakai
                   </div>
                   <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
-                    Material kontrak yang belum tiba
+                    {boqMetrics.fulfilledCount} Pos Terpenuhi · {boqMetrics.inProgressCount} Dalam Proses
                   </p>
                 </div>
 
@@ -1183,12 +1199,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                         <th className="py-3 px-3.5 w-24">Kode BOQ</th>
                         <th className="py-3 px-3.5">Uraian Material & Pekerjaan</th>
                         <th className="py-3 px-3 text-center">Penyedia</th>
-                        <th className="py-3 px-3 text-right">Target BOQ</th>
-                        <th className="py-3 px-3 text-right">Realisasi Masuk</th>
-                        <th className="py-3 px-3 text-right">Terpakai (Keluar)</th>
-                        <th className="py-3 px-3 text-right">Sisa Belum Tiba</th>
-                        <th className="py-3 px-3 text-right">Saldo Fisik</th>
-                        <th className="py-3 px-3 text-center">Status</th>
+                        <th className="py-3 px-3 text-right">Target Pos BOQ</th>
+                        <th className="py-3 px-3 text-right">Masuk Gudang (Gabungan)</th>
+                        <th className="py-3 px-3 text-right">Terpakai Pos (Keluar)</th>
+                        <th className="py-3 px-3 text-right">Sisa Kebutuhan Pos</th>
+                        <th className="py-3 px-3 text-right">Saldo Gudang</th>
+                        <th className="py-3 px-3 text-center">Status Pos</th>
                         <th className="py-3 px-3.5 text-center w-28">Aksi Cepat</th>
                       </tr>
                     </thead>
@@ -1256,7 +1272,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                       {!isSubCollapsed &&
                                         sub.items.map((item) => {
                                           const isImk = (item.keterangan || '').toLowerCase().includes('imk');
-                                          const masukPct = item.qty_boq > 0 ? Math.round((item.qty_masuk_total / item.qty_boq) * 100) : 0;
+                                          const totalBoqGabungan = item.total_boq_material_gabungan || item.qty_boq;
+                                          const jmlPosGabungan = item.jumlah_pos_material_gabungan || 1;
+                                          const masukGabunganPct = totalBoqGabungan > 0 ? Math.round((item.qty_masuk_total / totalBoqGabungan) * 100) : 0;
+                                          const keluarPosPct = item.qty_boq > 0 ? Math.round((item.qty_keluar_total / item.qty_boq) * 100) : 0;
 
                                           return (
                                             <tr
@@ -1306,33 +1325,54 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                                 )}
                                               </td>
 
-                                              {/* Target BOQ */}
+                                              {/* Target Pos BOQ */}
                                               <td className="py-2.5 px-3 text-right font-mono font-medium text-slate-800 dark:text-slate-200">
-                                                {item.qty_boq.toLocaleString('id-ID', { maximumFractionDigits: 3 })}{' '}
-                                                <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">{item.satuan}</span>
+                                                <div>
+                                                  {item.qty_boq.toLocaleString('id-ID', { maximumFractionDigits: 3 })}{' '}
+                                                  <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">{item.satuan}</span>
+                                                </div>
+                                                {jmlPosGabungan > 1 && (
+                                                  <div className="text-[9px] font-medium text-slate-600 dark:text-slate-300">
+                                                    Total {jmlPosGabungan} pos: {totalBoqGabungan.toLocaleString('id-ID', { maximumFractionDigits: 1 })} {item.satuan}
+                                                  </div>
+                                                )}
                                               </td>
 
-                                              {/* Realisasi Masuk */}
+                                              {/* Masuk Gudang (Gabungan - Satukan Masuk) */}
                                               <td className="py-2.5 px-3 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400">
                                                 <div>
                                                   {item.qty_masuk_total.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
+                                                  {jmlPosGabungan > 1 && item.qty_masuk_total > 0 && (
+                                                    <span className="text-[10px] text-slate-600 dark:text-slate-300 font-normal">
+                                                      {' '}/ {totalBoqGabungan.toLocaleString('id-ID', { maximumFractionDigits: 1 })}
+                                                    </span>
+                                                  )}
                                                 </div>
                                                 <div className="text-[9px] font-medium text-slate-600 dark:text-slate-300">
-                                                  {masukPct}% tercapai
+                                                  {jmlPosGabungan > 1
+                                                    ? `${masukGabunganPct}% tiba (${jmlPosGabungan} pos)`
+                                                    : `${masukGabunganPct}% tiba`}
                                                 </div>
                                               </td>
 
-                                              {/* Terpakai (Keluar) */}
+                                              {/* Terpakai Pos (Keluar - Bedakan Keluar) */}
                                               <td className="py-2.5 px-3 text-right font-mono font-semibold text-rose-600 dark:text-rose-400">
-                                                {item.qty_keluar_total.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
+                                                <div>
+                                                  {item.qty_keluar_total.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
+                                                </div>
+                                                {item.qty_keluar_total > 0 && (
+                                                  <div className="text-[9px] font-medium text-slate-600 dark:text-slate-300">
+                                                    {keluarPosPct}% pos
+                                                  </div>
+                                                )}
                                               </td>
 
-                                              {/* Sisa Belum Tiba */}
+                                              {/* Sisa Kebutuhan Pos */}
                                               <td className="py-2.5 px-3 text-right font-mono text-slate-700 dark:text-slate-300">
                                                 {item.qty_pemenuhan_sisa.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
                                               </td>
 
-                                              {/* Saldo Fisik */}
+                                              {/* Saldo Gudang */}
                                               <td className="py-2.5 px-3 text-right font-mono font-bold">
                                                 <span
                                                   className={
@@ -1343,11 +1383,16 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                                 >
                                                   {item.stok_saat_ini.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
                                                 </span>
+                                                {jmlPosGabungan > 1 && item.stok_saat_ini > 0 && (
+                                                  <div className="text-[9px] font-medium text-slate-600 dark:text-slate-300">
+                                                    Stok bersama
+                                                  </div>
+                                                )}
                                               </td>
 
-                                              {/* Status */}
+                                              {/* Status Pos */}
                                               <td className="py-2.5 px-3 text-center">
-                                                {renderBoqStatusBadge(item.status_pemenuhan)}
+                                                {renderBoqStatusBadge(item)}
                                               </td>
 
                                               {/* Aksi Cepat */}
