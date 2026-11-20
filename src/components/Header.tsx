@@ -170,7 +170,13 @@ export const Header: React.FC = () => {
         >
           {/* Ikon Hexagon / Identitas */}
           <div className="flex items-center justify-center shrink-0">
-            {appMode === 'IMPERSONATE' ? (
+            {activeCompany.logoUrl && (appMode === 'IMPERSONATE' || appMode === 'CSA') ? (
+              <img
+                src={activeCompany.logoUrl}
+                alt={activeCompany.name}
+                className="w-5 h-5 rounded-md object-contain bg-white/10 p-0.5 border border-white/20"
+              />
+            ) : appMode === 'IMPERSONATE' ? (
               activeRole === 'Viewer/Pengamat' ? (
                 <div className="relative">
                   <Eye className="w-5 h-5 text-cyan-400 stroke-[2]" />

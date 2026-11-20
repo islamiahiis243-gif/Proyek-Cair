@@ -140,7 +140,7 @@ export const Sidebar: React.FC = () => {
             title={`${modeTitle} (${modeSubtitle})`}
           >
             <div
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden ${
                 themeAccent === 'amber'
                   ? 'bg-amber-500/20 text-amber-500'
                   : themeAccent === 'cyan'
@@ -152,7 +152,15 @@ export const Sidebar: React.FC = () => {
                   : 'bg-blue-500/20 text-blue-400'
               }`}
             >
-              <ModeIcon className="h-4 w-4" />
+              {activeCompany.logoUrl && (appMode === 'CSA' || appMode === 'IMPERSONATE') ? (
+                <img
+                  src={activeCompany.logoUrl}
+                  alt={activeCompany.name}
+                  className="w-full h-full object-contain p-0.5 rounded-lg"
+                />
+              ) : (
+                <ModeIcon className="h-4 w-4" />
+              )}
             </div>
 
             {/* Teks label disembunyikan saat collapsed */}

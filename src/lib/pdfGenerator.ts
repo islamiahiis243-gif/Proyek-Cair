@@ -63,6 +63,7 @@ interface ResolvedPdfBranding {
   contractorNpwp: string;
   contractorAddress: string;
   contractorContact: string;
+  contractorLogoUrl?: string;
   clientName: string;
   projectName: string;
   directorName: string;
@@ -82,6 +83,7 @@ function resolvePdfBranding(branding?: TenantBranding, overrideProjectName?: str
     contractorNpwp: (branding?.contractorNpwp || '').trim(),
     contractorAddress: (branding?.contractorAddress || '').trim(),
     contractorContact: (branding?.contractorContact || '').trim(),
+    contractorLogoUrl: (branding?.contractorLogoUrl || '').trim(),
     clientName: (branding?.clientName || '').trim() || 'Klien',
     projectName: (overrideProjectName || branding?.projectName || '').trim() || 'Proyek Aktif',
     directorName: (branding?.directorName || '').trim() || 'Direktur Utama',
@@ -93,25 +95,43 @@ function resolvePdfBranding(branding?: TenantBranding, overrideProjectName?: str
  * Render Kop Surat Resmi Dinamis (Multi-Tenant)
  */
 function drawOfficialHeader(doc: jsPDF, pageWidth: number, branding: ResolvedPdfBranding) {
+  let textStartX = 14;
+
+  if (branding.contractorLogoUrl) {
+    try {
+      let format = 'JPEG';
+      if (branding.contractorLogoUrl.startsWith('data:image/png')) {
+        format = 'PNG';
+      } else if (branding.contractorLogoUrl.startsWith('data:image/webp')) {
+        format = 'WEBP';
+      }
+      doc.addImage(branding.contractorLogoUrl, format, 14, 10, 18, 18);
+      textStartX = 36;
+    } catch (e) {
+      console.warn('Gagal menambahkan logo ke PDF kop surat:', e);
+      textStartX = 14;
+    }
+  }
+
   // Nama Perusahaan Kontraktor
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
+  doc.setFontSize(14);
   doc.setTextColor(15, 23, 42);
-  doc.text(branding.contractorName.toUpperCase(), 14, 15);
+  doc.text(branding.contractorName.toUpperCase(), textStartX, 15);
 
   // Alamat & Kontak Resmi (opsional jika tersedia di profil perusahaan)
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(51, 65, 85);
   if (branding.contractorAddress) {
-    doc.text(branding.contractorAddress, 14, 20);
+    doc.text(branding.contractorAddress, textStartX, 20);
   } else {
-    doc.text(`Proyek: ${branding.projectName}`, 14, 20);
+    doc.text(`Proyek: ${branding.projectName}`, textStartX, 20);
   }
   if (branding.contractorContact) {
-    doc.text(branding.contractorContact, 14, 25);
+    doc.text(branding.contractorContact, textStartX, 25);
   } else {
-    doc.text(`Laporan Operasional & Audit Proyek`, 14, 25);
+    doc.text(`Laporan Operasional & Audit Proyek`, textStartX, 25);
   }
 
   // NPWP & Info Klien/Proyek di kanan atas

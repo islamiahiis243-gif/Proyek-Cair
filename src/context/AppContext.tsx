@@ -131,8 +131,9 @@ interface AppContextType {
   setAppMode: (mode: AppMode) => void;
   activeRole: ImpersonateRole;
   setActiveRole: (role: ImpersonateRole) => void;
-  activeCompany: { id: string; name: string; npwp: string };
-  setActiveCompany: (c: { id: string; name: string; npwp: string }) => void;
+  activeCompany: { id: string; name: string; npwp: string; logoUrl?: string };
+  setActiveCompany: React.Dispatch<React.SetStateAction<{ id: string; name: string; npwp: string; logoUrl?: string }>>;
+  updateCompanyLogo: (logoUrl: string) => Promise<void>;
   tenantBranding: TenantBranding;
   rolePermissions: RolePermissions;
 }
@@ -185,10 +186,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return 'Clerk';
   });
 
-  const [activeCompany, setActiveCompany] = useState<{ id: string; name: string; npwp: string }>({
+  const [activeCompany, setActiveCompany] = useState<{ id: string; name: string; npwp: string; logoUrl?: string }>({
     id: '',
     name: 'Akun Pribadi',
-    npwp: ''
+    npwp: '',
+    logoUrl: ''
   });
   const [activeClientName, setActiveClientName] = useState<string>('');
 
@@ -251,13 +253,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setActiveCompany({
             id: companyWs.company_id || companyWs.id,
             name: companyWs.name || 'Perusahaan',
-            npwp: (companyWs as any).company_npwp || (companyWs as any).npwp || ''
+            npwp: (companyWs as any).company_npwp || (companyWs as any).npwp || '',
+            logoUrl: (companyWs as any).company_logo_url || ''
           });
         } else {
           setActiveCompany({
             id: '',
             name: 'Akun Pribadi',
-            npwp: ''
+            npwp: '',
+            logoUrl: ''
           });
         }
       } else {
@@ -332,7 +336,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setActiveCompany({
         id: companyWs.company_id || companyWs.id,
         name: companyWs.name || 'Perusahaan',
-        npwp: (companyWs as any).company_npwp || (companyWs as any).npwp || ''
+        npwp: (companyWs as any).company_npwp || (companyWs as any).npwp || '',
+        logoUrl: (companyWs as any).company_logo_url || ''
       });
     }
 
@@ -1191,12 +1196,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const lowStockCount = stockItems.filter(x => x.stok_saat_ini > 0 && x.stok_saat_ini <= x.stok_minimum).length;
   const availableStockCount = stockItems.filter(x => x.has_stock_history && x.stok_saat_ini > x.stok_minimum).length;
 
+  const updateCompanyLogo = async (logoUrl: string) => {
+    const targetCompanyId = activeCompany.id || activeContext?.workspaces.find(w => w.type === 'COMPANY')?.company_id;
+    if (!targetCompanyId) throw new Error('ID Perusahaan tidak ditemukan.');
+    const client = getSupabaseClient();
+    const { error } = await client
+      .from('companies')
+      .update({ logo_url: logoUrl, updated_at: new Date().toISOString() })
+      .eq('id', targetCompanyId);
+    if (error) throw error;
+    setActiveCompany(prev => ({ ...prev, logoUrl }));
+    await refreshActiveContext();
+    await refreshData();
+  };
+
   const tenantBranding: TenantBranding = {
     contractorName:
       activeProject?.company_name ||
       (activeCompany.id ? activeCompany.name : '') ||
       'Kontraktor',
     contractorNpwp: activeProject?.company_npwp || activeCompany.npwp || '',
+    contractorLogoUrl: activeProject?.company_logo_url || activeCompany.logoUrl || '',
     clientName: activeClientName || 'Klien',
     projectName: activeProject?.name || 'Proyek Aktif',
     projectCode: activeProject?.project_code || '',
@@ -1266,6 +1286,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveRole,
         activeCompany,
         setActiveCompany,
+        updateCompanyLogo,
         tenantBranding,
         rolePermissions
       }}

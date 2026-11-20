@@ -11,11 +11,13 @@ import {
   Users,
   CheckCircle2,
   UserCheck,
-  Briefcase
+  Briefcase,
+  Camera
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { getSupabaseClient, resolveMyActiveContext } from '../lib/supabase';
 import { RfinBInvitationPanel } from './RfinBInvitationPanel';
+import { AvatarCropperModal } from './AvatarCropperModal';
 
 type CompanyWorkspace = { id: string; name: string; company_id: string | null };
 type ProjectRow = { id: string; workspace_id: string; project_code: string; name: string; description: string | null; status: string; created_at: string };
@@ -49,7 +51,7 @@ type ProjectCoverage = {
 
 export const CompanyConsole: React.FC = () => {
   const db = getSupabaseClient();
-  const { currentView, setCurrentView } = useApp();
+  const { currentView, setCurrentView, activeCompany, updateCompanyLogo } = useApp();
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -60,6 +62,22 @@ export const CompanyConsole: React.FC = () => {
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
+  const [isSavingLogo, setIsSavingLogo] = useState(false);
+
+  const handleSaveCompanyLogo = async (dataUrl: string) => {
+    setIsSavingLogo(true);
+    setError('');
+    try {
+      await updateCompanyLogo(dataUrl);
+      setNotice('Logo resmi perusahaan berhasil diperbarui dan diterapkan secara dinamis ke seluruh sistem.');
+      setTimeout(() => setNotice(''), 4000);
+    } catch (err: any) {
+      setError(err?.message || 'Gagal menyimpan logo perusahaan.');
+    } finally {
+      setIsSavingLogo(false);
+    }
+  };
 
   // Proyek Baru
   const [projectCode, setProjectCode] = useState('');
@@ -343,8 +361,26 @@ export const CompanyConsole: React.FC = () => {
       {/* Header Utama Konsol Perusahaan */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-900">
-            <Building2 className="h-6 w-6" />
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setIsLogoModalOpen(true)}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setIsLogoModalOpen(true); }}
+            title="Klik untuk mengunggah atau mengganti logo perusahaan resmi (1:1)"
+            className="relative group p-1.5 rounded-2xl bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-900 cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 hover:shadow-md transition-all shrink-0 w-14 h-14 flex items-center justify-center overflow-hidden"
+          >
+            {activeCompany.logoUrl ? (
+              <img
+                src={activeCompany.logoUrl}
+                alt={activeCompany.name}
+                className="w-full h-full object-contain rounded-xl p-0.5 bg-white dark:bg-slate-900"
+              />
+            ) : (
+              <Building2 className="h-7 w-7 group-hover:scale-105 transition-transform" />
+            )}
+            <div className="absolute -bottom-0.5 -right-0.5 p-1 rounded-full bg-blue-600 text-white shadow-xs group-hover:scale-110 transition-transform">
+              <Camera className="w-3 h-3" />
+            </div>
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -839,6 +875,33 @@ export const CompanyConsole: React.FC = () => {
                   </p>
                 </div>
 
+                {/* Kartu Kelola Logo Perusahaan */}
+                <div className="rounded-xl border border-blue-200/80 dark:border-blue-900/50 bg-blue-50/40 dark:bg-blue-950/20 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-1 shrink-0 flex items-center justify-center shadow-xs">
+                      {activeCompany.logoUrl ? (
+                        <img src={activeCompany.logoUrl} alt="Logo Perusahaan" className="w-full h-full object-contain rounded-lg" />
+                      ) : (
+                        <Building2 className="w-6 h-6 text-slate-400" />
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-900 dark:text-white">Logo Resmi Tenant / Perusahaan</h3>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Ditampilkan dinamis pada kop surat ekspor PDF, bilah navigasi header, dan modul operasional.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsLogoModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors cursor-pointer shrink-0"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>{activeCompany.logoUrl ? 'Ubah Logo Perusahaan' : 'Unggah Logo Perusahaan'}</span>
+                  </button>
+                </div>
+
                 <form onSubmit={submitProfileChange} className="grid gap-3 sm:grid-cols-2 text-xs">
                   <div>
                     <label className="block font-medium mb-1">Nama Legal Baru (Kosongkan jika tidak berubah)</label>
@@ -936,6 +999,17 @@ export const CompanyConsole: React.FC = () => {
           )}
         </>
       )}
+
+      {/* Modal Potong & Manipulasi Logo Perusahaan (Crop 1:1) */}
+      <AvatarCropperModal
+        isOpen={isLogoModalOpen}
+        onClose={() => setIsLogoModalOpen(false)}
+        onSave={handleSaveCompanyLogo}
+        currentAvatarUrl={activeCompany.logoUrl}
+        title="Logo Resmi Perusahaan (Tenant)"
+        subtitle="Pilih berkas logo resmi dari perangkat atau jepret langsung dari kamera. Pangkas dengan rasio 1:1."
+        cropShape="rect"
+      />
     </div>
   );
 };

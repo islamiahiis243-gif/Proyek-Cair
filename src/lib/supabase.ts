@@ -66,6 +66,7 @@ export interface ActiveContextWorkspace {
   status: string;
   company_id: string | null;
   company_npwp?: string;
+  company_logo_url?: string;
   is_company_super_admin?: boolean;
   access_basis: string;
   personas?: ActiveContextPersona[];
@@ -77,6 +78,7 @@ export interface ActiveContextProject {
   company_id?: string;
   company_name?: string;
   company_npwp?: string;
+  company_logo_url?: string;
   project_code: string | null;
   name: string;
   status: string;

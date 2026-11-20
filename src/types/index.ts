@@ -196,7 +196,9 @@ export interface TenantBranding {
   contractorNpwp: string;
   contractorAddress?: string;
   contractorContact?: string;
+  contractorLogoUrl?: string;
   clientName: string;
+  clientLogoUrl?: string;
   projectName: string;
   projectCode: string;
   directorName: string;

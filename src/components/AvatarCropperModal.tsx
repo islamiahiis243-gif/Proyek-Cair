@@ -18,13 +18,19 @@ interface AvatarCropperModalProps {
   onClose: () => void;
   onSave: (croppedDataUrl: string) => Promise<void> | void;
   currentAvatarUrl?: string;
+  title?: string;
+  subtitle?: string;
+  cropShape?: 'round' | 'rect';
 }
 
 export const AvatarCropperModal: React.FC<AvatarCropperModalProps> = ({
   isOpen,
   onClose,
   onSave,
-  currentAvatarUrl
+  currentAvatarUrl,
+  title,
+  subtitle,
+  cropShape = 'round'
 }) => {
   const [mode, setMode] = useState<'SELECT' | 'CAMERA' | 'CROP'>('SELECT');
   const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -189,45 +195,75 @@ export const AvatarCropperModal: React.FC<AvatarCropperModalProps> = ({
 
     ctx.restore();
 
-    // Draw Facebook-style circular & square overlay mask
+    // Draw circular or rounded rectangular overlay mask
     const cropRadius = (size * 0.86) / 2;
     const centerX = size / 2;
     const centerY = size / 2;
+    const x0 = centerX - cropRadius;
+    const y0 = centerY - cropRadius;
+    const d = cropRadius * 2;
+    const r = 16;
 
-    // Dark semi-transparent vignette outside crop circle
+    // Dark semi-transparent vignette outside crop boundary
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, size, size);
-    ctx.arc(centerX, centerY, cropRadius, 0, Math.PI * 2, true);
+
+    if (cropShape === 'rect') {
+      ctx.moveTo(x0 + r, y0);
+      ctx.lineTo(x0 + d - r, y0);
+      ctx.arcTo(x0 + d, y0, x0 + d, y0 + r, r);
+      ctx.lineTo(x0 + d, y0 + d - r);
+      ctx.arcTo(x0 + d, y0 + d, x0 + d - r, y0 + d, r);
+      ctx.lineTo(x0 + r, y0 + d);
+      ctx.arcTo(x0, y0 + d, x0, y0 + d - r, r);
+      ctx.lineTo(x0, y0 + r);
+      ctx.arcTo(x0, y0, x0 + r, y0, r);
+    } else {
+      ctx.arc(centerX, centerY, cropRadius, 0, Math.PI * 2, true);
+    }
+
     ctx.closePath();
     ctx.fillStyle = 'rgba(15, 23, 42, 0.65)';
-    ctx.fill();
+    ctx.fill('evenodd');
 
-    // Circular crop guide line
+    // Crop guide border line
     ctx.beginPath();
-    ctx.arc(centerX, centerY, cropRadius, 0, Math.PI * 2);
+    if (cropShape === 'rect') {
+      ctx.moveTo(x0 + r, y0);
+      ctx.lineTo(x0 + d - r, y0);
+      ctx.arcTo(x0 + d, y0, x0 + d, y0 + r, r);
+      ctx.lineTo(x0 + d, y0 + d - r);
+      ctx.arcTo(x0 + d, y0 + d, x0 + d - r, y0 + d, r);
+      ctx.lineTo(x0 + r, y0 + d);
+      ctx.arcTo(x0, y0 + d, x0, y0 + d - r, r);
+      ctx.lineTo(x0, y0 + r);
+      ctx.arcTo(x0, y0, x0 + r, y0, r);
+    } else {
+      ctx.arc(centerX, centerY, cropRadius, 0, Math.PI * 2);
+    }
     ctx.strokeStyle = '#3b82f6';
     ctx.lineWidth = 2.5;
     ctx.stroke();
 
-    // 1:1 grid lines inside circle (rule of thirds)
+    // 1:1 grid lines inside crop area (rule of thirds)
     ctx.beginPath();
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.lineWidth = 1;
     // vertical
-    ctx.moveTo(centerX - cropRadius / 3, centerY - cropRadius * 0.94);
-    ctx.lineTo(centerX - cropRadius / 3, centerY + cropRadius * 0.94);
-    ctx.moveTo(centerX + cropRadius / 3, centerY - cropRadius * 0.94);
-    ctx.lineTo(centerX + cropRadius / 3, centerY + cropRadius * 0.94);
+    ctx.moveTo(x0 + d / 3, y0 + 4);
+    ctx.lineTo(x0 + d / 3, y0 + d - 4);
+    ctx.moveTo(x0 + (2 * d) / 3, y0 + 4);
+    ctx.lineTo(x0 + (2 * d) / 3, y0 + d - 4);
     // horizontal
-    ctx.moveTo(centerX - cropRadius * 0.94, centerY - cropRadius / 3);
-    ctx.lineTo(centerX + cropRadius * 0.94, centerY - cropRadius / 3);
-    ctx.moveTo(centerX - cropRadius * 0.94, centerY + cropRadius / 3);
-    ctx.lineTo(centerX + cropRadius * 0.94, centerY + cropRadius / 3);
+    ctx.moveTo(x0 + 4, y0 + d / 3);
+    ctx.lineTo(x0 + d - 4, y0 + d / 3);
+    ctx.moveTo(x0 + 4, y0 + (2 * d) / 3);
+    ctx.lineTo(x0 + d - 4, y0 + (2 * d) / 3);
     ctx.stroke();
 
     ctx.restore();
-  }, [pan, zoom, rotation]);
+  }, [pan, zoom, rotation, cropShape]);
 
   useEffect(() => {
     if (mode === 'CROP') {
@@ -357,17 +393,17 @@ export const AvatarCropperModal: React.FC<AvatarCropperModalProps> = ({
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
                 {mode === 'SELECT'
-                  ? 'Unggah Foto Profil'
+                  ? (title || (cropShape === 'rect' ? 'Unggah Logo Perusahaan' : 'Unggah Foto Profil'))
                   : mode === 'CAMERA'
-                  ? 'Ambil Foto dengan Kamera'
-                  : 'Atur & Potong Foto (1:1)'}
+                  ? (cropShape === 'rect' ? 'Ambil Foto Stempel / Logo' : 'Ambil Foto dengan Kamera')
+                  : (cropShape === 'rect' ? 'Atur & Potong Logo (1:1)' : 'Atur & Potong Foto (1:1)')}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                 {mode === 'SELECT'
-                  ? 'Pilih metode untuk mengambil atau mengunggah foto profil'
+                  ? (subtitle || (cropShape === 'rect' ? 'Pilih file logo resmi tenant atau jepret langsung dari kamera' : 'Pilih metode untuk mengambil atau mengunggah foto profil'))
                   : mode === 'CAMERA'
-                  ? 'Posisikan wajah Anda tepat di tengah bingkai'
-                  : 'Geser dan perbesar foto agar pas di dalam lingkaran profil'}
+                  ? (cropShape === 'rect' ? 'Posisikan logo atau berkas tepat di tengah bingkai' : 'Posisikan wajah Anda tepat di tengah bingkai')
+                  : (cropShape === 'rect' ? 'Geser dan perbesar logo agar pas di dalam bingkai' : 'Geser dan perbesar foto agar pas di dalam lingkaran profil')}
               </p>
             </div>
           </div>
@@ -436,11 +472,11 @@ export const AvatarCropperModal: React.FC<AvatarCropperModalProps> = ({
 
               {currentAvatarUrl && (
                 <div className="flex items-center justify-center gap-2 pt-2 text-xs text-slate-500 dark:text-slate-400">
-                  <span>Foto profil saat ini:</span>
+                  <span>{cropShape === 'rect' ? 'Logo saat ini:' : 'Foto profil saat ini:'}</span>
                   <img
                     src={currentAvatarUrl}
-                    alt="Current Avatar"
-                    className="w-7 h-7 rounded-full object-cover border border-slate-300 dark:border-slate-700"
+                    alt={cropShape === 'rect' ? 'Current Logo' : 'Current Avatar'}
+                    className={`w-7 h-7 object-contain ${cropShape === 'rect' ? 'rounded-lg p-0.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700' : 'rounded-full border border-slate-300 dark:border-slate-700'}`}
                   />
                 </div>
               )}
@@ -477,8 +513,8 @@ export const AvatarCropperModal: React.FC<AvatarCropperModalProps> = ({
                       muted
                       className="w-full h-full object-cover scale-x-[-1]"
                     />
-                    {/* Viewfinder Circle Overlay */}
-                    <div className="absolute inset-0 border-4 border-white/60 rounded-full pointer-events-none" />
+                    {/* Viewfinder Overlay */}
+                    <div className={`absolute inset-0 border-4 border-white/60 pointer-events-none ${cropShape === 'rect' ? 'rounded-2xl m-3' : 'rounded-full'}`} />
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                       <div className="w-full h-0.5 bg-white/20" />
                       <div className="h-full w-0.5 bg-white/20 absolute" />
