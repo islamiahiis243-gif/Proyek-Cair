@@ -440,7 +440,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       else notStartedCount++;
     });
 
-    const progressPct = totalItems > 0 ? Math.round(((fulfilledCount + inProgressCount * 0.5) / totalItems) * 100) : 0;
+    const progressPct = totalItems > 0 ? Math.round(((fulfilledCount + overQuotaCount + inProgressCount * 0.5) / totalItems) * 100) : 0;
 
     return {
       totalItems,
@@ -677,7 +677,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         return;
       }
 
-      setNoticeMessage(res.message);
+      setNoticeMessage(
+        `Mutasi ${mutationType === 'MASUK' ? 'MASUK' : 'KELUAR'} ${itemName} (${qty} ${itemSatuan}) berhasil dicatat. ${res.message}`
+      );
       setIsModalOpen(false);
     } catch (err: any) {
       setErrorMessage(err.message || 'Gagal mencatat mutasi stok.');
@@ -812,12 +814,23 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     <div className={modalOnly ? '' : 'space-y-5'}>
       {/* Notifikasi & Pesan */}
       {noticeMessage && (
-        <div role="status" className="flex items-center justify-between rounded-xl border border-emerald-300 bg-emerald-50 p-3.5 text-xs text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+        <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3.5 text-xs text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <span>{noticeMessage}</span>
           </div>
-          <button onClick={() => setNoticeMessage(null)} aria-label="Tutup pemberitahuan" className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 text-base font-bold">×</button>
+          <div className="flex items-center gap-2">
+            {!modalOnly && activeTab !== 'MUTATION_HISTORY' && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('MUTATION_HISTORY')}
+                className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition-colors cursor-pointer"
+              >
+                Lihat di Jurnal Transaksi →
+              </button>
+            )}
+            <button onClick={() => setNoticeMessage(null)} aria-label="Tutup pemberitahuan" className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 text-base font-bold">×</button>
+          </div>
         </div>
       )}
 
@@ -996,16 +1009,20 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   </div>
                 </div>
 
-                <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <div
+                  onClick={() => setActiveTab('MUTATION_HISTORY')}
+                  title="Klik untuk membuka Jurnal Riwayat Transaksi"
+                  className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm cursor-pointer hover:border-emerald-400 dark:hover:border-emerald-600 transition-colors"
+                >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Realisasi Kedatangan</span>
                     <ArrowDownLeft className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   </div>
                   <div className="mt-2 text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                    {boqMetrics.fulfilledCount + boqMetrics.inProgressCount} Item Masuk
+                    {boqMetrics.fulfilledCount + boqMetrics.inProgressCount + boqMetrics.overQuotaCount} Pos Terisi
                   </div>
                   <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
-                    {boqMetrics.fulfilledCount} Terpenuhi · {boqMetrics.inProgressCount} Dalam Proses
+                    {boqMetrics.fulfilledCount + boqMetrics.overQuotaCount} Terpenuhi · {boqMetrics.inProgressCount} Dalam Proses ({stockMutations.filter((m) => m.jenis === 'MASUK' && !m.is_batal).length} Trx Masuk)
                   </p>
                 </div>
 
@@ -1035,6 +1052,45 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   </p>
                 </div>
               </div>
+
+              {/* Strip Ringkasan Mutasi Terbaru agar Transaksi Baru Langsung Terlihat di Tab 1 */}
+              {stockMutations.length > 0 && (
+                <div className="bg-emerald-50/70 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-800/70 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                      <History className="w-4 h-4" />
+                      Mutasi Barang Terakhir:
+                    </span>
+                    {stockMutations.slice(0, 3).map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          setBoqSearchQuery(m.nama_barang);
+                        }}
+                        title={`Klik untuk menyaring "${m.nama_barang}" pada tabel BOQ di bawah`}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-semibold transition-colors cursor-pointer ${
+                          m.jenis === 'MASUK'
+                            ? 'bg-white dark:bg-slate-900 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100/60'
+                            : 'bg-white dark:bg-slate-900 border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-300 hover:bg-rose-100/60'
+                        }`}
+                      >
+                        <span className="font-mono font-bold">
+                          {m.jenis === 'MASUK' ? '+' : '-'}{m.jumlah.toLocaleString('id-ID')} {m.satuan}
+                        </span>
+                        <span>{m.nama_barang}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('MUTATION_HISTORY')}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                  >
+                    <span>Buka Jurnal Riwayat ({stockMutations.length} Mutasi) →</span>
+                  </button>
+                </div>
+              )}
 
               {/* Filter & Kontrol Pencarian BOQ */}
               <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 transition-colors">
@@ -2067,8 +2123,11 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     min="0.0001"
                     step="any"
                     required
-                    value={qty}
-                    onChange={(e) => setQty(Number(e.target.value))}
+                    placeholder="Masukkan jumlah (cth: 5)"
+                    value={qty === 0 ? '' : qty}
+                    onFocus={(e) => e.target.select()}
+                    onWheel={(e) => (e.target as HTMLElement).blur()}
+                    onChange={(e) => setQty(e.target.value === '' ? 0 : Number(e.target.value))}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl font-mono font-bold focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>

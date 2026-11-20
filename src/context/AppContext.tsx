@@ -180,10 +180,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const hasActiveProjectScope = Boolean(activeContext && activeProject && activeContext.projects.some(p => p.id === activeProject.id && p.workspace_id === activeWorkspaceId));
 
   const setActiveWorkspaceId = (id: string) => {
-    setActiveWorkspaceIdState(id);
+    setActiveWorkspaceIdState(prev => {
+      if (prev !== id) {
+        setActiveProjectIdState('');
+        localStorage.removeItem('udu_active_project');
+      }
+      return id;
+    });
     localStorage.setItem('udu_active_workspace', id);
-    setActiveProjectIdState('');
-    localStorage.removeItem('udu_active_project');
   };
 
   const setActiveProjectId = (id: string) => {
@@ -271,12 +275,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const next = await resolveMyActiveContext();
     setActiveContext(next);
 
+    const isPlatformAdmin = Boolean(next.is_platform_super_admin);
+    const isCompanyAdmin = (next.workspaces || []).some(w => w.type === 'COMPANY' && (w as any).is_company_super_admin);
+    const hasProjects = (next.projects || []).length > 0;
+
+    let effectiveMode = appMode;
+    const savedMode = localStorage.getItem(APP_MODE_KEY);
+    if (!savedMode) {
+      if (isPlatformAdmin) {
+        effectiveMode = 'PSA';
+        setAppModeState('PSA');
+      } else if (isCompanyAdmin) {
+        effectiveMode = 'CSA';
+        setAppModeState('CSA');
+      } else if (hasProjects) {
+        effectiveMode = 'IMPERSONATE';
+        setAppModeState('IMPERSONATE');
+      }
+    } else if (effectiveMode === 'IMPERSONATE' && !hasProjects) {
+      effectiveMode = isCompanyAdmin ? 'CSA' : isPlatformAdmin ? 'PSA' : 'PERSONAL';
+      setAppModeState(effectiveMode);
+    }
+
+    const companyWs = next.workspaces.find(w => w.type === 'COMPANY');
+    if (companyWs) {
+      setActiveCompany({
+        id: companyWs.company_id || companyWs.id,
+        name: companyWs.name || 'CV. MENARA MEGAH',
+        npwp: (companyWs as any).company_npwp || (companyWs as any).npwp || '0024376584714000'
+      });
+    }
+
     // Ambil workspace aktif atau fallback ke company workspace pertama
     let targetWorkspaceId = activeWorkspaceId;
-    if (!targetWorkspaceId && next.workspaces.length > 0) {
-      const comp = next.workspaces.find(w => w.type === 'COMPANY') || next.workspaces[0];
+    if ((!targetWorkspaceId || (effectiveMode !== 'PERSONAL' && !next.workspaces.some(w => w.id === targetWorkspaceId && w.type === 'COMPANY'))) && next.workspaces.length > 0) {
+      const comp = companyWs || next.workspaces[0];
       targetWorkspaceId = comp.id;
       setActiveWorkspaceIdState(targetWorkspaceId);
+      localStorage.setItem('udu_active_workspace', targetWorkspaceId);
     }
 
     let selectedProject = next.projects.find(p => p.id === activeProjectId && p.workspace_id === targetWorkspaceId);
@@ -284,12 +320,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       selectedProject = next.projects.find(p => p.workspace_id === targetWorkspaceId) || next.projects[0];
       if (selectedProject) {
         setActiveProjectIdState(selectedProject.id);
+        localStorage.setItem('udu_active_project', selectedProject.id);
+        if (selectedProject.workspace_id && selectedProject.workspace_id !== targetWorkspaceId) {
+          targetWorkspaceId = selectedProject.workspace_id;
+          setActiveWorkspaceIdState(targetWorkspaceId);
+          localStorage.setItem('udu_active_workspace', targetWorkspaceId);
+        }
       }
     }
 
     // Isolasi E2E: Jika Akun Personal, PSA, atau tidak memiliki penugasan proyek yang sah,
     // data rahasia operasional tenant (BOQ, mutasi kas, stok) TIDAK dimuat.
-    if (appMode === 'PERSONAL' || appMode === 'PSA' || next.projects.length === 0 || !selectedProject) {
+    if (effectiveMode === 'PERSONAL' || effectiveMode === 'PSA' || next.projects.length === 0 || !selectedProject) {
       setItems([]);
       setPhysicalMaterials([]);
       setBoqSections([]);
@@ -394,10 +436,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const physicalStock = physicalBalance.get(key) || 0;
       const masukFisik = physicalReceived.get(key) || 0;
       const terpakaiDiPosIni = boqItemConsumed.get(b.id) || 0;
-      const sisaTargetPos = Math.max(baseTarget - terpakaiDiPosIni, 0);
-      const progress = baseTarget > 0 ? (terpakaiDiPosIni / baseTarget) * 100 : 0;
+      const sisaTargetPos = Math.max(baseTarget - masukFisik, 0);
+      const progress = baseTarget > 0 ? Math.min((masukFisik / baseTarget) * 100, 100) : 0;
       const statusPemenuhan: ItemBarang['status_pemenuhan'] =
-        terpakaiDiPosIni > baseTarget ? 'Melebihi BOQ' : terpakaiDiPosIni >= baseTarget && baseTarget > 0 ? 'Terpenuhi' : terpakaiDiPosIni > 0 ? 'Dalam pemenuhan' : 'Belum dipenuhi';
+        masukFisik > baseTarget && baseTarget > 0
+          ? 'Melebihi BOQ'
+          : masukFisik >= baseTarget && baseTarget > 0
+          ? 'Terpenuhi'
+          : masukFisik > 0
+          ? 'Dalam pemenuhan'
+          : 'Belum dipenuhi';
 
       return {
         id: b.id,
@@ -483,7 +531,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const nameById = new Map(mappedItems.map(x => [x.id, x.nama_barang]));
     stockRows.forEach(x => {
-      x.nama_barang = nameById.get(x.barang_id) || 'Item BOQ';
+      x.nama_barang = nameById.get(x.barang_id) || x.nama_barang || 'Item BOQ';
     });
 
     let cashBalance = 0;
@@ -557,14 +605,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       live = false;
     };
-  }, [user.id, activeProjectId, activeWorkspaceId]);
+  }, [user.id, activeProjectId, activeWorkspaceId, appMode]);
 
   // Transaksi Baru Mutasi Barang (Diterbitkan oleh Clerk)
   const addStockMutation = async (data: Omit<MutasiBarang, 'id' | 'stok_sebelum' | 'stok_sesudah'>) => {
     try {
       const client = getSupabaseClient();
-      const wsId = activeWorkspaceId || (activeContext?.workspaces[0]?.id as string);
-      const prId = activeProjectId || (activeContext?.projects[0]?.id as string);
+      const targetProj = activeProject || activeContext?.projects[0];
+      const wsId = targetProj?.workspace_id || activeWorkspaceId || (activeContext?.workspaces.find(w => w.type === 'COMPANY')?.id as string);
+      const prId = targetProj?.id || activeProjectId;
 
       const { error } = await client.from('inventory_transactions').insert({
         idempotency_key: crypto.randomUUID(),

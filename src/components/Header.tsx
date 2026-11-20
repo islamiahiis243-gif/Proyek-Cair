@@ -98,11 +98,11 @@ export const Header: React.FC = () => {
         npwp: proj.company_npwp || activeCompany.npwp
       });
     }
-    if (proj.id) {
-      setActiveProjectId(proj.id);
-    }
     if (proj.workspace_id) {
       setActiveWorkspaceId(proj.workspace_id);
+    }
+    if (proj.id) {
+      setActiveProjectId(proj.id);
     }
     setAppMode('IMPERSONATE');
     setDropdownOpen(false);
