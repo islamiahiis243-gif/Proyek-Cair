@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import QRCode from 'qrcode';
-import { DokumenLaporan, MutasiBarang, MutasiKas, UserProfile } from '../types';
+import { DokumenLaporan, MutasiBarang, MutasiKas, UserProfile, ItemBarang } from '../types';
 
 function stableStringify(value: any): string {
   if (Array.isArray(value)) return '[' + value.map(stableStringify).join(',') + ']';
@@ -555,5 +555,284 @@ export async function generateCashflowPDF(params: {
     total_transaksi: cashMutations.length,
     ringkasan_nilai_rp: endingBalance,
     qr_payload: `TTE-CV-MENARA-MEGAH:${docId}:DIREKTUR:ROLLY_YOHANES_KARINAH:NPWP_0024376584714000:STATUS_VALID_SAH`,
+  };
+}
+
+/**
+ * Generate PDF for Official BOQ & Material Tracking Report
+ */
+export async function generateBOQReportPDF(params: {
+  docId: string;
+  items: ItemBarang[];
+  projectName?: string;
+  signer?: UserProfile;
+}): Promise<DokumenLaporan> {
+  const { docId, items, projectName = 'UDU Project (Trainer & UDU Office)' } = params;
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // Kop Surat Resmi
+  drawOfficialHeader(doc, pageWidth);
+
+  // Judul Dokumen
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.text('BILL OF QUANTITY (BOQ) & KONTROL PEMENUHAN MATERIAL', 14, 40);
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text(
+    `Klien: PT INDO MURO KENCANA | Proyek: ${projectName} | Tanggal Cetak: ${formatDateOnly(new Date().toISOString())}`,
+    14,
+    45
+  );
+
+  // Kotak Ringkasan Nilai Kontrak Resmi
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(203, 213, 225);
+  doc.roundedRect(14, 48, pageWidth - 28, 14, 2, 2, 'FD');
+
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(30, 41, 59);
+  doc.text('NILAI KONTRAK RESMI (CV MENARA MEGAH):', 18, 53);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text('Material Kontrak:', 18, 58);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(37, 99, 235);
+  doc.text('Rp 448.150.623', 45, 58);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(30, 41, 59);
+  doc.text('Upah & Jasa (Manpower):', 80, 58);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(16, 185, 129);
+  doc.text('Rp 271.849.378', 120, 58);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(30, 41, 59);
+  doc.text('GRAND TOTAL KONTRAK:', 160, 58);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('Rp 720.000.000', 205, 58);
+
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(6.5);
+  doc.setTextColor(126, 34, 206);
+  doc.text('* Pengadaan Klien (Free-Issue PT IMK): Rp 177.571.280 (Beban Kontraktor: Rp 0)', pageWidth - 18, 53, { align: 'right' });
+
+  // Siapkan Data Tabel Berdasarkan Hierarki
+  const sortedItems = [...items].sort((a, b) => (a.source_excel_row || 0) - (b.source_excel_row || 0));
+  
+  const tableData: any[] = [];
+  let currentDivision = '';
+  let currentSubSection = '';
+
+  sortedItems.forEach((it) => {
+    const isImk = (it.keterangan || '').toLowerCase().includes('imk');
+    const catParts = (it.kategori || '').split(' / ');
+    const divName = catParts[0] || 'UMUM';
+    const subName = catParts[1] || '';
+
+    if (divName !== currentDivision) {
+      currentDivision = divName;
+      tableData.push([
+        {
+          content: currentDivision,
+          colSpan: 9,
+          styles: { fillColor: [254, 240, 138], fontStyle: 'bold', textColor: [113, 63, 18], fontSize: 7.5 }
+        }
+      ]);
+    }
+
+    if (subName && subName !== currentSubSection) {
+      currentSubSection = subName;
+      tableData.push([
+        {
+          content: `  ${currentSubSection}`,
+          colSpan: 9,
+          styles: { fillColor: [220, 252, 231], fontStyle: 'bold', textColor: [20, 83, 45], fontSize: 7 }
+        }
+      ]);
+    }
+
+    const hargaSatuanText = isImk ? '0 (By Klien)' : formatRupiah(it.harga_satuan);
+    const totalHargaText = isImk ? '0 (By Klien)' : formatRupiah(it.harga_satuan * it.qty_boq);
+    const providerText = isImk ? 'PT IMK' : 'Menara Megah';
+
+    tableData.push([
+      it.kode_boq || '-',
+      it.nama_barang,
+      providerText,
+      `${it.qty_boq.toLocaleString('id-ID')} ${it.satuan}`,
+      hargaSatuanText,
+      totalHargaText,
+      `${it.qty_masuk_total.toLocaleString('id-ID')} ${it.satuan}`,
+      `${it.qty_pemenuhan_sisa.toLocaleString('id-ID')} ${it.satuan}`,
+      it.status_pemenuhan
+    ]);
+  });
+
+  autoTable(doc, {
+    startY: 65,
+    head: [
+      ['Kode BOQ', 'Uraian Material / Pekerjaan', 'Penyedia', 'Target BOQ', 'Harga Satuan (Rp)', 'Total Kontrak (Rp)', 'Realisasi Masuk', 'Sisa Belum Tiba', 'Status']
+    ],
+    body: tableData,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7,
+    },
+    styles: {
+      fontSize: 6,
+      cellPadding: 1.5,
+    },
+    columnStyles: {
+      0: { cellWidth: 20 },
+      1: { cellWidth: 70 },
+      2: { cellWidth: 24, halign: 'center' },
+      3: { cellWidth: 24, halign: 'right' },
+      4: { cellWidth: 28, halign: 'right' },
+      5: { cellWidth: 32, halign: 'right' },
+      6: { cellWidth: 24, halign: 'right' },
+      7: { cellWidth: 24, halign: 'right' },
+      8: { cellWidth: 23, halign: 'center' },
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  const finalY = (doc as any).lastAutoTable?.finalY || 160;
+  let signY = finalY + 8;
+
+  if (signY + 45 > pageHeight) {
+    doc.addPage();
+    signY = 25;
+  }
+
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.4);
+  doc.line(14, signY, pageWidth - 14, signY);
+  signY += 5;
+
+  const colWidth = (pageWidth - 28) / 4;
+
+  // 1. Diterbitkan Oleh (Clerk)
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text('Diterbitkan Oleh,', 14, signY);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Clerk / Logistik', 14, signY + 4);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Sumarlin', 14, signY + 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6);
+  doc.setTextColor(100, 116, 139);
+  doc.text('sumarlin.1103@gmail.com', 14, signY + 22);
+
+  // 2. Diperiksa Oleh (Foreman)
+  const col2X = 14 + colWidth;
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text('Diperiksa Oleh,', col2X, signY);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Foreman Lapangan', col2X, signY + 4);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Ahmad Fauzi', col2X, signY + 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6);
+  doc.setTextColor(100, 116, 139);
+  doc.text('foreman@menaramegah.co.id', col2X, signY + 22);
+
+  // 3. Diverifikasi (Site Engineer / PM)
+  const col3X = 14 + colWidth * 2;
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text('Diverifikasi Oleh,', col3X, signY);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Project Manager / SE', col3X, signY + 4);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Ir. Bambang H.', col3X, signY + 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6);
+  doc.setTextColor(100, 116, 139);
+  doc.text('pm@menaramegah.co.id', col3X, signY + 22);
+
+  // 4. Disetujui (Direktur Utama)
+  const col4X = 14 + colWidth * 3;
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text('Disetujui Oleh,', col4X, signY);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Direktur Utama', col4X, signY + 4);
+
+  const qrDataUrl = await QRCode.toDataURL(
+    `TTE-CV-MENARA-MEGAH:${docId}:DIREKTUR:ROLLY_YOHANES_KARINAH:NPWP_0024376584714000:BOQ_VALID`,
+    { width: 100, margin: 0 }
+  );
+  doc.addImage(qrDataUrl, 'PNG', col4X, signY + 6, 14, 14);
+
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('ROLLY YOHANES KARINAH', col4X, signY + 22);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6);
+  doc.setTextColor(100, 116, 139);
+  doc.text('rrollyy6@gmail.com', col4X, signY + 26);
+
+  const snapshot = stableStringify({
+    docId,
+    company: 'CV. MENARA MEGAH',
+    project: projectName,
+    total_items: items.length,
+    contract_material: 448150623,
+    contract_manpower: 271849378,
+    contract_total: 720000000,
+  });
+  const hash = await sha256Hex(snapshot);
+
+  doc.setFontSize(6);
+  doc.setTextColor(148, 163, 184);
+  doc.text(
+    `Integritas Dokumen SHA-256: ${hash} | CV. MENARA MEGAH - Puruk Cahu`,
+    pageWidth / 2,
+    pageHeight - 5,
+    { align: 'center' }
+  );
+
+  doc.save(`${docId}_Laporan_BOQ_Pemenuhan_Material_CV_MENARA_MEGAH.pdf`);
+
+  return {
+    id: docId,
+    judul: 'Laporan Bill of Quantity (BOQ) & Kontrol Pemenuhan Material',
+    jenis: 'GABUNGAN_PROYEK',
+    status: 'TERVERIFIKASI',
+    periode_awal: new Date().toISOString(),
+    periode_akhir: new Date().toISOString(),
+    dibuat_pada: new Date().toISOString(),
+    penandatangan_nama: 'ROLLY YOHANES KARINAH',
+    penandatangan_jabatan: 'Direktur Utama',
+    penandatangan_email: 'rrollyy6@gmail.com',
+    hash_keamanan: hash,
+    total_transaksi: items.length,
+    ringkasan_nilai_rp: 720000000,
+    qr_payload: `TTE-CV-MENARA-MEGAH:${docId}:DIREKTUR:ROLLY_YOHANES_KARINAH:NPWP_0024376584714000:BOQ_VALID`,
   };
 }

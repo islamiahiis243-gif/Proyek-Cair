@@ -31,9 +31,10 @@ import {
   Eye,
   Building2,
   TrendingUp,
-  Filter
+  Filter,
+  FileText
 } from 'lucide-react';
-import { formatDateTime, formatRupiah } from '../lib/pdfGenerator';
+import { formatDateTime, formatRupiah, generateBOQReportPDF } from '../lib/pdfGenerator';
 
 interface StockMutationViewProps {
   isModalOpen: boolean;
@@ -79,6 +80,26 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   const [boqStatusFilter, setBoqStatusFilter] = useState<'ALL' | 'Belum dipenuhi' | 'Dalam pemenuhan' | 'Terpenuhi' | 'Melebihi BOQ'>('ALL');
   const [collapsedDivisions, setCollapsedDivisions] = useState<Set<string>>(new Set());
   const [collapsedSubSections, setCollapsedSubSections] = useState<Set<string>>(new Set());
+  const [isExportingBoq, setIsExportingBoq] = useState(false);
+
+  const handleExportBOQPDF = async () => {
+    try {
+      setIsExportingBoq(true);
+      const docId = `BOQ-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+      await generateBOQReportPDF({
+        docId,
+        items,
+        projectName: 'Trainer & UDU Office (PT IMK)',
+        signer: user || undefined
+      });
+      setNoticeMessage('Dokumen PDF BOQ berhasil dibuat dan diunduh.');
+    } catch (err: any) {
+      console.error('Error exporting BOQ PDF:', err);
+      setErrorMessage('Gagal mengunduh PDF BOQ: ' + (err.message || 'Kesalahan sistem'));
+    } finally {
+      setIsExportingBoq(false);
+    }
+  };
 
   // Form input states
   const [isCustomMode, setIsCustomMode] = useState<boolean>(false);
@@ -889,6 +910,61 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           {/* TAB 1: PANTAU PEMENUHAN BOQ */}
           {activeTab === 'BOQ_MONITOR' && (
             <div className="space-y-4">
+              {/* Ringkasan Nilai Kontrak Resmi (POV Kontraktor CV Menara Megah & Klien PT IMK) */}
+              <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 dark:from-slate-950 dark:via-blue-950/70 dark:to-slate-950 text-white p-4 sm:p-5 rounded-2xl border border-blue-900/40 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-blue-800/40">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-blue-600/30 rounded-xl border border-blue-500/40">
+                      <FileCheck2 className="w-5 h-5 text-blue-400" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-blue-300">
+                        Nilai Kontrak Pelaksanaan BOQ
+                      </h4>
+                      <p className="text-[11px] text-slate-300">
+                        CV MENARA MEGAH · Trainer & UDU Office (Klien: PT INDO MURO KENCANA)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleExportBOQPDF}
+                      disabled={isExportingBoq}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>{isExportingBoq ? 'Menyiapkan PDF...' : 'Ekspor PDF BOQ'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-3.5">
+                  <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">1. Material Kontrak</span>
+                    <div className="mt-1 text-base sm:text-lg font-black text-blue-400 font-mono">Rp 448.150.623</div>
+                    <span className="text-[10px] text-slate-300">Tanggungan CV Menara Megah</span>
+                  </div>
+
+                  <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">2. Upah & Jasa (Manpower)</span>
+                    <div className="mt-1 text-base sm:text-lg font-black text-emerald-400 font-mono">Rp 271.849.378</div>
+                    <span className="text-[10px] text-slate-300">Jasa Bongkar & Bangun</span>
+                  </div>
+
+                  <div className="bg-amber-500/10 dark:bg-amber-500/[0.08] p-3 rounded-xl border border-amber-500/30">
+                    <span className="text-[10px] uppercase font-bold text-amber-300 tracking-wider">3. Grand Total Kontrak</span>
+                    <div className="mt-1 text-base sm:text-lg font-black text-amber-300 font-mono">Rp 720.000.000</div>
+                    <span className="text-[10px] text-amber-200/90 font-medium">Nilai Resmi SPK / Kontrak</span>
+                  </div>
+
+                  <div className="bg-purple-950/50 p-3 rounded-xl border border-purple-800/40">
+                    <span className="text-[10px] uppercase font-bold text-purple-300 tracking-wider">Free-Issue Klien (PT IMK)</span>
+                    <div className="mt-1 text-base sm:text-lg font-black text-purple-300 font-mono">Rp 177.571.280</div>
+                    <span className="text-[10px] text-purple-200">Disediakan Klien (Beban Kontraktor: Rp 0)</span>
+                  </div>
+                </div>
+              </div>
+
               {/* Kartu Ringkasan Progres Kontrak BOQ */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
@@ -1132,10 +1208,24 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                                 <div className="font-semibold text-slate-900 dark:text-white">
                                                   {item.nama_barang}
                                                 </div>
-                                                <div className="text-[10px] text-slate-400 dark:text-slate-500">
-                                                  {formatRupiah(item.harga_satuan)} / {item.satuan}
-                                                  {item.keterangan ? ` · ${item.keterangan}` : ''}
-                                                </div>
+                                                {isImk ? (
+                                                  <div className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">
+                                                    Beban Kontraktor: Rp 0 (Disediakan Klien PT IMK)
+                                                    {item.harga_satuan > 0 && (
+                                                      <span className="text-slate-400 dark:text-slate-500 text-[9px] ml-1">
+                                                        · Est. Aset Klien: {formatRupiah(item.harga_satuan * item.qty_boq)}
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                ) : (
+                                                  <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                                                    {formatRupiah(item.harga_satuan)} / {item.satuan}
+                                                    <span className="ml-1 font-medium text-slate-500 dark:text-slate-400">
+                                                      (Total: {formatRupiah(item.harga_satuan * item.qty_boq)})
+                                                    </span>
+                                                    {item.keterangan ? ` · ${item.keterangan}` : ''}
+                                                  </div>
+                                                )}
                                               </td>
 
                                               {/* Penyedia */}
