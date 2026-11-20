@@ -15,9 +15,10 @@ import {
   FileEdit,
   Clock,
   ShieldCheck,
-  Eye
+  Eye,
+  History
 } from 'lucide-react';
-import { formatRupiah, formatDateTime } from '../lib/pdfGenerator';
+import { formatRupiah, formatDateTime, generateCashflowPDF } from '../lib/pdfGenerator';
 
 interface CashflowViewProps {
   isModalOpen: boolean;
@@ -34,10 +35,14 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
 }) => {
   const {
     cashMutations,
+    documents,
     addCashMutation,
     batalCashMutation,
     gantiCashMutation,
-    advanceCashWorkflow,
+    issueOfficialDocument,
+    advanceDocumentWorkflow,
+    batalOfficialDocument,
+    gantiOfficialDocument,
     currentCashBalance,
     user,
     cashAccess,
@@ -46,9 +51,19 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
     dataReady
   } = useApp();
 
+  const [activeTab, setActiveTab] = useState<'CASH_JOURNAL' | 'CASH_DOCUMENTS'>('CASH_JOURNAL');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'ALL' | 'MASUK' | 'KELUAR'>('ALL');
-  const [filterCategory, setFilterCategory] = useState<string>('ALL');
+  const [filterCategory] = useState<string>('ALL');
+
+  // State Dokumen Resmi Kas (Tab 2)
+  const [docTitle, setDocTitle] = useState('Berita Acara Rekapitulasi Arus Kas & Mutasi Dana');
+  const [docPeriode, setDocPeriode] = useState(() => new Date().toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }));
+  const [batalDocTargetId, setBatalDocTargetId] = useState<string | null>(null);
+  const [batalDocReason, setBatalDocReason] = useState('');
+  const [gantiDocTargetId, setGantiDocTargetId] = useState<string | null>(null);
+  const [gantiDocTitle, setGantiDocTitle] = useState('');
+  const [gantiDocReason, setGantiDocReason] = useState('');
 
   // Form states
   const [jenis, setJenis] = useState<JenisMutasiKas>(defaultType);
@@ -77,15 +92,19 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
 
   const totalIn = useMemo(() => {
     return cashMutations
-      .filter((c) => c.jenis === 'MASUK' && !c.is_batal)
+      .filter((c) => c.jenis === 'MASUK' && !c.is_batal && !c.is_ganti)
       .reduce((acc, c) => acc + c.jumlah_rp, 0);
   }, [cashMutations]);
 
   const totalOut = useMemo(() => {
     return cashMutations
-      .filter((c) => c.jenis === 'KELUAR' && !c.is_batal)
+      .filter((c) => c.jenis === 'KELUAR' && !c.is_batal && !c.is_ganti)
       .reduce((acc, c) => acc + c.jumlah_rp, 0);
   }, [cashMutations]);
+
+  const cashDocuments = useMemo(() => {
+    return (documents || []).filter((d) => d.jenis === 'MUTASI_KAS');
+  }, [documents]);
 
   const projectedBalance = jenis === 'MASUK' ? currentCashBalance + Number(amount || 0) : currentCashBalance - Number(amount || 0);
 
@@ -233,30 +252,131 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
     }
   };
 
-  // Alur Persetujuan Berseri (Serial Approval Kas)
-  const handleAdvanceWorkflow = async (mut: MutasiKas, nextStatus: StatusDokumenWorkflow) => {
-    if (nextStatus === 'DISETUJUI' && mut.status_dokumen !== 'DIPERIKSA') {
-      setErrorMessage('Approval berseri: Dokumen wajib Diperiksa terlebih dahulu oleh Foreman / Spv sebelum Disetujui.');
+  // ============================================================================
+  // HANDLER DOKUMEN RESMI ARUS KAS & PERSETUJUAN BERANTAI (KHUSUS DOKUMEN)
+  // ============================================================================
+  const handleIssueCashDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submitting) return;
+    if (!docTitle.trim()) {
+      setErrorMessage('Judul dokumen resmi kas wajib diisi.');
       return;
     }
-    if (nextStatus === 'MENGETAHUI' && mut.status_dokumen !== 'DISETUJUI') {
-      setErrorMessage('Approval berseri: Dokumen wajib Disetujui terlebih dahulu oleh Spv / Dept. Manager sebelum disahkan Mengetahui (TTE/QR).');
-      return;
-    }
-
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      const res = await advanceCashWorkflow(mut.id, nextStatus);
+      const validTrx = cashMutations.filter((c) => !c.is_batal && !c.is_ganti);
+      const res = await issueOfficialDocument({
+        jenis: 'MUTASI_KAS',
+        judul: docTitle.trim(),
+        periode: docPeriode.trim() || 'Periode Berjalan',
+        ringkasan: `Rekapitulasi ${validTrx.length} transaksi kas (Saldo: ${formatRupiah(currentCashBalance)})`,
+        total_nilai_atau_item: formatRupiah(currentCashBalance)
+      });
       if (res.success) {
         setNoticeMessage(res.message);
       } else {
         setErrorMessage(res.message);
       }
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Pembaruan status persetujuan gagal.');
+      setErrorMessage(err?.message || 'Gagal menerbitkan dokumen kas.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleAdvanceCashDocument = async (docDbId: string, currentStatus: StatusDokumenWorkflow, nextStatus: StatusDokumenWorkflow) => {
+    if (nextStatus === 'DISETUJUI' && currentStatus !== 'DIPERIKSA') {
+      setErrorMessage('Alur persetujuan berantai: Dokumen wajib Diperiksa terlebih dahulu oleh Foreman / Spv sebelum Disetujui.');
+      return;
+    }
+    if (nextStatus === 'MENGETAHUI' && currentStatus !== 'DISETUJUI') {
+      setErrorMessage('Alur persetujuan berantai: Dokumen wajib Disetujui terlebih dahulu oleh Spv / Dept. Manager sebelum disahkan Mengetahui (TTE/QR).');
+      return;
+    }
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const res = await advanceDocumentWorkflow(docDbId, nextStatus);
+      if (res.success) {
+        setNoticeMessage(res.message);
+      } else {
+        setErrorMessage(res.message);
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Gagal memproses persetujuan dokumen kas.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleConfirmBatalDoc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!batalDocTargetId || submitting) return;
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const res = await batalOfficialDocument(batalDocTargetId, batalDocReason);
+      if (res.success) {
+        setNoticeMessage(res.message);
+        setBatalDocTargetId(null);
+        setBatalDocReason('');
+      } else {
+        setErrorMessage(res.message);
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Gagal membatalkan dokumen kas.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleConfirmGantiDoc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!gantiDocTargetId || submitting) return;
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const validTrx = cashMutations.filter((c) => !c.is_batal && !c.is_ganti);
+      const res = await gantiOfficialDocument(
+        gantiDocTargetId,
+        {
+          jenis: 'MUTASI_KAS',
+          judul: gantiDocTitle.trim() || 'Berita Acara Rekapitulasi Arus Kas (Revisi)',
+          periode: docPeriode.trim() || 'Periode Berjalan',
+          ringkasan: `Revisi Rekapitulasi ${validTrx.length} transaksi kas`,
+          total_nilai_atau_item: formatRupiah(currentCashBalance)
+        },
+        gantiDocReason
+      );
+      if (res.success) {
+        setNoticeMessage(res.message);
+        setGantiDocTargetId(null);
+        setGantiDocReason('');
+      } else {
+        setErrorMessage(res.message);
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Gagal mengganti dokumen kas.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDownloadCashDocPDF = async (docCode: string) => {
+    try {
+      const validCash = cashMutations.filter((c) => !c.is_batal && !c.is_ganti);
+      const today = new Date().toISOString().slice(0, 10);
+      await generateCashflowPDF({
+        docId: docCode,
+        startDate: '2026-01-01',
+        endDate: today,
+        cashMutations: validCash,
+        signer: user
+      });
+      setNoticeMessage(`Dokumen PDF Resmi Kas (${docCode}) dengan QR Code Verifikasi berhasil diunduh.`);
+    } catch (err: any) {
+      setErrorMessage('Gagal mengunduh PDF dokumen kas: ' + (err?.message || 'Kesalahan sistem'));
     }
   };
 
@@ -305,7 +425,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                 Modul Mutasi Dana (Arus Kas Proyek)
               </h1>
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
-                Pencatatan kas masuk & kas keluar. Saldo dihitung dari riwayat transaksi yang sah tanpa fitur hapus.
+                Pencatatan kas masuk & kas keluar. Koreksi baris langsung (Batal/Ganti) tanpa hapus, dan persetujuan berantai khusus Dokumen Resmi.
               </p>
             </div>
 
@@ -314,7 +434,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                 onClick={() => handleOpenModal('MASUK')}
                 disabled={!rolePermissions.canIssue}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-40 transition-colors shadow-sm"
-                title={rolePermissions.canIssue ? 'Catat Kas Masuk' : 'Hanya Clerk yang dapat menerbitkan dokumen'}
+                title={rolePermissions.canIssue ? 'Catat Kas Masuk' : 'Hanya Clerk yang dapat mencatat transaksi baru'}
               >
                 <ArrowDownLeft className="w-4 h-4" />
                 <span>+ Kas Masuk (IN)</span>
@@ -323,7 +443,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                 onClick={() => handleOpenModal('KELUAR')}
                 disabled={!rolePermissions.canIssue}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-rose-600 rounded-xl hover:bg-rose-700 disabled:opacity-40 transition-colors shadow-sm"
-                title={rolePermissions.canIssue ? 'Catat Kas Keluar' : 'Hanya Clerk yang dapat menerbitkan dokumen'}
+                title={rolePermissions.canIssue ? 'Catat Kas Keluar' : 'Hanya Clerk yang dapat mencatat transaksi baru'}
               >
                 <ArrowUpRight className="w-4 h-4" />
                 <span>- Kas Keluar (OUT)</span>
@@ -353,225 +473,541 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
             </div>
           </div>
 
-          {/* Filter & Pencarian */}
-          <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 transition-colors">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-500 dark:text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                aria-label="Cari transaksi kas, peruntukan, PIC, atau no kuitansi"
-                placeholder="Cari transaksi kas, peruntukan, PIC, atau no kuitansi..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500/20"
-              />
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              {[
-                { id: 'ALL', label: `Semua (${cashMutations.length})` },
-                { id: 'MASUK', label: `Masuk (${cashMutations.filter((m) => m.jenis === 'MASUK').length})` },
-                { id: 'KELUAR', label: `Keluar (${cashMutations.filter((m) => m.jenis === 'KELUAR').length})` },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setFilterType(tab.id as any)}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-colors ${
-                    filterType === tab.id
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+          {/* Navigasi Tab Kas: Jurnal Transaksi Harian vs Dokumen Resmi & Persetujuan */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => setActiveTab('CASH_JOURNAL')}
+              className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+                activeTab === 'CASH_JOURNAL'
+                  ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20 rounded-t-xl'
+                  : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+              }`}
+            >
+              <History className="w-4 h-4" />
+              <span>📋 Jurnal Transaksi Kas Harian</span>
+              <span className="text-[10px] py-0.5 px-2 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 font-bold">
+                {cashMutations.length} Baris
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('CASH_DOCUMENTS')}
+              className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+                activeTab === 'CASH_DOCUMENTS'
+                  ? 'border-amber-600 text-amber-700 dark:text-amber-400 bg-amber-50/60 dark:bg-amber-950/25 rounded-t-xl'
+                  : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+              }`}
+            >
+              <FileCheck2 className="w-4 h-4" />
+              <span>📄 Dokumen & Persetujuan Kas (TTE/QR)</span>
+              <span className="text-[10px] py-0.5 px-2 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 font-bold">
+                {cashDocuments.length} Dokumen
+              </span>
+            </button>
           </div>
 
-          {/* Tabel Riwayat Kas */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold uppercase tracking-wider text-[10px]">
-                    <th className="py-3 px-3.5 w-10 text-center">No</th>
-                    <th className="py-3 px-3.5">Tanggal</th>
-                    <th className="py-3 px-3.5 text-center">Jenis</th>
-                    <th className="py-3 px-3.5">Peruntukan / Keterangan</th>
-                    <th className="py-3 px-3.5 text-right">Nominal (Rp)</th>
-                    <th className="py-3 px-3.5">PIC / No. Ref</th>
-                    <th className="py-3 px-3.5 text-center">Status Dokumen</th>
-                    <th className="py-3 px-3.5 text-center">Alur Persetujuan</th>
-                    <th className="py-3 px-3.5 text-center">Koreksi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {filteredList.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="py-12 text-center text-slate-600 dark:text-slate-300 font-medium">
-                        Belum ada riwayat transaksi mutasi kas.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredList.map((c, idx) => {
-                      const isVoid = c.is_batal;
-                      const isReplaced = c.is_ganti;
-                      const status = c.status_dokumen || 'DITERBITKAN';
+          {activeTab === 'CASH_JOURNAL' && (
+            <>
+              {/* Filter & Pencarian */}
+              <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 transition-colors">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-500 dark:text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    aria-label="Cari transaksi kas, peruntukan, PIC, atau no kuitansi"
+                    placeholder="Cari transaksi kas, peruntukan, PIC, atau no kuitansi..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
 
-                      return (
-                        <tr
-                          key={c.id}
-                          className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors ${
-                            isVoid ? 'opacity-50 bg-rose-50/20 line-through' : isReplaced ? 'opacity-70 bg-amber-50/20' : ''
-                          }`}
-                        >
-                          <td className="py-3 px-3.5 text-center text-slate-600 dark:text-slate-300 font-mono text-[11px] font-medium">
-                            {idx + 1}
-                          </td>
-                          <td className="py-3 px-3.5 text-slate-700 dark:text-slate-200 font-mono text-[11px] whitespace-nowrap">
-                            {formatDateTime(c.tanggal)}
-                          </td>
-                          <td className="py-3 px-3.5 text-center">
-                            <span
-                              className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                c.jenis === 'MASUK'
-                                  ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
-                                  : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300'
-                              }`}
-                            >
-                              {c.jenis === 'MASUK' ? <ArrowDownLeft className="w-3 h-3" /> : <ArrowUpRight className="w-3 h-3" />}
-                              {c.jenis}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3.5 max-w-sm">
-                            <div className="font-semibold text-slate-900 dark:text-white">{c.untuk_apa}</div>
-                            <div className="text-[10px] text-slate-600 dark:text-slate-300 mt-0.5 flex gap-2 font-medium">
-                              <span className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded">{c.kategori_keperluan}</span>
-                              {c.catatan && <span className="italic">{c.catatan}</span>}
-                            </div>
-                          </td>
-                          <td className="py-3 px-3.5 text-right font-mono font-bold tabular-nums whitespace-nowrap">
-                            <span className={c.jenis === 'MASUK' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                              {c.jenis === 'MASUK' ? '+' : '-'} {formatRupiah(c.jumlah_rp)}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3.5 text-slate-700 dark:text-slate-300">
-                            <div>{c.pic}</div>
-                            {c.nomor_kuitansi && (
-                              <div className="text-[10px] font-mono text-slate-600 dark:text-slate-300 font-medium">Ref: {c.nomor_kuitansi}</div>
-                            )}
-                          </td>
+                <div className="flex items-center gap-1.5">
+                  {[
+                    { id: 'ALL', label: `Semua (${cashMutations.length})` },
+                    { id: 'MASUK', label: `Masuk (${cashMutations.filter((m) => m.jenis === 'MASUK').length})` },
+                    { id: 'KELUAR', label: `Keluar (${cashMutations.filter((m) => m.jenis === 'KELUAR').length})` },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setFilterType(tab.id as any)}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-colors ${
+                        filterType === tab.id
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-                          {/* Status Dokumen */}
-                          <td className="py-3 px-3.5 text-center whitespace-nowrap">
-                            {isVoid ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800 dark:bg-rose-950 dark:text-rose-300">
-                                <Ban className="h-3 w-3" /> BATAL
-                              </span>
-                            ) : isReplaced ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                                <FileEdit className="h-3 w-3" /> DIGANTI
-                              </span>
-                            ) : status === 'MENGETAHUI' ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-[10px] font-bold text-blue-800 dark:bg-blue-950 dark:text-blue-300">
-                                <QrCode className="h-3 w-3" /> SAH (TTE/QR)
-                              </span>
-                            ) : status === 'DISETUJUI' ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                                <FileCheck2 className="h-3 w-3" /> DISETUJUI
-                              </span>
-                            ) : status === 'DIPERIKSA' ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
-                                <ShieldCheck className="h-3 w-3" /> DIPERIKSA
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                                <Clock className="h-3 w-3" /> DITERBITKAN
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Tombol Aksi Approval Berjenjang */}
-                          <td className="py-3 px-3.5 text-center whitespace-nowrap">
-                            {!isVoid && !isReplaced && (
-                              <div className="flex items-center justify-center gap-1.5">
-                                {status === 'DITERBITKAN' && (
-                                  <button
-                                    onClick={() => handleAdvanceWorkflow(c, 'DIPERIKSA')}
-                                    disabled={!rolePermissions.canCheck || submitting}
-                                    className="px-2 py-1 text-[10px] font-bold rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-30 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300"
-                                    title={rolePermissions.canCheck ? 'Klik untuk Memeriksa' : 'Hanya Foreman / Spv yang berhak memeriksa'}
-                                  >
-                                    Periksa
-                                  </button>
-                                )}
-
-                                {status === 'DIPERIKSA' && (
-                                  <button
-                                    onClick={() => handleAdvanceWorkflow(c, 'DISETUJUI')}
-                                    disabled={!rolePermissions.canApprove || submitting}
-                                    className="px-2 py-1 text-[10px] font-bold rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-30 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-                                    title={rolePermissions.canApprove ? 'Klik untuk Menyetujui' : 'Hanya Spv / Dept. Manager yang berhak menyetujui'}
-                                  >
-                                    Setujui
-                                  </button>
-                                )}
-
-                                {status === 'DISETUJUI' && (
-                                  <button
-                                    onClick={() => handleAdvanceWorkflow(c, 'MENGETAHUI')}
-                                    disabled={!rolePermissions.canAcknowledge || submitting}
-                                    className="px-2 py-1 text-[10px] font-bold rounded-lg border border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-30 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
-                                    title={rolePermissions.canAcknowledge ? 'Klik untuk Mengesahkan dengan TTE/QR' : 'Hanya Dept. Mgr / PM / Direktur yang berhak mengesahkan'}
-                                  >
-                                    Sahkan (TTE/QR)
-                                  </button>
-                                )}
-
-                                {status === 'MENGETAHUI' && (
-                                  <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                                    <CheckCircle2 className="h-3 w-3" /> Selesai
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Tombol Koreksi (Batal & Ganti) */}
-                          <td className="py-3 px-3.5 text-center whitespace-nowrap">
-                            {!isVoid && !isReplaced ? (
-                              <div className="flex items-center justify-center gap-1">
-                                <button
-                                  onClick={() => {
-                                    setBatalTarget(c);
-                                    setBatalReason('');
-                                  }}
-                                  className="px-2 py-1 rounded-lg border border-rose-200 bg-rose-50 text-[10px] font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300"
-                                  title="Batalkan dokumen ini (nominal dinolkan)"
-                                >
-                                  Batal
-                                </button>
-                                <button
-                                  onClick={() => handleOpenGanti(c)}
-                                  className="px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-[10px] font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300"
-                                  title="Ganti dokumen ini dengan revisi baru"
-                                >
-                                  Ganti
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">—</span>
-                            )}
+              {/* Tabel Riwayat Kas (Tanpa Kolom Persetujuan per Baris!) */}
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold uppercase tracking-wider text-[10px]">
+                        <th className="py-3 px-3.5 w-10 text-center">No</th>
+                        <th className="py-3 px-3.5">Tanggal</th>
+                        <th className="py-3 px-3.5 text-center">Jenis</th>
+                        <th className="py-3 px-3.5">Peruntukan / Keterangan & Jejak Audit</th>
+                        <th className="py-3 px-3.5 text-right">Nominal (Rp)</th>
+                        <th className="py-3 px-3.5">PIC / No. Ref</th>
+                        <th className="py-3 px-3.5 text-center">Status Baris Data</th>
+                        <th className="py-3 px-3.5 text-center">Koreksi Langsung (Batal / Ganti)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {filteredList.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="py-12 text-center text-slate-600 dark:text-slate-300 font-medium">
+                            Belum ada riwayat transaksi mutasi kas.
                           </td>
                         </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                      ) : (
+                        filteredList.map((c, idx) => {
+                          const isVoid = c.is_batal || c.status_dokumen === 'BATAL';
+                          const isReplaced = c.is_ganti || c.status_dokumen === 'DIGANTI';
+                          const canCorrectRow = rolePermissions.canInitiateBatalGanti || rolePermissions.canInstructBatalGanti;
+
+                          return (
+                            <tr
+                              key={c.id}
+                              className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors ${
+                                isVoid ? 'opacity-55 bg-rose-50/20 line-through' : isReplaced ? 'opacity-65 bg-amber-50/20 line-through' : ''
+                              }`}
+                            >
+                              <td className="py-3 px-3.5 text-center text-slate-600 dark:text-slate-300 font-mono text-[11px] font-medium">
+                                {idx + 1}
+                              </td>
+                              <td className="py-3 px-3.5 text-slate-700 dark:text-slate-200 font-mono text-[11px] whitespace-nowrap">
+                                {formatDateTime(c.tanggal)}
+                              </td>
+                              <td className="py-3 px-3.5 text-center">
+                                <span
+                                  className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                    c.jenis === 'MASUK'
+                                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
+                                      : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300'
+                                  }`}
+                                >
+                                  {c.jenis === 'MASUK' ? <ArrowDownLeft className="w-3 h-3" /> : <ArrowUpRight className="w-3 h-3" />}
+                                  {c.jenis}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3.5 max-w-sm">
+                                <div className="font-semibold text-slate-900 dark:text-white">{c.untuk_apa}</div>
+                                <div className="text-[10px] text-slate-600 dark:text-slate-300 mt-0.5 flex gap-2 font-medium">
+                                  <span className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded">{c.kategori_keperluan}</span>
+                                  {c.catatan && <span className="italic">{c.catatan}</span>}
+                                  {c.referensi_ganti_id && (
+                                    <span className="font-mono">· Revisi dari #{c.referensi_ganti_id.slice(0, 8)}</span>
+                                  )}
+                                </div>
+                                {c.alasan_batal_ganti && (
+                                  <div className="mt-1 text-[10px] font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 rounded-md">
+                                    {c.alasan_batal_ganti}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-3.5 text-right font-mono font-bold tabular-nums whitespace-nowrap">
+                                <span className={c.jenis === 'MASUK' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                                  {c.jenis === 'MASUK' ? '+' : '-'} {formatRupiah(c.jumlah_rp)}
+                                </span>
+                                {(isVoid || isReplaced) && (
+                                  <div className="text-[9px] font-bold text-rose-600 dark:text-rose-400 no-underline">
+                                    Dinolkan (Rp 0)
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-3.5 text-slate-700 dark:text-slate-300">
+                                <div>{c.pic}</div>
+                                {c.nomor_kuitansi && (
+                                  <div className="text-[10px] font-mono text-slate-600 dark:text-slate-300 font-medium">Ref: {c.nomor_kuitansi}</div>
+                                )}
+                              </td>
+
+                              <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                                {isVoid ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[10px] font-bold text-rose-800 dark:bg-rose-950 dark:text-rose-300">
+                                    <Ban className="h-3 w-3" /> BATAL (Dinolkan)
+                                  </span>
+                                ) : isReplaced ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                                    <FileEdit className="h-3 w-3" /> DIGANTI (Dinolkan)
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                    <CheckCircle2 className="h-3 w-3" /> TERCATAT AKTIF
+                                  </span>
+                                )}
+                              </td>
+
+                              <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                                {!isVoid && !isReplaced ? (
+                                  canCorrectRow ? (
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      <button
+                                        onClick={() => {
+                                          setBatalTarget(c);
+                                          setBatalReason('');
+                                        }}
+                                        className="px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50 text-[10px] font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300 cursor-pointer"
+                                        title="Batalkan baris kas ini secara langsung (nominal dinolkan)"
+                                      >
+                                        Batal
+                                      </button>
+                                      <button
+                                        onClick={() => handleOpenGanti(c)}
+                                        className="px-2.5 py-1 rounded-lg border border-amber-200 bg-amber-50 text-[10px] font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300 cursor-pointer"
+                                        title="Ganti baris kas ini dengan baris revisi baru"
+                                      >
+                                        Ganti
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">
+                                      🔒 Hanya Baca
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">Selesai Dikoreksi</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* TAB 2: DOKUMEN RESMI KAS & PERSETUJUAN BERANTAI */}
+          {activeTab === 'CASH_DOCUMENTS' && (
+            <div className="space-y-4">
+              <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <FileCheck2 className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    <span>Penerbitan & Persetujuan Berantai Dokumen Resmi Arus Kas</span>
+                  </h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 font-medium">
+                    Alur persetujuan berjenjang khusus dokumen: <b>1. Diterbitkan (Clerk)</b> ➔ <b>2. Diperiksa (Foreman / Spv.)</b> ➔ <b>3. Disetujui (Spv. / Dept. Manager)</b> ➔ <b>4. Mengetahui & Sah TTE/QR (Dept. Manager / KTT-PM / CEO-Direktur)</b>.
+                  </p>
+                </div>
+
+                {rolePermissions.canIssue ? (
+                  <form onSubmit={handleIssueCashDocument} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                    <div className="md:col-span-2">
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Judul Dokumen Berita Acara Kas <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={docTitle}
+                        onChange={(e) => setDocTitle(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Periode Laporan <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={docPeriode}
+                        onChange={(e) => setDocPeriode(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="w-full py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-40"
+                      >
+                        {submitting ? 'Menerbitkan...' : '+ Terbitkan Dokumen Kas'}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 font-medium">
+                    ℹ️ Penerbitan Dokumen Resmi baru dilakukan oleh <b>Clerk</b>. Jabatan Anda saat ini (<b>{activeRole}</b>) dapat memproses pemeriksaan/persetujuan sesuai wewenang di bawah.
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold uppercase tracking-wider text-[10px]">
+                        <th className="py-3 px-3.5">Kode & Tanggal</th>
+                        <th className="py-3 px-3.5">Judul Dokumen</th>
+                        <th className="py-3 px-3.5">Jejak Persetujuan Berantai</th>
+                        <th className="py-3 px-3.5 text-center">Status Dokumen</th>
+                        <th className="py-3 px-3.5 text-center">Aksi Persetujuan</th>
+                        <th className="py-3 px-3.5 text-center">Koreksi & PDF</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {cashDocuments.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-slate-600 dark:text-slate-300 font-medium">
+                            Belum ada Dokumen Resmi Mutasi Kas yang diterbitkan.
+                          </td>
+                        </tr>
+                      ) : (
+                        cashDocuments.map((doc) => {
+                          const docDbId = doc.db_id || doc.id;
+                          const wfStatus = doc.status_dokumen || 'DITERBITKAN';
+                          const isDocVoid = Boolean(doc.is_batal) || wfStatus === 'BATAL';
+                          const isDocReplaced = Boolean(doc.is_ganti) || wfStatus === 'DIGANTI';
+                          const canCorrectDoc = rolePermissions.canInitiateBatalGanti || rolePermissions.canInstructBatalGanti;
+
+                          return (
+                            <tr key={docDbId} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                              <td className="py-3 px-3.5 whitespace-nowrap">
+                                <div className="font-mono font-bold text-slate-900 dark:text-white">{doc.id}</div>
+                                <div className="text-[10px] font-mono text-slate-600 dark:text-slate-300">
+                                  {formatDateTime(doc.dibuat_pada)}
+                                </div>
+                              </td>
+                              <td className="py-3 px-3.5">
+                                <div className="font-bold text-slate-900 dark:text-white">{doc.judul}</div>
+                                <div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+                                  Diterbitkan oleh: {doc.penandatangan_nama} ({doc.penandatangan_jabatan})
+                                </div>
+                                {doc.alasan_batal_ganti && (
+                                  <div className="mt-1 text-[10px] font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 rounded-md">
+                                    {doc.alasan_batal_ganti}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-3.5 text-[11px] space-y-1">
+                                <div className="text-slate-700 dark:text-slate-200">
+                                  <span className="font-semibold">1. Terbit:</span> {doc.penandatangan_nama}
+                                </div>
+                                <div className={doc.diperiksa_oleh ? 'text-indigo-700 dark:text-indigo-300 font-medium' : 'text-slate-500 dark:text-slate-400'}>
+                                  <span className="font-semibold">2. Diperiksa:</span> {doc.diperiksa_oleh || 'Menunggu Foreman / Spv.'}
+                                </div>
+                                <div className={doc.disetujui_oleh ? 'text-emerald-700 dark:text-emerald-300 font-medium' : 'text-slate-500 dark:text-slate-400'}>
+                                  <span className="font-semibold">3. Disetujui:</span> {doc.disetujui_oleh || 'Menunggu Spv. / Dept. Mgr'}
+                                </div>
+                                <div className={doc.mengetahui_oleh ? 'text-blue-700 dark:text-blue-300 font-bold' : 'text-slate-500 dark:text-slate-400'}>
+                                  <span className="font-semibold">4. Disahkan (TTE):</span> {doc.mengetahui_oleh || 'Menunggu Dept. Mgr / KTT-PM / CEO'}
+                                </div>
+                              </td>
+                              <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                                {isDocVoid ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[10px] font-bold text-rose-800 dark:bg-rose-950 dark:text-rose-300">
+                                    <Ban className="h-3 w-3" /> BATAL
+                                  </span>
+                                ) : isDocReplaced ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                                    <FileEdit className="h-3 w-3" /> DIGANTI
+                                  </span>
+                                ) : wfStatus === 'MENGETAHUI' ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-[10px] font-bold text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                                    <QrCode className="h-3 w-3" /> SAH (TTE/QR)
+                                  </span>
+                                ) : wfStatus === 'DISETUJUI' ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                    <FileCheck2 className="h-3 w-3" /> DISETUJUI
+                                  </span>
+                                ) : wfStatus === 'DIPERIKSA' ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-[10px] font-bold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
+                                    <ShieldCheck className="h-3 w-3" /> DIPERIKSA
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                    <Clock className="h-3 w-3" /> DITERBITKAN
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                                {!isDocVoid && !isDocReplaced && (
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    {wfStatus === 'DITERBITKAN' && (
+                                      <button
+                                        onClick={() => handleAdvanceCashDocument(docDbId, wfStatus, 'DIPERIKSA')}
+                                        disabled={!rolePermissions.canCheck || submitting}
+                                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-35 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 cursor-pointer"
+                                      >
+                                        Periksa Dokumen
+                                      </button>
+                                    )}
+                                    {wfStatus === 'DIPERIKSA' && (
+                                      <button
+                                        onClick={() => handleAdvanceCashDocument(docDbId, wfStatus, 'DISETUJUI')}
+                                        disabled={!rolePermissions.canApprove || submitting}
+                                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-35 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 cursor-pointer"
+                                      >
+                                        Setujui Dokumen
+                                      </button>
+                                    )}
+                                    {wfStatus === 'DISETUJUI' && (
+                                      <button
+                                        onClick={() => handleAdvanceCashDocument(docDbId, wfStatus, 'MENGETAHUI')}
+                                        disabled={!rolePermissions.canAcknowledge || submitting}
+                                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg border border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-35 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 cursor-pointer"
+                                      >
+                                        Sahkan (TTE/QR)
+                                      </button>
+                                    )}
+                                    {wfStatus === 'MENGETAHUI' && (
+                                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                        <CheckCircle2 className="h-3.5 w-3.5" /> Sah & Terverifikasi
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadCashDocPDF(doc.id)}
+                                    className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold transition-colors cursor-pointer"
+                                  >
+                                    PDF QR
+                                  </button>
+                                  {!isDocVoid && !isDocReplaced && canCorrectDoc && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setBatalDocTargetId(docDbId);
+                                          setBatalDocReason('');
+                                        }}
+                                        className="px-2 py-1 rounded-lg border border-rose-200 bg-rose-50 text-[10px] font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300 cursor-pointer"
+                                      >
+                                        Batal
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setGantiDocTargetId(docDbId);
+                                          setGantiDocTitle(`${doc.judul} (Revisi)`);
+                                          setGantiDocReason('');
+                                        }}
+                                        className="px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-[10px] font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300 cursor-pointer"
+                                      >
+                                        Ganti
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </>
+      )}
+
+      {/* Modal Konfirmasi BATAL Dokumen Kas */}
+      {batalDocTargetId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <form onSubmit={handleConfirmBatalDoc} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900 space-y-4">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Ban className="h-5 w-5 text-rose-500" /> Batalkan Dokumen Resmi Kas
+            </h2>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Alasan Pembatalan Dokumen <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                required
+                rows={3}
+                value={batalDocReason}
+                onChange={(e) => setBatalDocReason(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-white"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setBatalDocTargetId(null)}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-medium dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Tutup
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || batalDocReason.trim().length < 5}
+                className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-40"
+              >
+                {submitting ? 'Memproses...' : 'Ya, Batalkan Dokumen'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal Form GANTI Dokumen Kas */}
+      {gantiDocTargetId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <form onSubmit={handleConfirmGantiDoc} className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900 space-y-4">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <FileEdit className="h-5 w-5 text-amber-500" /> Ganti / Terbitkan Revisi Dokumen Kas
+            </h2>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Alasan Penggantian Dokumen <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={gantiDocReason}
+                onChange={(e) => setGantiDocReason(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Judul Dokumen Revisi Baru <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={gantiDocTitle}
+                onChange={(e) => setGantiDocTitle(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-white"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setGantiDocTargetId(null)}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-medium dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Tutup
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || gantiDocReason.trim().length < 5}
+                className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
+              >
+                {submitting ? 'Memproses...' : 'Terbitkan Dokumen Pengganti'}
+              </button>
+            </div>
+          </form>
+        </div>
       )}
 
       {/* Modal Dialog Form Catat Kas Baru */}

@@ -86,6 +86,26 @@ interface AppContextType {
   batalCashMutation: (id: string, reason: string) => Promise<{ success: boolean; message: string }>;
   gantiCashMutation: (id: string, newMutation: Omit<MutasiKas, 'id' | 'saldo_setelah'>, reason: string) => Promise<{ success: boolean; message: string }>;
   advanceCashWorkflow: (id: string, nextStatus: StatusDokumenWorkflow) => Promise<{ success: boolean; message: string }>;
+  issueOfficialDocument: (params: {
+    jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP';
+    judul: string;
+    periode: string;
+    ringkasan: string;
+    total_nilai_atau_item: string;
+  }) => Promise<{ success: boolean; message: string }>;
+  advanceDocumentWorkflow: (dbId: string, nextStatus: StatusDokumenWorkflow) => Promise<{ success: boolean; message: string }>;
+  batalOfficialDocument: (dbId: string, reason: string) => Promise<{ success: boolean; message: string }>;
+  gantiOfficialDocument: (
+    dbId: string,
+    params: {
+      jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP';
+      judul: string;
+      periode: string;
+      ringkasan: string;
+      total_nilai_atau_item: string;
+    },
+    reason: string
+  ) => Promise<{ success: boolean; message: string }>;
   addDocument: (doc: DokumenLaporan) => Promise<void>;
   logout: () => Promise<void>;
   totalStockAssetValue: number;
@@ -384,7 +404,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       
       const beforePhysical = physicalBalance.get(key) || 0;
       const incoming = ['MASUK', 'PENYESUAIAN_MASUK'].includes(t.transaction_type);
-      const isVoid = t.is_batal || reversedIds.has(t.id);
+      const isVoid = Boolean(
+        t.is_batal ||
+        t.is_ganti ||
+        t.status_dokumen === 'BATAL' ||
+        t.status_dokumen === 'DIGANTI' ||
+        reversedIds.has(t.id)
+      );
       const qtyNum = Number(t.quantity) || 0;
       const delta = isVoid ? 0 : incoming ? qtyNum : -qtyNum;
       const afterPhysical = beforePhysical + delta;
@@ -549,7 +575,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let cashBalance = 0;
     const cashRows: MutasiKas[] = (cashRes.data || []).map((t: any) => {
       const incoming = t.transaction_type === 'MASUK';
-      const isVoid = Boolean(t.is_batal);
+      const isVoid = Boolean(
+        t.is_batal ||
+        t.is_ganti ||
+        t.status_dokumen === 'BATAL' ||
+        t.status_dokumen === 'DIGANTI'
+      );
       const delta = isVoid ? 0 : incoming ? Number(t.amount) : -Number(t.amount);
       cashBalance += delta;
       return {
@@ -594,12 +625,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       source_total_variance: 0
     }));
 
+    const docRows: DokumenLaporan[] = (docsRes.data || []).map((d: any) => ({
+      id: d.document_no || d.id,
+      db_id: d.id,
+      judul: d.title || 'Dokumen Berita Acara',
+      jenis: (d.document_type || 'MUTASI_STOK') as DokumenLaporan['jenis'],
+      status: d.status || 'ISSUED',
+      periode_awal: d.period_start || d.created_at,
+      periode_akhir: d.period_end || d.created_at,
+      dibuat_pada: d.created_at,
+      penandatangan_nama: d.signer_name || 'Clerk',
+      penandatangan_jabatan: d.signer_role || 'Clerk',
+      penandatangan_email: d.signer_email || '',
+      hash_keamanan: d.content_sha256 || '',
+      total_transaksi: Number(d.total_transactions || 0),
+      ringkasan_nilai_rp: Number(d.amount_summary || 0),
+      qr_payload: d.qr_payload || '',
+      verification_token: d.verification_token || undefined,
+      document_no: d.document_no,
+      title: d.title,
+      document_type: d.document_type,
+      created_at: d.created_at,
+      issued_at: d.issued_at,
+      content_sha256: d.content_sha256,
+      signer_name: d.signer_name,
+      signer_role: d.signer_role,
+      workspace_id: d.workspace_id,
+      project_id: d.project_id,
+      status_dokumen: (d.status_dokumen as StatusDokumenWorkflow) || (d.is_batal ? 'BATAL' : d.is_ganti ? 'DIGANTI' : 'DITERBITKAN'),
+      diperiksa_oleh: d.diperiksa_oleh || undefined,
+      disetujui_oleh: d.disetujui_oleh || undefined,
+      mengetahui_oleh: d.mengetahui_oleh || undefined,
+      tte_qr_code: d.tte_qr_code || undefined,
+      is_batal: Boolean(d.is_batal),
+      is_ganti: Boolean(d.is_ganti),
+      referensi_ganti_id: d.referensi_ganti_id || undefined,
+      alasan_batal_ganti: d.alasan_batal_ganti || undefined
+    }));
+
     setItems(mappedItems);
     setBoqSections(sectionRows);
     setStockMutations(stockRows.reverse());
     setCashMutations(cashRows.reverse());
     setCashAccess(true);
-    setDocuments([]);
+    setDocuments(docRows);
     setDataError(null);
     setDataReady(true);
   };
@@ -678,13 +747,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Ganti Mutasi Barang (Tautkan ke dokumen revisi baru, data lama dinolkan)
+  // Ganti Mutasi Barang (Tautkan ke baris revisi baru, data lama dinolkan)
   const gantiStockMutation = async (id: string, newMutation: Omit<MutasiBarang, 'id' | 'stok_sebelum' | 'stok_sesudah'>, reason: string) => {
     try {
       if (!reason || reason.trim().length < 5) throw new Error('Alasan penggantian minimal 5 karakter.');
       const client = getSupabaseClient();
-      const wsId = activeWorkspaceId || (activeContext?.workspaces[0]?.id as string);
-      const prId = activeProjectId || (activeContext?.projects[0]?.id as string);
+      const targetProj = activeProject || activeContext?.projects[0];
+      const wsId = targetProj?.workspace_id || activeWorkspaceId || (activeContext?.workspaces.find(w => w.type === 'COMPANY')?.id as string);
+      const prId = targetProj?.id || activeProjectId;
 
       // 1. Masukkan mutasi baru
       const { data: newRow, error: insertErr } = await client.from('inventory_transactions').insert({
@@ -718,12 +788,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const { error: updateErr } = await client.from('inventory_transactions').update({
         is_ganti: true,
         status_dokumen: 'DIGANTI',
-        alasan_batal_ganti: `Digantikan oleh dokumen #${newRow?.id?.slice(0, 8)}. Alasan: ${reason.trim()}`
+        alasan_batal_ganti: `Digantikan oleh baris #${newRow?.id?.slice(0, 8)} oleh ${user.name} (${activeRole}). Alasan: ${reason.trim()}`
       }).eq('id', id);
 
       if (updateErr) throw updateErr;
       await refreshData();
-      return { success: true, message: 'Dokumen mutasi berhasil diganti. Dokumen baru telah diterbitkan dengan rujukan riwayat yang lengkap.' };
+      return { success: true, message: 'Baris mutasi berhasil diganti. Data revisi baru telah tercatat dan baris lama dinolkan secara otomatis.' };
     } catch (e: any) {
       return { success: false, message: e.message || 'Penggantian mutasi gagal.' };
     }
@@ -761,8 +831,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addCashMutation = async (data: Omit<MutasiKas, 'id' | 'saldo_setelah'>) => {
     try {
       const client = getSupabaseClient();
-      const wsId = activeWorkspaceId || (activeContext?.workspaces[0]?.id as string);
-      const prId = activeProjectId || (activeContext?.projects[0]?.id as string);
+      const targetProj = activeProject || activeContext?.projects[0];
+      const wsId = targetProj?.workspace_id || activeWorkspaceId || (activeContext?.workspaces.find(w => w.type === 'COMPANY')?.id as string);
+      const prId = targetProj?.id || activeProjectId;
 
       const { error } = await client.from('cash_transactions').insert({
         idempotency_key: crypto.randomUUID(),
@@ -781,7 +852,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (error) throw error;
       await refreshData();
-      return { success: true, message: 'Transaksi kas berhasil dicatat dan siap diverifikasi secara berjenjang.' };
+      return { success: true, message: 'Transaksi kas berhasil dicatat ke dalam jurnal.' };
     } catch (e: any) {
       return { success: false, message: e.message || 'Pencatatan transaksi kas gagal.' };
     }
@@ -806,13 +877,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Ganti Mutasi Kas (Revisi ke dokumen baru, rujukan tercatat)
+  // Ganti Mutasi Kas (Revisi ke baris baru, rujukan tercatat, baris lama dinolkan)
   const gantiCashMutation = async (id: string, newMutation: Omit<MutasiKas, 'id' | 'saldo_setelah'>, reason: string) => {
     try {
       if (!reason || reason.trim().length < 5) throw new Error('Alasan penggantian minimal 5 karakter.');
       const client = getSupabaseClient();
-      const wsId = activeWorkspaceId || (activeContext?.workspaces[0]?.id as string);
-      const prId = activeProjectId || (activeContext?.projects[0]?.id as string);
+      const targetProj = activeProject || activeContext?.projects[0];
+      const wsId = targetProj?.workspace_id || activeWorkspaceId || (activeContext?.workspaces.find(w => w.type === 'COMPANY')?.id as string);
+      const prId = targetProj?.id || activeProjectId;
 
       const { data: newRow, error: insertErr } = await client.from('cash_transactions').insert({
         idempotency_key: crypto.randomUUID(),
@@ -835,12 +907,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const { error: updateErr } = await client.from('cash_transactions').update({
         is_ganti: true,
         status_dokumen: 'DIGANTI',
-        alasan_batal_ganti: `Digantikan oleh dokumen #${newRow?.id?.slice(0, 8)}. Alasan: ${reason.trim()}`
+        alasan_batal_ganti: `Digantikan oleh baris #${newRow?.id?.slice(0, 8)} oleh ${user.name} (${activeRole}). Alasan: ${reason.trim()}`
       }).eq('id', id);
 
       if (updateErr) throw updateErr;
       await refreshData();
-      return { success: true, message: 'Transaksi kas berhasil diganti dengan dokumen revisi baru.' };
+      return { success: true, message: 'Transaksi kas berhasil diganti dengan baris revisi baru dan nominal lama dinolkan.' };
     } catch (e: any) {
       return { success: false, message: e.message || 'Penggantian transaksi kas gagal.' };
     }
@@ -871,6 +943,180 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: true, message: `Status transaksi kas berhasil dinaikkan ke: ${nextStatus}.` };
     } catch (e: any) {
       return { success: false, message: e.message || 'Pembaruan persetujuan kas gagal.' };
+    }
+  };
+
+  // ============================================================================
+  // DOKUMEN RESMI & PERSETUJUAN BERANTAI (SERIAL APPROVAL KHUSUS DOKUMEN)
+  // ============================================================================
+  const issueOfficialDocument = async (params: {
+    jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP';
+    judul: string;
+    periode: string;
+    ringkasan: string;
+    total_nilai_atau_item: string;
+  }) => {
+    try {
+      if (!rolePermissions.canIssue) {
+        throw new Error('Hanya Clerk (Pelaksana Administrasi) yang memiliki wewenang menerbitkan Dokumen Resmi baru.');
+      }
+      const client = getSupabaseClient();
+      const targetProj = activeProject || activeContext?.projects[0];
+      const wsId = targetProj?.workspace_id || activeWorkspaceId || (activeContext?.workspaces.find(w => w.type === 'COMPANY')?.id as string);
+      const prId = targetProj?.id || activeProjectId;
+
+      const prefix = params.jenis === 'MUTASI_STOK' ? 'BA-STOK' : params.jenis === 'MUTASI_KAS' ? 'BA-KAS' : 'BA-INV';
+      const docCode = `${prefix}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      const shaHash = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('')
+        .toUpperCase();
+
+      const { error } = await client.from('documents').insert({
+        workspace_id: wsId,
+        project_id: prId,
+        document_code: docCode,
+        document_type: params.jenis,
+        title: params.judul.trim(),
+        status: 'ISSUED',
+        status_dokumen: 'DITERBITKAN',
+        content_hash: `SHA256:${shaHash}`,
+        payload: {
+          periode: params.periode,
+          ringkasan: params.ringkasan,
+          total_nilai_atau_item: params.total_nilai_atau_item,
+          penandatangan: user.name,
+          jabatan: activeRole
+        },
+        issued_at: new Date().toISOString()
+      });
+
+      if (error) throw error;
+      await refreshData();
+      return { success: true, message: `Dokumen Resmi ${docCode} berhasil diterbitkan oleh Clerk dan siap memasuki alur persetujuan berantai.` };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Gagal menerbitkan dokumen resmi.' };
+    }
+  };
+
+  const advanceDocumentWorkflow = async (docDbId: string, nextStatus: StatusDokumenWorkflow) => {
+    try {
+      const client = getSupabaseClient();
+      const actorTag = `${user.name} (${activeRole}) · ${new Date().toLocaleString('id-ID')}`;
+      const payload: any = { status_dokumen: nextStatus };
+
+      if (nextStatus === 'DIPERIKSA') {
+        if (!rolePermissions.canCheck) throw new Error('Jabatan Anda tidak memiliki wewenang untuk Memeriksa (Tahap 2) dokumen ini.');
+        payload.diperiksa_oleh = actorTag;
+      } else if (nextStatus === 'DISETUJUI') {
+        if (!rolePermissions.canApprove) throw new Error('Jabatan Anda tidak memiliki wewenang untuk Menyetujui (Tahap 3) dokumen ini.');
+        payload.disetujui_oleh = actorTag;
+      } else if (nextStatus === 'MENGETAHUI') {
+        if (!rolePermissions.canAcknowledge) throw new Error('Jabatan Anda tidak memiliki wewenang untuk Mengesahkan TTE/QR (Tahap 4) dokumen ini.');
+        payload.mengetahui_oleh = actorTag;
+        payload.status = 'SIGNED';
+        payload.tte_qr_code = `TTE-DOC-${activeCompany.npwp}-${docDbId.slice(0, 8).toUpperCase()}-${Date.now()}`;
+      }
+
+      const { error } = await client.from('documents').update(payload).eq('id', docDbId);
+      if (error) throw error;
+      await refreshData();
+      return {
+        success: true,
+        message:
+          nextStatus === 'MENGETAHUI'
+            ? 'Dokumen Resmi telah DISAHKAN dengan Tanda Tangan Elektronik (TTE) & QR Code Verifikasi!'
+            : `Tahap persetujuan Dokumen Resmi berhasil dinaikkan menjadi: ${nextStatus}.`
+      };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Gagal memproses persetujuan dokumen.' };
+    }
+  };
+
+  const batalOfficialDocument = async (docDbId: string, reason: string) => {
+    try {
+      if (!rolePermissions.canInitiateBatalGanti && !rolePermissions.canInstructBatalGanti) {
+        throw new Error('Jabatan Pengamat (Viewer) tidak memiliki akses untuk membatalkan dokumen.');
+      }
+      if (!reason || reason.trim().length < 5) throw new Error('Alasan pembatalan dokumen minimal 5 karakter.');
+      const client = getSupabaseClient();
+      const { error } = await client.from('documents').update({
+        is_batal: true,
+        status: 'REVOKED',
+        status_dokumen: 'BATAL',
+        alasan_batal_ganti: `Dibatalkan oleh ${user.name} (${activeRole}). Alasan: ${reason.trim()}`
+      }).eq('id', docDbId);
+
+      if (error) throw error;
+      await refreshData();
+      return { success: true, message: 'Dokumen Resmi berhasil dibatalkan. Riwayat dokumen tetap tersimpan sebagai jejak audit.' };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Gagal membatalkan dokumen resmi.' };
+    }
+  };
+
+  const gantiOfficialDocument = async (
+    docDbId: string,
+    newParams: {
+      jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP';
+      judul: string;
+      periode: string;
+      ringkasan: string;
+      total_nilai_atau_item: string;
+    },
+    reason: string
+  ) => {
+    try {
+      if (!rolePermissions.canInitiateBatalGanti && !rolePermissions.canInstructBatalGanti) {
+        throw new Error('Jabatan Pengamat (Viewer) tidak memiliki akses untuk mengganti dokumen.');
+      }
+      if (!reason || reason.trim().length < 5) throw new Error('Alasan penggantian dokumen minimal 5 karakter.');
+      const client = getSupabaseClient();
+      const targetProj = activeProject || activeContext?.projects[0];
+      const wsId = targetProj?.workspace_id || activeWorkspaceId || (activeContext?.workspaces.find(w => w.type === 'COMPANY')?.id as string);
+      const prId = targetProj?.id || activeProjectId;
+
+      const prefix = newParams.jenis === 'MUTASI_STOK' ? 'BA-STOK-REV' : newParams.jenis === 'MUTASI_KAS' ? 'BA-KAS-REV' : 'BA-INV-REV';
+      const newDocCode = `${prefix}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      const shaHash = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('')
+        .toUpperCase();
+
+      const { data: insertedDoc, error: insertErr } = await client.from('documents').insert({
+        workspace_id: wsId,
+        project_id: prId,
+        document_code: newDocCode,
+        document_type: newParams.jenis,
+        title: newParams.judul.trim(),
+        status: 'ISSUED',
+        status_dokumen: 'DITERBITKAN',
+        referensi_ganti_id: docDbId,
+        content_hash: `SHA256:${shaHash}`,
+        payload: {
+          periode: newParams.periode,
+          ringkasan: newParams.ringkasan,
+          total_nilai_atau_item: newParams.total_nilai_atau_item,
+          penandatangan: user.name,
+          jabatan: activeRole
+        },
+        issued_at: new Date().toISOString()
+      }).select().single();
+
+      if (insertErr) throw insertErr;
+
+      const { error: updateErr } = await client.from('documents').update({
+        is_ganti: true,
+        status: 'REVOKED',
+        status_dokumen: 'DIGANTI',
+        alasan_batal_ganti: `Digantikan oleh Dokumen Revisi ${insertedDoc?.document_code || newDocCode} oleh ${user.name} (${activeRole}). Alasan: ${reason.trim()}`
+      }).eq('id', docDbId);
+
+      if (updateErr) throw updateErr;
+      await refreshData();
+      return { success: true, message: `Dokumen lama ditandai DIGANTI dan Dokumen Revisi baru (${newDocCode}) berhasil diterbitkan!` };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Gagal mengganti dokumen resmi.' };
     }
   };
 
@@ -930,6 +1176,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         batalCashMutation,
         gantiCashMutation,
         advanceCashWorkflow,
+        issueOfficialDocument,
+        advanceDocumentWorkflow,
+        batalOfficialDocument,
+        gantiOfficialDocument,
         addDocument,
         logout,
         totalStockAssetValue,

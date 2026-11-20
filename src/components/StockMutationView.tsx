@@ -34,7 +34,7 @@ import {
   Filter,
   FileText
 } from 'lucide-react';
-import { formatDateTime, formatRupiah, generateBOQReportPDF } from '../lib/pdfGenerator';
+import { formatDateTime, formatRupiah, generateBOQReportPDF, generateStockMutationPDF } from '../lib/pdfGenerator';
 
 interface StockMutationViewProps {
   isModalOpen: boolean;
@@ -55,23 +55,45 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     items,
     physicalMaterials,
     stockMutations,
+    documents,
     addStockMutation,
     batalStockMutation,
     gantiStockMutation,
-    advanceStockWorkflow,
+    issueOfficialDocument,
+    advanceDocumentWorkflow,
+    batalOfficialDocument,
+    gantiOfficialDocument,
     user,
     rolePermissions,
     activeRole,
-    dataReady,
-    dataError,
-    refreshData
+    dataReady
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'ALL' | 'MASUK' | 'KELUAR' | 'PROYEK_BOQ' | 'PERMINTAAN_KLIEN' | 'BONUS_KLIEN' | 'OPERASIONAL'>('ALL');
 
-  // Tab Modul Terpadu: Pantau BOQ vs Riwayat Transaksi
-  const [activeTab, setActiveTab] = useState<'BOQ_MONITOR' | 'MUTATION_HISTORY'>('BOQ_MONITOR');
+  // 4 POV Terpisah Sesuai Kesepakatan:
+  // 1) WAREHOUSE_SUMMARY ("Satukan Masuk" - 1 baris per nama material fisik)
+  // 2) BOQ_MONITOR ("Bedakan Keluar" - 274 pos pekerjaan BOQ tanpa duplikasi kolom masuk)
+  // 3) MUTATION_HISTORY ("Jurnal Transaksi & Barang Kustom" + Matriks Panduan, koreksi langsung tanpa birokrasi per baris)
+  // 4) OFFICIAL_DOCUMENTS ("Dokumen & Persetujuan Berantai TTE/QR")
+  const [activeTab, setActiveTab] = useState<'WAREHOUSE_SUMMARY' | 'BOQ_MONITOR' | 'MUTATION_HISTORY' | 'OFFICIAL_DOCUMENTS'>('WAREHOUSE_SUMMARY');
+
+  // State untuk Tab 1: Rekap Gudang ("Satukan Masuk")
+  const [warehouseSearchQuery, setWarehouseSearchQuery] = useState('');
+  const [warehouseFilter, setWarehouseFilter] = useState<'ALL' | 'HAS_ARRIVED' | 'IN_STOCK' | 'NOT_ARRIVED'>('ALL');
+
+  // State untuk Tab 4: Dokumen Resmi & Persetujuan Berantai
+  const [docTitle, setDocTitle] = useState('Berita Acara Rekapitulasi Mutasi Barang & Gudang');
+  const [docPeriode, setDocPeriode] = useState(() => new Date().toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }));
+  const [docRingkasan, setDocRingkasan] = useState('');
+  const [batalDocTargetId, setBatalDocTargetId] = useState<string | null>(null);
+  const [batalDocReason, setBatalDocReason] = useState('');
+  const [gantiDocTargetId, setGantiDocTargetId] = useState<string | null>(null);
+  const [gantiDocTitle, setGantiDocTitle] = useState('');
+  const [gantiDocPeriode, setGantiDocPeriode] = useState('');
+  const [gantiDocRingkasan, setGantiDocRingkasan] = useState('');
+  const [gantiDocReason, setGantiDocReason] = useState('');
 
   // State untuk Tab 1: Pantau Pemenuhan BOQ
   const [boqSearchQuery, setBoqSearchQuery] = useState('');
@@ -478,10 +500,69 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     };
   }, [items, physicalMaterials]);
 
-  // Aksi Cepat Mutasi dari Baris Material BOQ
+  // Aksi Cepat Catat Masuk langsung dari 1 Baris Material Gudang ("Satukan Masuk")
+  const handleOpenWarehouseMaterialIn = (pm: typeof physicalMaterials[0]) => {
+    if (!rolePermissions.canIssue) {
+      setErrorMessage(`Jabatan Anda (${activeRole}) tidak memiliki wewenang mencatat mutasi baru. Wewenang ini milik Clerk.`);
+      return;
+    }
+    setSelectedItemId(pm.id);
+    if (pm.budget_lines.length > 0) {
+      setSelectedAllocationItemId(pm.budget_lines[0].id);
+    }
+    setMutationType('MASUK');
+    setIsCustomMode(false);
+    setCustomItemName('');
+    setCustomItemUom(pm.satuan);
+    setAsalBarang('KONTRAKTOR');
+    setSourceName('CV Menara Megah');
+    setDestinationName('Gudang Utama Proyek');
+    setPurpose(`Penerimaan Gudang Terpadu (${pm.nama_barang})`);
+    setQty(1);
+    setPic(user.name);
+    setSuratJalan('');
+    setNotes('');
+    setMutationDate(new Date().toISOString().slice(0, 10));
+    setErrorMessage(null);
+    setIsModalOpen(true);
+  };
+
+  // Filter Material Gudang untuk Tab 1 ("Satukan Masuk" - 1 Baris per Nama Material)
+  const filteredWarehouseMaterials = useMemo(() => {
+    const q = warehouseSearchQuery.trim().toLowerCase();
+    return (physicalMaterials || [])
+      .filter((pm) => pm.is_stock_item)
+      .filter((pm) => {
+        if (warehouseFilter === 'HAS_ARRIVED' && pm.total_qty_masuk <= 0) return false;
+        if (warehouseFilter === 'IN_STOCK' && pm.stok_fisik <= 0) return false;
+        if (warehouseFilter === 'NOT_ARRIVED' && pm.total_qty_masuk > 0) return false;
+        if (q) {
+          const matchName = pm.nama_barang.toLowerCase().includes(q);
+          const matchUom = pm.satuan.toLowerCase().includes(q);
+          const matchBoq = pm.budget_lines.some(
+            (bl) => bl.kode_boq.toLowerCase().includes(q) || bl.kategori.toLowerCase().includes(q)
+          );
+          if (!matchName && !matchUom && !matchBoq) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        // Prioritaskan yang sudah ada barang masuk di paling atas agar langsung terlihat
+        if (a.total_qty_masuk > 0 && b.total_qty_masuk === 0) return -1;
+        if (a.total_qty_masuk === 0 && b.total_qty_masuk > 0) return 1;
+        return a.nama_barang.localeCompare(b.nama_barang);
+      });
+  }, [physicalMaterials, warehouseSearchQuery, warehouseFilter]);
+
+  // Daftar Dokumen Resmi Mutasi Barang (Tab 4)
+  const stockDocuments = useMemo(() => {
+    return (documents || []).filter((d) => d.jenis === 'MUTASI_STOK' || d.jenis === 'GABUNGAN_PROYEK');
+  }, [documents]);
+
+  // Aksi Cepat Mutasi dari Baris Material BOQ (Khusus Pemakaian / Keluar per Pos di Tab 2)
   const handleOpenItemMutation = (item: ItemBarang, type: JenisMutasiBarang) => {
     if (!rolePermissions.canIssue) {
-      setErrorMessage(`Jabatan Anda (${activeRole}) tidak memiliki wewenang menerbitkan dokumen mutasi baru. Wewenang ini milik Clerk.`);
+      setErrorMessage(`Jabatan Anda (${activeRole}) tidak memiliki wewenang mencatat mutasi baru. Wewenang ini milik Clerk.`);
       return;
     }
     setSelectedItemId(item.id);
@@ -513,13 +594,14 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     setIsModalOpen(true);
   };
 
-  // Navigasi ke Tab 2 (Jurnal Mutasi) khusus untuk item ini
-  const handleViewItemHistory = (item: ItemBarang) => {
+  // Navigasi ke Tab 3 (Jurnal Mutasi) khusus untuk item ini
+  const handleViewItemHistory = (itemName: string) => {
     setActiveTab('MUTATION_HISTORY');
-    setSearchQuery(item.nama_barang);
+    setSearchQuery(itemName);
     setFilterType('ALL');
   };
 
+  // Badge Status Pos Pekerjaan BOQ (Khusus POV "Bedakan Keluar" per Pos Pekerjaan)
   const renderBoqStatusBadge = (item: ItemBarang) => {
     switch (item.status_pemenuhan) {
       case 'Terpenuhi':
@@ -544,18 +626,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           </span>
         );
       default:
-        if (item.stok_saat_ini > 0) {
-          return (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-teal-50 text-teal-800 border border-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:border-teal-800">
-              <Boxes className="w-3 h-3 text-teal-600 dark:text-teal-400" />
-              <span>Stok di Gudang</span>
-            </span>
-          );
-        }
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700">
             <Clock className="w-3 h-3 text-slate-500 dark:text-slate-300" />
-            <span>Belum Ada Masuk</span>
+            <span>Belum Dipakai</span>
           </span>
         );
     }
@@ -811,31 +885,134 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     }
   };
 
-  // Eksekusi Persetujuan Berseri (Serial Approval)
-  const handleAdvanceWorkflow = async (mut: MutasiBarang, nextStatus: StatusDokumenWorkflow) => {
-    // Validasi Berseri (Serial)
-    if (nextStatus === 'DISETUJUI' && mut.status_dokumen !== 'DIPERIKSA') {
-      setErrorMessage('Approval berseri: Dokumen wajib Diperiksa terlebih dahulu oleh Foreman / Spv sebelum Disetujui.');
+  // ============================================================================
+  // HANDLER DOKUMEN RESMI & PERSETUJUAN BERANTAI (KHUSUS DOKUMEN)
+  // ============================================================================
+  const handleIssueStockDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submitting) return;
+    if (!docTitle.trim()) {
+      setErrorMessage('Judul dokumen resmi wajib diisi.');
       return;
     }
-    if (nextStatus === 'MENGETAHUI' && mut.status_dokumen !== 'DISETUJUI') {
-      setErrorMessage('Approval berseri: Dokumen wajib Disetujui terlebih dahulu oleh Spv / Dept. Manager sebelum disahkan Mengetahui (TTE/QR).');
-      return;
-    }
-
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      const res = await advanceStockWorkflow(mut.id, nextStatus);
+      const validTrx = stockMutations.filter((m) => !m.is_batal && !m.is_ganti);
+      const inCount = validTrx.filter((m) => m.jenis === 'MASUK').length;
+      const outCount = validTrx.filter((m) => m.jenis === 'KELUAR').length;
+      const res = await issueOfficialDocument({
+        jenis: 'MUTASI_STOK',
+        judul: docTitle.trim(),
+        periode: docPeriode.trim() || 'Periode Berjalan',
+        ringkasan: docRingkasan.trim() || `Rekapitulasi ${validTrx.length} transaksi mutasi barang (${inCount} Masuk, ${outCount} Keluar)`,
+        total_nilai_atau_item: `${validTrx.length} Transaksi (${boqMetrics.arrivedMaterialTypesCount} Jenis Material Tiba)`
+      });
+      if (res.success) {
+        setNoticeMessage(res.message);
+        setDocRingkasan('');
+      } else {
+        setErrorMessage(res.message);
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Gagal menerbitkan dokumen resmi.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleAdvanceStockDocument = async (docDbId: string, currentStatus: StatusDokumenWorkflow, nextStatus: StatusDokumenWorkflow) => {
+    if (nextStatus === 'DISETUJUI' && currentStatus !== 'DIPERIKSA') {
+      setErrorMessage('Alur persetujuan berantai: Dokumen wajib Diperiksa terlebih dahulu oleh Foreman / Spv sebelum Disetujui.');
+      return;
+    }
+    if (nextStatus === 'MENGETAHUI' && currentStatus !== 'DISETUJUI') {
+      setErrorMessage('Alur persetujuan berantai: Dokumen wajib Disetujui terlebih dahulu oleh Spv / Dept. Manager sebelum disahkan Mengetahui (TTE/QR).');
+      return;
+    }
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const res = await advanceDocumentWorkflow(docDbId, nextStatus);
       if (res.success) {
         setNoticeMessage(res.message);
       } else {
         setErrorMessage(res.message);
       }
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Pembaruan status persetujuan gagal.');
+      setErrorMessage(err?.message || 'Gagal memproses persetujuan dokumen.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleConfirmBatalDoc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!batalDocTargetId || submitting) return;
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const res = await batalOfficialDocument(batalDocTargetId, batalDocReason);
+      if (res.success) {
+        setNoticeMessage(res.message);
+        setBatalDocTargetId(null);
+        setBatalDocReason('');
+      } else {
+        setErrorMessage(res.message);
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Gagal membatalkan dokumen.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleConfirmGantiDoc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!gantiDocTargetId || submitting) return;
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const validTrx = stockMutations.filter((m) => !m.is_batal && !m.is_ganti);
+      const res = await gantiOfficialDocument(
+        gantiDocTargetId,
+        {
+          jenis: 'MUTASI_STOK',
+          judul: gantiDocTitle.trim() || 'Berita Acara Rekapitulasi Mutasi Barang (Revisi)',
+          periode: gantiDocPeriode.trim() || 'Periode Berjalan',
+          ringkasan: gantiDocRingkasan.trim() || `Revisi Rekapitulasi ${validTrx.length} transaksi mutasi barang`,
+          total_nilai_atau_item: `${validTrx.length} Transaksi`
+        },
+        gantiDocReason
+      );
+      if (res.success) {
+        setNoticeMessage(res.message);
+        setGantiDocTargetId(null);
+        setGantiDocReason('');
+      } else {
+        setErrorMessage(res.message);
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Gagal mengganti dokumen.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDownloadStockDocPDF = async (docCode: string) => {
+    try {
+      const validMutations = stockMutations.filter((m) => !m.is_batal && !m.is_ganti);
+      const today = new Date().toISOString().slice(0, 10);
+      await generateStockMutationPDF({
+        docId: docCode,
+        startDate: '2026-01-01',
+        endDate: today,
+        mutations: validMutations,
+        signer: user
+      });
+      setNoticeMessage(`Dokumen PDF Resmi (${docCode}) dengan QR Code Verifikasi berhasil diunduh.`);
+    } catch (err: any) {
+      setErrorMessage('Gagal mengunduh PDF dokumen: ' + (err?.message || 'Kesalahan sistem'));
     }
   };
 
@@ -922,14 +1099,25 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
             </div>
           </div>
 
-          {/* Navigasi Tab Terpadu: Pantau BOQ vs Riwayat Transaksi */}
-          <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800">
+          {/* Navigasi 4 POV Terpisah: Satukan Masuk vs Bedakan Keluar vs Jurnal & Kustom vs Dokumen Resmi */}
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 dark:border-slate-800">
             <button
-              onClick={() => {
-                startTransition(() => {
-                  setActiveTab('BOQ_MONITOR');
-                });
-              }}
+              onClick={() => startTransition(() => setActiveTab('WAREHOUSE_SUMMARY'))}
+              className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+                activeTab === 'WAREHOUSE_SUMMARY'
+                  ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400 bg-emerald-50/60 dark:bg-emerald-950/25 rounded-t-xl'
+                  : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+              }`}
+            >
+              <Boxes className="w-4 h-4" />
+              <span>📦 Rekap Gudang ("Satukan Masuk")</span>
+              <span className="text-[10px] py-0.5 px-2 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 font-bold">
+                {boqMetrics.totalMaterialTypesCount} Material
+              </span>
+            </button>
+
+            <button
+              onClick={() => startTransition(() => setActiveTab('BOQ_MONITOR'))}
               className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
                 activeTab === 'BOQ_MONITOR'
                   ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20 rounded-t-xl'
@@ -937,32 +1125,242 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               }`}
             >
               <BarChart3 className="w-4 h-4" />
-              <span>📊 Pantau Pemenuhan BOQ</span>
+              <span>🏗️ Realisasi per Pos BOQ ("Bedakan Keluar")</span>
               <span className="text-[10px] py-0.5 px-2 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 font-bold">
-                {items.length} Item
+                {items.length} Pos
               </span>
             </button>
+
             <button
-              onClick={() => {
-                startTransition(() => {
-                  setActiveTab('MUTATION_HISTORY');
-                });
-              }}
+              onClick={() => startTransition(() => setActiveTab('MUTATION_HISTORY'))}
               className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
                 activeTab === 'MUTATION_HISTORY'
-                  ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20 rounded-t-xl'
+                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20 rounded-t-xl'
                   : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
               }`}
             >
               <History className="w-4 h-4" />
-              <span>📋 Jurnal Riwayat Transaksi</span>
+              <span>📋 Jurnal Transaksi & Barang Kustom</span>
               <span className="text-[10px] py-0.5 px-2 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-bold">
-                {stockMutations.length} Mutasi
+                {stockMutations.length} Baris
+              </span>
+            </button>
+
+            <button
+              onClick={() => startTransition(() => setActiveTab('OFFICIAL_DOCUMENTS'))}
+              className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+                activeTab === 'OFFICIAL_DOCUMENTS'
+                  ? 'border-amber-600 text-amber-700 dark:text-amber-400 bg-amber-50/60 dark:bg-amber-950/25 rounded-t-xl'
+                  : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+              }`}
+            >
+              <FileCheck2 className="w-4 h-4" />
+              <span>📄 Dokumen & Persetujuan Resmi (TTE/QR)</span>
+              <span className="text-[10px] py-0.5 px-2 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 font-bold">
+                {stockDocuments.length} Dokumen
               </span>
             </button>
           </div>
 
-          {/* TAB 1: PANTAU PEMENUHAN BOQ */}
+          {/* =====================================================================
+              POV 1: REKAP GUDANG MATERIAL — "SATUKAN MASUK" (1 BARIS PER MATERIAL)
+          ===================================================================== */}
+          {activeTab === 'WAREHOUSE_SUMMARY' && (
+            <div className="space-y-4">
+              {/* Penjelasan Singkat POV "Satukan Masuk" */}
+              <div className="bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="text-xs font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
+                    <Boxes className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>POV 1: Rekapitulasi Gudang Material ("Satukan Masuk") — 1 Nama Material = 1 Baris</span>
+                  </div>
+                  <p className="text-[11px] text-slate-700 dark:text-slate-300 font-medium">
+                    Saat barang BOQ tiba di proyek (contoh: <b>Pasir 5 m3</b>), cukup dilihat pada <b>1 baris gabungan</b> di bawah ini tanpa terduplikasi di 13 pos pekerjaan. Untuk memantau pemakaian per pos pekerjaan BOQ, buka tab <b>Realisasi per Pos BOQ ("Bedakan Keluar")</b>.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('BOQ_MONITOR')}
+                  className="shrink-0 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Lihat Pemakaian per 274 Pos BOQ →
+                </button>
+              </div>
+
+              {/* Filter & Pencarian Gudang Material */}
+              <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-500 dark:text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    aria-label="Cari nama material di gudang"
+                    placeholder="Cari nama material fisik (contoh: Pasir, Semen, Kayu, Besi)..."
+                    value={warehouseSearchQuery}
+                    onChange={(e) => setWarehouseSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-emerald-500/20"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[
+                    { id: 'ALL', label: `Semua Material (${boqMetrics.totalMaterialTypesCount})` },
+                    { id: 'HAS_ARRIVED', label: `Sudah Ada Masuk (${boqMetrics.arrivedMaterialTypesCount})` },
+                    { id: 'IN_STOCK', label: `Tersedia di Gudang (${(physicalMaterials || []).filter((pm) => pm.is_stock_item && pm.stok_fisik > 0).length})` },
+                    { id: 'NOT_ARRIVED', label: `Belum Tiba (${boqMetrics.totalMaterialTypesCount - boqMetrics.arrivedMaterialTypesCount})` }
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setWarehouseFilter(f.id as any)}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-colors cursor-pointer ${
+                        warehouseFilter === f.id
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tabel 1 Baris per Nama Material ("Satukan Masuk") */}
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold uppercase tracking-wider text-[10px]">
+                        <th className="py-3 px-3.5 w-10 text-center">No</th>
+                        <th className="py-3 px-3.5">Nama Material & Cakupan Pos BOQ</th>
+                        <th className="py-3 px-3 text-center">Satuan</th>
+                        <th className="py-3 px-3 text-right">Total Kebutuhan Proyek</th>
+                        <th className="py-3 px-3 text-right">Total Sudah Masuk Gudang</th>
+                        <th className="py-3 px-3 text-right">Sisa Belum Tiba</th>
+                        <th className="py-3 px-3 text-right">Total Sudah Dipakai (Keluar)</th>
+                        <th className="py-3 px-3 text-right">Saldo Fisik Gudang</th>
+                        <th className="py-3 px-3 text-center">Status Gudang</th>
+                        <th className="py-3 px-3.5 text-center">Aksi Cepat</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {filteredWarehouseMaterials.length === 0 ? (
+                        <tr>
+                          <td colSpan={10} className="py-12 text-center text-slate-600 dark:text-slate-300 font-medium">
+                            Tidak ada material fisik yang cocok dengan filter pencarian.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredWarehouseMaterials.map((pm, idx) => {
+                          const totalTarget = pm.total_qty_boq || 0;
+                          const totalMasuk = pm.total_qty_masuk || 0;
+                          const totalKeluar = pm.total_qty_keluar || 0;
+                          const sisaBelumTiba = Math.max(0, totalTarget - totalMasuk);
+                          const pctTiba = totalTarget > 0 ? Math.round((totalMasuk / totalTarget) * 100) : 0;
+                          const posCount = pm.budget_lines.length;
+
+                          return (
+                            <tr
+                              key={pm.id}
+                              className={`hover:bg-slate-50/90 dark:hover:bg-slate-800/60 transition-colors ${
+                                totalMasuk > 0 ? 'bg-emerald-50/20 dark:bg-emerald-950/10' : ''
+                              }`}
+                            >
+                              <td className="py-3 px-3.5 text-center font-mono text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+                                {idx + 1}
+                              </td>
+                              <td className="py-3 px-3.5">
+                                <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
+                                  <span>{pm.nama_barang}</span>
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300">
+                                    {posCount} Pos BOQ
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-slate-600 dark:text-slate-300 font-medium mt-0.5">
+                                  Digunakan pada kode pos:{' '}
+                                  <span className="font-mono">
+                                    {pm.budget_lines.slice(0, 5).map((bl) => bl.kode_boq).join(', ')}
+                                    {posCount > 5 ? ` (+${posCount - 5} pos lainnya)` : ''}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="py-3 px-3 text-center font-mono font-semibold text-slate-700 dark:text-slate-200">
+                                {pm.satuan}
+                              </td>
+                              <td className="py-3 px-3 text-right font-mono font-bold text-slate-800 dark:text-slate-200">
+                                {totalTarget.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
+                              </td>
+                              <td className="py-3 px-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                <div>{totalMasuk.toLocaleString('id-ID', { maximumFractionDigits: 3 })}</div>
+                                <div className="text-[10px] font-medium text-slate-600 dark:text-slate-300">
+                                  {pctTiba}% tiba di proyek
+                                </div>
+                              </td>
+                              <td className="py-3 px-3 text-right font-mono text-slate-700 dark:text-slate-300 font-medium">
+                                {sisaBelumTiba.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
+                              </td>
+                              <td className="py-3 px-3 text-right font-mono font-semibold text-rose-600 dark:text-rose-400">
+                                {totalKeluar.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
+                              </td>
+                              <td className="py-3 px-3 text-right font-mono font-black">
+                                <span
+                                  className={
+                                    pm.stok_fisik > 0
+                                      ? 'text-emerald-600 dark:text-emerald-400 text-sm'
+                                      : 'text-slate-600 dark:text-slate-300'
+                                  }
+                                >
+                                  {pm.stok_fisik.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                {pm.stok_fisik > 0 ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                    <CheckCircle2 className="w-3 h-3" /> Tersedia ({pm.stok_fisik.toLocaleString('id-ID')} {pm.satuan})
+                                  </span>
+                                ) : totalMasuk > 0 ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                                    Habis Terpakai
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                    Belum Ada Masuk
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3.5 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenWarehouseMaterialIn(pm)}
+                                    disabled={!rolePermissions.canIssue}
+                                    title="Catat penerimaan barang masuk ke gudang"
+                                    className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-[10px] font-bold hover:bg-emerald-700 disabled:opacity-40 transition-colors cursor-pointer"
+                                  >
+                                    + Catat Masuk
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleViewItemHistory(pm.nama_barang)}
+                                    title="Lihat riwayat transaksi material ini"
+                                    className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    <History className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =====================================================================
+              POV 2: REALISASI PER POS PEKERJAAN BOQ — "BEDAKAN KELUAR" (274 POS)
+          ===================================================================== */}
           {activeTab === 'BOQ_MONITOR' && (
             <div className="space-y-4">
               {/* Ringkasan Nilai Kontrak Resmi (POV Kontraktor CV Menara Megah & Klien PT IMK) */}
@@ -974,10 +1372,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     </div>
                     <div>
                       <h4 className="text-xs font-bold uppercase tracking-wider text-blue-300">
-                        Nilai Kontrak Pelaksanaan BOQ
+                        POV 2: Realisasi Pemakaian per Pos Pekerjaan BOQ ("Bedakan Keluar")
                       </h4>
                       <p className="text-[11px] text-slate-300">
-                        CV MENARA MEGAH · Trainer & UDU Office (Klien: PT INDO MURO KENCANA)
+                        CV MENARA MEGAH · Trainer & UDU Office (Klien: PT INDO MURO KENCANA) — Fokus Pemakaian per Pos Pekerjaan
                       </p>
                     </div>
                   </div>
@@ -995,13 +1393,13 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-3.5">
                   <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
-                    <span className="text-[10px] uppercase font-bold text-slate-300 dark:text-slate-300 tracking-wider">1. Material Kontrak</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider">1. Material Kontrak</span>
                     <div className="mt-1 text-base sm:text-lg font-black text-blue-400 font-mono">Rp 448.150.623</div>
                     <span className="text-[10px] text-slate-300">Tanggungan CV Menara Megah</span>
                   </div>
 
                   <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
-                    <span className="text-[10px] uppercase font-bold text-slate-300 dark:text-slate-300 tracking-wider">2. Upah & Jasa (Manpower)</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider">2. Upah & Jasa (Manpower)</span>
                     <div className="mt-1 text-base sm:text-lg font-black text-emerald-400 font-mono">Rp 271.849.378</div>
                     <span className="text-[10px] text-slate-300">Jasa Bongkar & Bangun</span>
                   </div>
@@ -1020,110 +1418,6 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 </div>
               </div>
 
-              {/* Kartu Ringkasan Progres Kontrak BOQ */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Total Item BOQ</span>
-                    <Boxes className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
-                    {boqMetrics.totalItems} Pos Item
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-blue-600 rounded-full transition-all duration-500"
-                        style={{ width: `${boqMetrics.progressPct}%` }}
-                      />
-                    </div>
-                    <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400">{boqMetrics.progressPct}%</span>
-                  </div>
-                </div>
-
-                <div
-                  onClick={() => setActiveTab('MUTATION_HISTORY')}
-                  title="Klik untuk membuka Jurnal Riwayat Transaksi"
-                  className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm cursor-pointer hover:border-emerald-400 dark:hover:border-emerald-600 transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Kedatangan Material (Gudang)</span>
-                    <ArrowDownLeft className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  </div>
-                  <div className="mt-2 text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                    {boqMetrics.arrivedMaterialTypesCount} Jenis Material Tiba
-                  </div>
-                  <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
-                    {stockMutations.filter((m) => m.jenis === 'MASUK' && !m.is_batal).length} Trx Masuk · Mencakup {boqMetrics.arrivedPosCoverageCount} Pos BOQ
-                  </p>
-                </div>
-
-                <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Realisasi Pemakaian (Pos BOQ)</span>
-                    <ArrowUpRight className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div className="mt-2 text-xl font-bold text-blue-600 dark:text-blue-400">
-                    {boqMetrics.fulfilledCount + boqMetrics.inProgressCount + boqMetrics.overQuotaCount} Pos Terpakai
-                  </div>
-                  <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
-                    {boqMetrics.fulfilledCount} Pos Terpenuhi · {boqMetrics.inProgressCount} Dalam Proses
-                  </p>
-                </div>
-
-                <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Tanggung Jawab Penyedia</span>
-                    <Building2 className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  </div>
-                  <div className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
-                    {boqMetrics.totalKontraktorItems} Menara Megah
-                  </div>
-                  <p className="mt-1 text-[11px] text-purple-600 dark:text-purple-400 font-semibold">
-                    + {boqMetrics.totalImkItems} Free-issue Klien (PT IMK)
-                  </p>
-                </div>
-              </div>
-
-              {/* Strip Ringkasan Mutasi Terbaru agar Transaksi Baru Langsung Terlihat di Tab 1 */}
-              {stockMutations.length > 0 && (
-                <div className="bg-emerald-50/70 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-800/70 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                      <History className="w-4 h-4" />
-                      Mutasi Barang Terakhir:
-                    </span>
-                    {stockMutations.slice(0, 3).map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => {
-                          setBoqSearchQuery(m.nama_barang);
-                        }}
-                        title={`Klik untuk menyaring "${m.nama_barang}" pada tabel BOQ di bawah`}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-semibold transition-colors cursor-pointer ${
-                          m.jenis === 'MASUK'
-                            ? 'bg-white dark:bg-slate-900 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100/60'
-                            : 'bg-white dark:bg-slate-900 border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-300 hover:bg-rose-100/60'
-                        }`}
-                      >
-                        <span className="font-mono font-bold">
-                          {m.jenis === 'MASUK' ? '+' : '-'}{m.jumlah.toLocaleString('id-ID')} {m.satuan}
-                        </span>
-                        <span>{m.nama_barang}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('MUTATION_HISTORY')}
-                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-                  >
-                    <span>Buka Jurnal Riwayat ({stockMutations.length} Mutasi) →</span>
-                  </button>
-                </div>
-              )}
-
               {/* Filter & Kontrol Pencarian BOQ */}
               <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 transition-colors">
                 <div className="relative flex-1">
@@ -1139,7 +1433,6 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {/* Filter Penyedia */}
                   <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
                     <button
                       onClick={() => setBoqProviderFilter('ALL')}
@@ -1173,26 +1466,23 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     </button>
                   </div>
 
-                  {/* Filter Status */}
                   <select
                     value={boqStatusFilter}
                     onChange={(e) => setBoqStatusFilter(e.target.value as any)}
-                    aria-label="Filter status pemenuhan BOQ"
+                    aria-label="Filter status pemakaian pos BOQ"
                     className="px-2.5 py-1.5 text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-hidden"
                   >
-                    <option value="ALL">Semua Status Pemenuhan</option>
-                    <option value="Belum dipenuhi">Belum Ada Masuk</option>
+                    <option value="ALL">Semua Status Pos</option>
+                    <option value="Belum dipenuhi">Belum Dipakai</option>
                     <option value="Dalam pemenuhan">Dalam Proses</option>
                     <option value="Terpenuhi">Terpenuhi</option>
                     <option value="Melebihi BOQ">Melebihi BOQ</option>
                   </select>
 
-                  {/* Toggle Buka / Tutup Semua */}
                   <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-700 pl-2">
                     <button
                       onClick={handleExpandAll}
                       className="px-2 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white cursor-pointer"
-                      title="Buka semua hierarki pekerjaan"
                     >
                       Buka Semua
                     </button>
@@ -1200,7 +1490,6 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     <button
                       onClick={handleCollapseAll}
                       className="px-2 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white cursor-pointer"
-                      title="Tutup semua hierarki pekerjaan"
                     >
                       Tutup Semua
                     </button>
@@ -1208,7 +1497,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 </div>
               </div>
 
-              {/* Tabel Hierarki Master BOQ & Kontrol Realisasi */}
+              {/* Tabel Hierarki 274 Pos Pekerjaan BOQ — "Bedakan Keluar" (Tanpa Duplikasi Kolom Masuk) */}
               <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse text-xs">
@@ -1218,19 +1507,18 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                         <th className="py-3 px-3.5">Uraian Material & Pekerjaan</th>
                         <th className="py-3 px-3 text-center">Penyedia</th>
                         <th className="py-3 px-3 text-right">Target Pos BOQ</th>
-                        <th className="py-3 px-3 text-right">Masuk Gudang (Gabungan)</th>
-                        <th className="py-3 px-3 text-right">Terpakai Pos (Keluar)</th>
+                        <th className="py-3 px-3 text-right">Terpakai di Pos Ini (Keluar)</th>
                         <th className="py-3 px-3 text-right">Sisa Kebutuhan Pos</th>
-                        <th className="py-3 px-3 text-right">Saldo Gudang</th>
+                        <th className="py-3 px-3 text-center">Ketersediaan Gudang</th>
                         <th className="py-3 px-3 text-center">Status Pos</th>
-                        <th className="py-3 px-3.5 text-center w-28">Aksi Cepat</th>
+                        <th className="py-3 px-3.5 text-center w-28">Aksi Pemakaian</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {groupedBoqData.length === 0 ? (
                         <tr>
-                          <td colSpan={10} className="py-12 text-center text-slate-600 dark:text-slate-300 font-medium">
-                            Tidak ada item BOQ yang cocok dengan filter pencarian.
+                          <td colSpan={9} className="py-12 text-center text-slate-600 dark:text-slate-300 font-medium">
+                            Tidak ada pos pekerjaan BOQ yang cocok dengan filter pencarian.
                           </td>
                         </tr>
                       ) : (
@@ -1239,9 +1527,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
                           return (
                             <React.Fragment key={div.name}>
-                              {/* Level 1: Divisi Utama (Kuning Excel: #FFF9C4 / Dark Adjusted) */}
                               <tr className="bg-[#FFF9C4] dark:bg-[#713F12]/60 border-y border-amber-300 dark:border-amber-900/60 text-amber-950 dark:text-amber-200 font-bold transition-colors">
-                                <td colSpan={10} className="py-2.5 px-3.5">
+                                <td colSpan={9} className="py-2.5 px-3.5">
                                   <button
                                     onClick={() => toggleDivision(div.name)}
                                     className="flex items-center gap-2 w-full text-left text-xs uppercase tracking-wide cursor-pointer focus:outline-hidden"
@@ -1253,13 +1540,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                     )}
                                     <span>{div.name}</span>
                                     <span className="ml-auto text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-200/90 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200">
-                                      {div.totalItems} Item
+                                      {div.totalItems} Pos
                                     </span>
                                   </button>
                                 </td>
                               </tr>
 
-                              {/* Level 2: Sub-Pekerjaan (Hijau Excel: #DCFCE7 / Dark Adjusted) */}
                               {!isDivCollapsed &&
                                 div.subSections.map((sub) => {
                                   const subKey = `${div.name}__${sub.name}`;
@@ -1267,8 +1553,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
                                   return (
                                     <React.Fragment key={subKey}>
-                                      <tr className="bg-[#DCFCE7] dark:bg-[#064E3B]/60 border-y border-emerald-300 dark:border-emerald-900/60 text-emerald-950 dark:text-emerald-200 font-semibold transition-colors [content-visibility:auto] [contain-intrinsic-size:0_36px]">
-                                        <td colSpan={10} className="py-2 px-4">
+                                      <tr className="bg-[#DCFCE7] dark:bg-[#064E3B]/60 border-y border-emerald-300 dark:border-emerald-900/60 text-emerald-950 dark:text-emerald-200 font-semibold transition-colors">
+                                        <td colSpan={9} className="py-2 px-4">
                                           <button
                                             onClick={() => toggleSubSection(subKey)}
                                             className="flex items-center gap-2 w-full text-left text-xs cursor-pointer focus:outline-hidden"
@@ -1280,32 +1566,26 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                             )}
                                             <span>{sub.name}</span>
                                             <span className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-200/90 dark:bg-emerald-900/70 text-emerald-900 dark:text-emerald-200">
-                                              {sub.items.length} Item · {sub.imkCount > 0 ? `${sub.imkCount} Klien · ` : ''}{sub.kontraktorCount} Menara Megah
+                                              {sub.items.length} Pos · {sub.imkCount > 0 ? `${sub.imkCount} Klien · ` : ''}{sub.kontraktorCount} Menara Megah
                                             </span>
                                           </button>
                                         </td>
                                       </tr>
 
-                                      {/* Baris Material & Jasa */}
                                       {!isSubCollapsed &&
                                         sub.items.map((item) => {
                                           const isImk = (item.keterangan || '').toLowerCase().includes('imk');
-                                          const totalBoqGabungan = item.total_boq_material_gabungan || item.qty_boq;
-                                          const jmlPosGabungan = item.jumlah_pos_material_gabungan || 1;
-                                          const masukGabunganPct = totalBoqGabungan > 0 ? Math.round((item.qty_masuk_total / totalBoqGabungan) * 100) : 0;
                                           const keluarPosPct = item.qty_boq > 0 ? Math.round((item.qty_keluar_total / item.qty_boq) * 100) : 0;
 
                                           return (
                                             <tr
                                               key={item.id}
-                                              className="hover:bg-slate-50/90 dark:hover:bg-slate-800/60 transition-colors bg-white dark:bg-slate-900 [content-visibility:auto] [contain-intrinsic-size:0_45px]"
+                                              className="hover:bg-slate-50/90 dark:hover:bg-slate-800/60 transition-colors bg-white dark:bg-slate-900"
                                             >
-                                              {/* Kode BOQ */}
                                               <td className="py-2.5 px-3.5 font-mono text-[11px] font-bold text-slate-700 dark:text-slate-300">
                                                 {item.kode_boq}
                                               </td>
 
-                                              {/* Uraian Material */}
                                               <td className="py-2.5 px-3.5">
                                                 <div className="font-semibold text-slate-900 dark:text-white">
                                                   {item.nama_barang}
@@ -1313,24 +1593,17 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                                 {isImk ? (
                                                   <div className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">
                                                     Beban Kontraktor: Rp 0 (Disediakan Klien PT IMK)
-                                                    {item.harga_satuan > 0 && (
-                                                      <span className="text-slate-600 dark:text-slate-300 text-[9px] ml-1 font-medium">
-                                                        · Est. Aset Klien: {formatRupiah(item.harga_satuan * item.qty_boq)}
-                                                      </span>
-                                                    )}
                                                   </div>
                                                 ) : (
                                                   <div className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">
                                                     {formatRupiah(item.harga_satuan)} / {item.satuan}
                                                     <span className="ml-1 font-semibold text-slate-700 dark:text-slate-200">
-                                                      (Total: {formatRupiah(item.harga_satuan * item.qty_boq)})
+                                                      (Anggaran Pos: {formatRupiah(item.harga_satuan * item.qty_boq)})
                                                     </span>
-                                                    {item.keterangan ? ` · ${item.keterangan}` : ''}
                                                   </div>
                                                 )}
                                               </td>
 
-                                              {/* Penyedia */}
                                               <td className="py-2.5 px-3 text-center">
                                                 {isImk ? (
                                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800">
@@ -1343,97 +1616,54 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                                 )}
                                               </td>
 
-                                              {/* Target Pos BOQ */}
-                                              <td className="py-2.5 px-3 text-right font-mono font-medium text-slate-800 dark:text-slate-200">
-                                                <div>
-                                                  {item.qty_boq.toLocaleString('id-ID', { maximumFractionDigits: 3 })}{' '}
-                                                  <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">{item.satuan}</span>
-                                                </div>
-                                                {jmlPosGabungan > 1 && (
-                                                  <div className="text-[9px] font-medium text-slate-600 dark:text-slate-300">
-                                                    Total {jmlPosGabungan} pos: {totalBoqGabungan.toLocaleString('id-ID', { maximumFractionDigits: 1 })} {item.satuan}
-                                                  </div>
-                                                )}
+                                              <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-800 dark:text-slate-200">
+                                                {item.qty_boq.toLocaleString('id-ID', { maximumFractionDigits: 3 })}{' '}
+                                                <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">{item.satuan}</span>
                                               </td>
 
-                                              {/* Masuk Gudang (Gabungan - Satukan Masuk) */}
-                                              <td className="py-2.5 px-3 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400">
-                                                <div>
-                                                  {item.qty_masuk_total.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
-                                                  {jmlPosGabungan > 1 && item.qty_masuk_total > 0 && (
-                                                    <span className="text-[10px] text-slate-600 dark:text-slate-300 font-normal">
-                                                      {' '}/ {totalBoqGabungan.toLocaleString('id-ID', { maximumFractionDigits: 1 })}
-                                                    </span>
-                                                  )}
-                                                </div>
-                                                <div className="text-[9px] font-medium text-slate-600 dark:text-slate-300">
-                                                  {jmlPosGabungan > 1
-                                                    ? `${masukGabunganPct}% tiba (${jmlPosGabungan} pos)`
-                                                    : `${masukGabunganPct}% tiba`}
-                                                </div>
-                                              </td>
-
-                                              {/* Terpakai Pos (Keluar - Bedakan Keluar) */}
-                                              <td className="py-2.5 px-3 text-right font-mono font-semibold text-rose-600 dark:text-rose-400">
+                                              <td className="py-2.5 px-3 text-right font-mono font-bold text-rose-600 dark:text-rose-400">
                                                 <div>
                                                   {item.qty_keluar_total.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
                                                 </div>
                                                 {item.qty_keluar_total > 0 && (
                                                   <div className="text-[9px] font-medium text-slate-600 dark:text-slate-300">
-                                                    {keluarPosPct}% pos
+                                                    {keluarPosPct}% terpakai
                                                   </div>
                                                 )}
                                               </td>
 
-                                              {/* Sisa Kebutuhan Pos */}
-                                              <td className="py-2.5 px-3 text-right font-mono text-slate-700 dark:text-slate-300">
+                                              <td className="py-2.5 px-3 text-right font-mono text-slate-700 dark:text-slate-300 font-medium">
                                                 {item.qty_pemenuhan_sisa.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
                                               </td>
 
-                                              {/* Saldo Gudang */}
-                                              <td className="py-2.5 px-3 text-right font-mono font-bold">
-                                                <span
-                                                  className={
-                                                    item.stok_saat_ini > 0
-                                                      ? 'text-emerald-600 dark:text-emerald-400'
-                                                      : 'text-slate-600 dark:text-slate-300 font-medium'
-                                                  }
-                                                >
-                                                  {item.stok_saat_ini.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
-                                                </span>
-                                                {jmlPosGabungan > 1 && item.stok_saat_ini > 0 && (
-                                                  <div className="text-[9px] font-medium text-slate-600 dark:text-slate-300">
-                                                    Stok bersama
-                                                  </div>
+                                              <td className="py-2.5 px-3 text-center">
+                                                {item.stok_saat_ini > 0 ? (
+                                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/70">
+                                                    Gudang: {item.stok_saat_ini.toLocaleString('id-ID', { maximumFractionDigits: 3 })} {item.satuan} siap pakai
+                                                  </span>
+                                                ) : (
+                                                  <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">
+                                                    Gudang: 0 {item.satuan}
+                                                  </span>
                                                 )}
                                               </td>
 
-                                              {/* Status Pos */}
                                               <td className="py-2.5 px-3 text-center">
                                                 {renderBoqStatusBadge(item)}
                                               </td>
 
-                                              {/* Aksi Cepat */}
                                               <td className="py-2.5 px-3.5 text-center">
                                                 <div className="flex items-center justify-center gap-1">
                                                   <button
-                                                    onClick={() => handleOpenItemMutation(item, 'MASUK')}
-                                                    disabled={!rolePermissions.canIssue}
-                                                    title="Catat barang masuk untuk pos ini"
-                                                    className="px-2 py-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg text-[10px] font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900/60 disabled:opacity-40 transition-colors cursor-pointer"
-                                                  >
-                                                    + Masuk
-                                                  </button>
-                                                  <button
                                                     onClick={() => handleOpenItemMutation(item, 'KELUAR')}
                                                     disabled={!rolePermissions.canIssue}
-                                                    title="Catat barang keluar untuk pos ini"
-                                                    className="px-2 py-1 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-lg text-[10px] font-bold hover:bg-rose-100 dark:hover:bg-rose-900/60 disabled:opacity-40 transition-colors cursor-pointer"
+                                                    title="Catat pemakaian (keluar) khusus untuk pos pekerjaan BOQ ini"
+                                                    className="px-2.5 py-1 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-lg text-[10px] font-bold hover:bg-rose-100 dark:hover:bg-rose-900/60 disabled:opacity-40 transition-colors cursor-pointer"
                                                   >
-                                                    - Keluar
+                                                    - Pakai / Keluar
                                                   </button>
                                                   <button
-                                                    onClick={() => handleViewItemHistory(item)}
+                                                    onClick={() => handleViewItemHistory(item.nama_barang)}
                                                     aria-label="Lihat riwayat mutasi material ini"
                                                     title="Lihat riwayat mutasi material ini"
                                                     className="p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg transition-colors cursor-pointer"
@@ -1459,10 +1689,50 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
             </div>
           )}
 
-          {/* TAB 2: JURNAL RIWAYAT TRANSAKSI */}
+          {/* =====================================================================
+              POV 3: JURNAL TRANSAKSI & MATRIKS PANDUAN TATA KELOLA BARANG
+          ===================================================================== */}
           {activeTab === 'MUTATION_HISTORY' && (
             <div className="space-y-4">
-              {/* Notifikasi filter jika diarahkan dari BOQ */}
+              {/* Matriks Panduan Tata Kelola Barang (BOQ vs Kustom Non-BOQ) */}
+              <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <span>Matriks Panduan Tata Kelola Barang & Koreksi Data (CRU Tanpa Hapus)</span>
+                  </div>
+                  <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300">
+                    Koreksi Baris Langsung (Tanpa Menunggu Approval Berantai)
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px]">
+                  <div className="p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-800/60">
+                    <div className="font-bold text-emerald-900 dark:text-emerald-300 mb-1">
+                      1. Barang Kontrak BOQ ("Satukan Masuk, Bedakan Keluar")
+                    </div>
+                    <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                      Saat <b>Masuk</b>, material dicatat menyatu ke stok gudang umum (Tab 1). Saat <b>Keluar</b>, material wajib dipilih untuk Pos Pekerjaan BOQ spesifik (Tab 2).
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-purple-50/60 dark:bg-purple-950/25 border border-purple-200 dark:border-purple-800/60">
+                    <div className="font-bold text-purple-900 dark:text-purple-300 mb-1">
+                      2. Barang Kustom Non-BOQ ("Bedakan Masuk & Keluar")
+                    </div>
+                    <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                      Peruntukan saat <b>Masuk</b> dan saat <b>Keluar</b> dicatat terpisah. Peruntukan keluar boleh berbeda dari rencana awal saat masuk sesuai dinamika lapangan.
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-800/60">
+                    <div className="font-bold text-amber-900 dark:text-amber-300 mb-1">
+                      3. Koreksi Baris Data vs Persetujuan Dokumen
+                    </div>
+                    <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                      Tidak ada tombol Hapus. Jika salah input baris, Clerk langsung klik <b>Batal</b> atau <b>Ganti</b> (nominal lama otomatis dinolkan). Persetujuan berantai khusus di Tab 4 (Dokumen).
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {searchQuery && (
                 <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl text-xs text-blue-900 dark:text-blue-200">
                   <div className="flex items-center gap-2">
@@ -1517,7 +1787,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 </div>
               </div>
 
-              {/* Tabel Riwayat Mutasi Barang */}
+              {/* Tabel Riwayat Baris Transaksi (Tanpa Kolom Persetujuan per Baris!) */}
               <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse text-xs">
@@ -1528,30 +1798,29 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                         <th className="py-3 px-3.5 text-center">Jenis</th>
                         <th className="py-3 px-3.5">Material</th>
                         <th className="py-3 px-3.5 text-right">Jumlah</th>
-                        <th className="py-3 px-3.5">Asal / Keperluan</th>
-                        <th className="py-3 px-3.5 text-center">Status Dokumen</th>
-                        <th className="py-3 px-3.5 text-center">Alur Persetujuan</th>
-                        <th className="py-3 px-3.5 text-center">Koreksi</th>
+                        <th className="py-3 px-3.5">Asal / Peruntukan & Jejak Audit</th>
+                        <th className="py-3 px-3.5 text-center">Status Baris Data</th>
+                        <th className="py-3 px-3.5 text-center">Koreksi Langsung (Batal / Ganti)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {filteredMutations.length === 0 ? (
                         <tr>
-                          <td colSpan={9} className="py-12 text-center text-slate-600 dark:text-slate-300 font-medium">
+                          <td colSpan={8} className="py-12 text-center text-slate-600 dark:text-slate-300 font-medium">
                             Belum ada riwayat transaksi mutasi barang.
                           </td>
                         </tr>
                       ) : (
                         filteredMutations.map((mut, idx) => {
-                          const isVoid = mut.is_batal;
-                          const isReplaced = mut.is_ganti;
-                          const status = mut.status_dokumen || 'DITERBITKAN';
+                          const isVoid = mut.is_batal || mut.status_dokumen === 'BATAL';
+                          const isReplaced = mut.is_ganti || mut.status_dokumen === 'DIGANTI';
+                          const canCorrectRow = rolePermissions.canInitiateBatalGanti || rolePermissions.canInstructBatalGanti;
 
                           return (
                             <tr
                               key={mut.id}
                               className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors ${
-                                isVoid ? 'opacity-50 bg-rose-50/20 line-through' : isReplaced ? 'opacity-70 bg-amber-50/20' : ''
+                                isVoid ? 'opacity-55 bg-rose-50/20 line-through' : isReplaced ? 'opacity-65 bg-amber-50/20 line-through' : ''
                               }`}
                             >
                               <td className="py-3 px-3.5 text-center text-slate-600 dark:text-slate-300 font-mono text-[11px] font-medium">
@@ -1560,187 +1829,498 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                               <td className="py-3 px-3.5 text-slate-700 dark:text-slate-200 font-mono text-[11px] whitespace-nowrap">
                                 {formatDateTime(mut.tanggal)}
                               </td>
-                          <td className="py-3 px-3.5 text-center">
-                            <span
-                              className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                mut.jenis === 'MASUK'
-                                  ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
-                                  : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300'
-                              }`}
-                            >
-                              {mut.jenis === 'MASUK' ? <ArrowDownLeft className="w-3 h-3" /> : <ArrowUpRight className="w-3 h-3" />}
-                              {mut.jenis}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3.5">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-semibold text-slate-900 dark:text-white">{mut.nama_barang}</span>
-                              {mut.is_custom_item && (
-                                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">
-                                  ✍️ Non-BOQ
+                              <td className="py-3 px-3.5 text-center">
+                                <span
+                                  className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                    mut.jenis === 'MASUK'
+                                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
+                                      : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300'
+                                  }`}
+                                >
+                                  {mut.jenis === 'MASUK' ? <ArrowDownLeft className="w-3 h-3" /> : <ArrowUpRight className="w-3 h-3" />}
+                                  {mut.jenis}
                                 </span>
-                              )}
-                            </div>
-                            {mut.catatan && <div className="text-[11px] text-slate-600 dark:text-slate-300 italic mt-0.5">{mut.catatan}</div>}
-                          </td>
-                          <td className="py-3 px-3.5 text-right font-mono font-bold tabular-nums whitespace-nowrap">
-                            <span className={mut.jenis === 'MASUK' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                              {mut.jenis === 'MASUK' ? '+' : '-'} {mut.jumlah.toLocaleString('id-ID')}
-                            </span>{' '}
-                            <span className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">{mut.satuan}</span>
-                          </td>
-                          <td className="py-3 px-3.5 text-slate-700 dark:text-slate-300 max-w-xs">
-                            <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                              {mut.jenis === 'MASUK' ? (
-                                <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                                  mut.source_name?.includes('Klien')
-                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300'
-                                    : mut.source_name?.includes('Toko')
-                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300'
-                                    : 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300'
-                                }`}>
-                                  {mut.source_name || '🏢 CV Menara Megah'}
-                                </span>
-                              ) : (
-                                mut.beban_biaya === 'KLIEN' || (mut.beban_biaya as string) === 'PERMINTAAN_KLIEN' ? (
-                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300">
-                                    💰 Permintaan Klien (Kena Invoice)
+                              </td>
+                              <td className="py-3 px-3.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-semibold text-slate-900 dark:text-white">{mut.nama_barang}</span>
+                                  {mut.is_custom_item ? (
+                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">
+                                      ✍️ Kustom Non-BOQ
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300">
+                                      📦 BOQ
+                                    </span>
+                                  )}
+                                </div>
+                                {mut.catatan && <div className="text-[11px] text-slate-600 dark:text-slate-300 italic mt-0.5">{mut.catatan}</div>}
+                              </td>
+                              <td className="py-3 px-3.5 text-right font-mono font-bold tabular-nums whitespace-nowrap">
+                                <span className={mut.jenis === 'MASUK' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                                  {mut.jenis === 'MASUK' ? '+' : '-'} {mut.jumlah.toLocaleString('id-ID')}
+                                </span>{' '}
+                                <span className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">{mut.satuan}</span>
+                                {(isVoid || isReplaced) && (
+                                  <div className="text-[9px] font-bold text-rose-600 dark:text-rose-400 no-underline">
+                                    Dinolkan (0 {mut.satuan})
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-3.5 text-slate-700 dark:text-slate-300 max-w-xs">
+                                <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                                  {mut.jenis === 'MASUK' ? (
+                                    <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                                      mut.source_name?.includes('Klien')
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300'
+                                        : mut.source_name?.includes('Toko')
+                                        ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300'
+                                        : 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300'
+                                    }`}>
+                                      {mut.source_name || '🏢 CV Menara Megah'}
+                                    </span>
+                                  ) : (
+                                    mut.beban_biaya === 'KLIEN' || (mut.beban_biaya as string) === 'PERMINTAAN_KLIEN' ? (
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300">
+                                        💰 Permintaan Klien (Kena Invoice)
+                                      </span>
+                                    ) : mut.beban_biaya === 'BONUS_KLIEN' ? (
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/70 text-purple-800 dark:text-purple-300">
+                                        🎁 Bonus Klien (Gratis)
+                                      </span>
+                                    ) : mut.beban_biaya === 'OPERASIONAL' ? (
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-950/70 text-sky-800 dark:text-sky-300">
+                                        🧑‍🍳 Operasional
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                        🏗️ Proyek BOQ
+                                      </span>
+                                    )
+                                  )}
+                                </div>
+                                <div className="truncate font-medium">
+                                  {mut.is_custom_item
+                                    ? `${mut.jenis === 'MASUK' ? 'Peruntukan Masuk: ' : 'Peruntukan Keluar: '}${mut.tujuan_keperluan || '-'}`
+                                    : mut.tujuan_keperluan || '-'}
+                                </div>
+                                <div className="text-[10px] text-slate-600 dark:text-slate-300 font-mono mt-0.5">
+                                  PIC: {mut.pic_penerima_penyerah}
+                                  {mut.referensi_ganti_id ? ` · Revisi dari #${mut.referensi_ganti_id.slice(0, 8)}` : ''}
+                                </div>
+                                {mut.alasan_batal_ganti && (
+                                  <div className="mt-1 text-[10px] font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 rounded-md">
+                                    {mut.alasan_batal_ganti}
+                                  </div>
+                                )}
+                              </td>
+
+                              <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                                {isVoid ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[10px] font-bold text-rose-800 dark:bg-rose-950 dark:text-rose-300">
+                                    <Ban className="h-3 w-3" /> BATAL (Dinolkan)
                                   </span>
-                                ) : mut.beban_biaya === 'BONUS_KLIEN' ? (
-                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/70 text-purple-800 dark:text-purple-300">
-                                    🎁 Bonus Klien (Gratis)
-                                  </span>
-                                ) : mut.beban_biaya === 'OPERASIONAL' ? (
-                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-950/70 text-sky-800 dark:text-sky-300">
-                                    🧑‍🍳 Operasional
+                                ) : isReplaced ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                                    <FileEdit className="h-3 w-3" /> DIGANTI (Dinolkan)
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                                    🏗️ Proyek BOQ
-                                  </span>
-                                )
-                              )}
-                            </div>
-                            <div className="truncate font-medium">{mut.tujuan_keperluan || '-'}</div>
-                            <div className="text-[10px] text-slate-600 dark:text-slate-300 font-mono mt-0.5">PIC: {mut.pic_penerima_penyerah}</div>
-                          </td>
-
-                          {/* Status Dokumen */}
-                          <td className="py-3 px-3.5 text-center whitespace-nowrap">
-                            {isVoid ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800 dark:bg-rose-950 dark:text-rose-300">
-                                <Ban className="h-3 w-3" /> BATAL
-                              </span>
-                            ) : isReplaced ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                                <FileEdit className="h-3 w-3" /> DIGANTI
-                              </span>
-                            ) : status === 'MENGETAHUI' ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-[10px] font-bold text-blue-800 dark:bg-blue-950 dark:text-blue-300">
-                                <QrCode className="h-3 w-3" /> SAH (TTE/QR)
-                              </span>
-                            ) : status === 'DISETUJUI' ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                                <FileCheck2 className="h-3 w-3" /> DISETUJUI
-                              </span>
-                            ) : status === 'DIPERIKSA' ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
-                                <ShieldCheck className="h-3 w-3" /> DIPERIKSA
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                                <Clock className="h-3 w-3" /> DITERBITKAN
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Tombol Aksi Approval Berjenjang */}
-                          <td className="py-3 px-3.5 text-center whitespace-nowrap">
-                            {!isVoid && !isReplaced && (
-                              <div className="flex items-center justify-center gap-1.5">
-                                {/* Tombol Periksa (Foreman & Spv) */}
-                                {status === 'DITERBITKAN' && (
-                                  <button
-                                    onClick={() => handleAdvanceWorkflow(mut, 'DIPERIKSA')}
-                                    disabled={!rolePermissions.canCheck || submitting}
-                                    className="px-2 py-1 text-[10px] font-bold rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-30 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300"
-                                    title={rolePermissions.canCheck ? 'Klik untuk Memeriksa' : 'Hanya Foreman / Spv yang berhak memeriksa'}
-                                  >
-                                    Periksa
-                                  </button>
-                                )}
-
-                                {/* Tombol Setujui (Spv & Dept. Mgr) */}
-                                {status === 'DIPERIKSA' && (
-                                  <button
-                                    onClick={() => handleAdvanceWorkflow(mut, 'DISETUJUI')}
-                                    disabled={!rolePermissions.canApprove || submitting}
-                                    className="px-2 py-1 text-[10px] font-bold rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-30 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-                                    title={rolePermissions.canApprove ? 'Klik untuk Menyetujui' : 'Hanya Spv / Dept. Manager yang berhak menyetujui'}
-                                  >
-                                    Setujui
-                                  </button>
-                                )}
-
-                                {/* Tombol Sahkan Mengetahui + TTE/QR (Dept. Mgr, PM, Direktur) */}
-                                {status === 'DISETUJUI' && (
-                                  <button
-                                    onClick={() => handleAdvanceWorkflow(mut, 'MENGETAHUI')}
-                                    disabled={!rolePermissions.canAcknowledge || submitting}
-                                    className="px-2 py-1 text-[10px] font-bold rounded-lg border border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-30 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
-                                    title={rolePermissions.canAcknowledge ? 'Klik untuk Mengesahkan dengan TTE/QR' : 'Hanya Dept. Mgr / PM / Direktur yang berhak mengesahkan'}
-                                  >
-                                    Sahkan (TTE/QR)
-                                  </button>
-                                )}
-
-                                {status === 'MENGETAHUI' && (
-                                  <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                                    <CheckCircle2 className="h-3 w-3" /> Selesai
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                    <CheckCircle2 className="h-3 w-3" /> TERCATAT AKTIF
                                   </span>
                                 )}
-                              </div>
-                            )}
-                          </td>
+                              </td>
 
-                          {/* Tombol Koreksi (Batal & Ganti - Tanpa Hapus) */}
-                          <td className="py-3 px-3.5 text-center whitespace-nowrap">
-                            {!isVoid && !isReplaced ? (
-                              <div className="flex items-center justify-center gap-1">
-                                <button
-                                  onClick={() => {
-                                    setBatalTarget(mut);
-                                    setBatalReason('');
-                                  }}
-                                  className="px-2 py-1 rounded-lg border border-rose-200 bg-rose-50 text-[10px] font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300"
-                                  title="Batalkan dokumen ini (nominal dinolkan)"
-                                >
-                                  Batal
-                                </button>
-                                <button
-                                  onClick={() => handleOpenGanti(mut)}
-                                  className="px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-[10px] font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300"
-                                  title="Ganti dokumen ini dengan revisi baru"
-                                >
-                                  Ganti
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">—</span>
-                            )}
+                              <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                                {!isVoid && !isReplaced ? (
+                                  canCorrectRow ? (
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      <button
+                                        onClick={() => {
+                                          setBatalTarget(mut);
+                                          setBatalReason('');
+                                        }}
+                                        className="px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50 text-[10px] font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300 cursor-pointer"
+                                        title="Batalkan baris ini secara langsung (nominal dinolkan)"
+                                      >
+                                        Batal
+                                      </button>
+                                      <button
+                                        onClick={() => handleOpenGanti(mut)}
+                                        className="px-2.5 py-1 rounded-lg border border-amber-200 bg-amber-50 text-[10px] font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300 cursor-pointer"
+                                        title="Ganti baris yang salah input ini dengan baris revisi baru"
+                                      >
+                                        Ganti
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">
+                                      🔒 Hanya Baca
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">Selesai Dikoreksi</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =====================================================================
+              POV 4: DOKUMEN RESMI & PERSETUJUAN BERANTAI (TTE / QR CODE)
+          ===================================================================== */}
+          {activeTab === 'OFFICIAL_DOCUMENTS' && (
+            <div className="space-y-4">
+              {/* Penjelasan & Form Penerbitan Dokumen Resmi oleh Clerk */}
+              <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <FileCheck2 className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                      <span>Penerbitan & Persetujuan Berantai Dokumen Resmi Mutasi Barang</span>
+                    </h3>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 font-medium">
+                      Alur persetujuan berjenjang: <b>1. Diterbitkan (Clerk)</b> ➔ <b>2. Diperiksa (Foreman / Spv.)</b> ➔ <b>3. Disetujui (Spv. / Dept. Manager)</b> ➔ <b>4. Mengetahui & Sah TTE/QR (Dept. Manager / KTT-PM / CEO-Direktur)</b>.
+                    </p>
+                  </div>
+                </div>
+
+                {rolePermissions.canIssue ? (
+                  <form onSubmit={handleIssueStockDocument} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                    <div className="md:col-span-2">
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Judul Dokumen Berita Acara / Laporan <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={docTitle}
+                        onChange={(e) => setDocTitle(e.target.value)}
+                        placeholder="Contoh: Berita Acara Rekapitulasi Mutasi Barang Minggu Ke-3"
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Periode Laporan <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={docPeriode}
+                        onChange={(e) => setDocPeriode(e.target.value)}
+                        placeholder="Contoh: November 2026"
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="w-full py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-40"
+                      >
+                        {submitting ? 'Menerbitkan...' : '+ Terbitkan Dokumen Resmi'}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 font-medium">
+                    ℹ️ Penerbitan Dokumen Resmi baru dilakukan oleh <b>Clerk</b>. Jabatan Anda saat ini (<b>{activeRole}</b>) dapat memproses tahap pemeriksaan/persetujuan sesuai wewenang pada daftar dokumen di bawah.
+                  </div>
+                )}
+              </div>
+
+              {/* Daftar Dokumen Resmi Mutasi Barang */}
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold uppercase tracking-wider text-[10px]">
+                        <th className="py-3 px-3.5">Kode & Tanggal</th>
+                        <th className="py-3 px-3.5">Judul Dokumen & Ringkasan</th>
+                        <th className="py-3 px-3.5">Jejak Persetujuan Berantai</th>
+                        <th className="py-3 px-3.5 text-center">Status Dokumen</th>
+                        <th className="py-3 px-3.5 text-center">Aksi Persetujuan</th>
+                        <th className="py-3 px-3.5 text-center">Koreksi & PDF</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {stockDocuments.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-slate-600 dark:text-slate-300 font-medium">
+                            Belum ada Dokumen Resmi Mutasi Barang yang diterbitkan. Clerk dapat menerbitkan dokumen di atas untuk memulai persetujuan berantai.
                           </td>
                         </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                      ) : (
+                        stockDocuments.map((doc) => {
+                          const docDbId = doc.db_id || doc.id;
+                          const wfStatus = doc.status_dokumen || 'DITERBITKAN';
+                          const isDocVoid = Boolean(doc.is_batal) || wfStatus === 'BATAL';
+                          const isDocReplaced = Boolean(doc.is_ganti) || wfStatus === 'DIGANTI';
+                          const canCorrectDoc = rolePermissions.canInitiateBatalGanti || rolePermissions.canInstructBatalGanti;
+
+                          return (
+                            <tr
+                              key={docDbId}
+                              className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors ${
+                                isDocVoid || isDocReplaced ? 'opacity-60 bg-rose-50/10' : ''
+                              }`}
+                            >
+                              <td className="py-3 px-3.5 whitespace-nowrap">
+                                <div className="font-mono font-bold text-slate-900 dark:text-white">{doc.id}</div>
+                                <div className="text-[10px] font-mono text-slate-600 dark:text-slate-300">
+                                  {formatDateTime(doc.dibuat_pada)}
+                                </div>
+                              </td>
+                              <td className="py-3 px-3.5">
+                                <div className="font-bold text-slate-900 dark:text-white">{doc.judul}</div>
+                                <div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+                                  Diterbitkan oleh: {doc.penandatangan_nama} ({doc.penandatangan_jabatan})
+                                </div>
+                                {doc.alasan_batal_ganti && (
+                                  <div className="mt-1 text-[10px] font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 rounded-md">
+                                    {doc.alasan_batal_ganti}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-3.5 text-[11px] space-y-1">
+                                <div className="text-slate-700 dark:text-slate-200">
+                                  <span className="font-semibold">1. Terbit:</span> {doc.penandatangan_nama}
+                                </div>
+                                <div className={doc.diperiksa_oleh ? 'text-indigo-700 dark:text-indigo-300 font-medium' : 'text-slate-500 dark:text-slate-400'}>
+                                  <span className="font-semibold">2. Diperiksa:</span> {doc.diperiksa_oleh || 'Menunggu Foreman / Spv.'}
+                                </div>
+                                <div className={doc.disetujui_oleh ? 'text-emerald-700 dark:text-emerald-300 font-medium' : 'text-slate-500 dark:text-slate-400'}>
+                                  <span className="font-semibold">3. Disetujui:</span> {doc.disetujui_oleh || 'Menunggu Spv. / Dept. Mgr'}
+                                </div>
+                                <div className={doc.mengetahui_oleh ? 'text-blue-700 dark:text-blue-300 font-bold' : 'text-slate-500 dark:text-slate-400'}>
+                                  <span className="font-semibold">4. Disahkan (TTE):</span> {doc.mengetahui_oleh || 'Menunggu Dept. Mgr / KTT-PM / CEO'}
+                                </div>
+                              </td>
+                              <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                                {isDocVoid ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[10px] font-bold text-rose-800 dark:bg-rose-950 dark:text-rose-300">
+                                    <Ban className="h-3 w-3" /> BATAL
+                                  </span>
+                                ) : isDocReplaced ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                                    <FileEdit className="h-3 w-3" /> DIGANTI
+                                  </span>
+                                ) : wfStatus === 'MENGETAHUI' ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-[10px] font-bold text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                                    <QrCode className="h-3 w-3" /> SAH (TTE/QR)
+                                  </span>
+                                ) : wfStatus === 'DISETUJUI' ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                    <FileCheck2 className="h-3 w-3" /> DISETUJUI
+                                  </span>
+                                ) : wfStatus === 'DIPERIKSA' ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-[10px] font-bold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
+                                    <ShieldCheck className="h-3 w-3" /> DIPERIKSA
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                    <Clock className="h-3 w-3" /> DITERBITKAN
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                                {!isDocVoid && !isDocReplaced && (
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    {wfStatus === 'DITERBITKAN' && (
+                                      <button
+                                        onClick={() => handleAdvanceStockDocument(docDbId, wfStatus, 'DIPERIKSA')}
+                                        disabled={!rolePermissions.canCheck || submitting}
+                                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-35 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 cursor-pointer"
+                                        title={rolePermissions.canCheck ? 'Periksa Dokumen (Tahap 2)' : 'Wewenang Foreman / Spv.'}
+                                      >
+                                        Periksa Dokumen
+                                      </button>
+                                    )}
+                                    {wfStatus === 'DIPERIKSA' && (
+                                      <button
+                                        onClick={() => handleAdvanceStockDocument(docDbId, wfStatus, 'DISETUJUI')}
+                                        disabled={!rolePermissions.canApprove || submitting}
+                                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-35 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 cursor-pointer"
+                                        title={rolePermissions.canApprove ? 'Setujui Dokumen (Tahap 3)' : 'Wewenang Spv. / Dept. Manager'}
+                                      >
+                                        Setujui Dokumen
+                                      </button>
+                                    )}
+                                    {wfStatus === 'DISETUJUI' && (
+                                      <button
+                                        onClick={() => handleAdvanceStockDocument(docDbId, wfStatus, 'MENGETAHUI')}
+                                        disabled={!rolePermissions.canAcknowledge || submitting}
+                                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg border border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-35 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 cursor-pointer"
+                                        title={rolePermissions.canAcknowledge ? 'Sahkan dengan TTE & QR Code (Tahap 4)' : 'Wewenang Dept. Manager / KTT-PM / CEO'}
+                                      >
+                                        Sahkan (TTE/QR)
+                                      </button>
+                                    )}
+                                    {wfStatus === 'MENGETAHUI' && (
+                                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                        <CheckCircle2 className="h-3.5 w-3.5" /> Sah & Terverifikasi
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadStockDocPDF(doc.id)}
+                                    className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold transition-colors cursor-pointer"
+                                    title="Unduh Dokumen PDF Resmi ber-QR Code"
+                                  >
+                                    PDF QR
+                                  </button>
+                                  {!isDocVoid && !isDocReplaced && canCorrectDoc && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setBatalDocTargetId(docDbId);
+                                          setBatalDocReason('');
+                                        }}
+                                        className="px-2 py-1 rounded-lg border border-rose-200 bg-rose-50 text-[10px] font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300 cursor-pointer"
+                                      >
+                                        Batal
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setGantiDocTargetId(docDbId);
+                                          setGantiDocTitle(`${doc.judul} (Revisi)`);
+                                          setGantiDocPeriode(docPeriode);
+                                          setGantiDocRingkasan('');
+                                          setGantiDocReason('');
+                                        }}
+                                        className="px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-[10px] font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300 cursor-pointer"
+                                      >
+                                        Ganti
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
+        </>
+      )}
+
+      {/* Modal Konfirmasi BATAL Dokumen Resmi */}
+      {batalDocTargetId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <form onSubmit={handleConfirmBatalDoc} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900 space-y-4">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Ban className="h-5 w-5 text-rose-500" /> Batalkan Dokumen Resmi
+            </h2>
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+              Dokumen ini akan ditandai <b>BATAL</b> dan tetap tersimpan di dalam riwayat audit tanpa dihapus.
+            </p>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Alasan Pembatalan Dokumen <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                required
+                rows={3}
+                value={batalDocReason}
+                onChange={(e) => setBatalDocReason(e.target.value)}
+                placeholder="Contoh: Terdapat koreksi baris transaksi yang baru diselesaikan..."
+                className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-white"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setBatalDocTargetId(null)}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-medium dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Tutup
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || batalDocReason.trim().length < 5}
+                className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-40"
+              >
+                {submitting ? 'Memproses...' : 'Ya, Batalkan Dokumen'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
-    </>
-  )}
+
+      {/* Modal Form GANTI Dokumen Resmi */}
+      {gantiDocTargetId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <form onSubmit={handleConfirmGantiDoc} className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900 space-y-4">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <FileEdit className="h-5 w-5 text-amber-500" /> Ganti / Terbitkan Revisi Dokumen Resmi
+            </h2>
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+              Dokumen lama akan ditandai <b>DIGANTI</b> dan dokumen revisi baru akan diterbitkan mulai dari tahap awal persetujuan.
+            </p>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Alasan Penggantian Dokumen <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={gantiDocReason}
+                onChange={(e) => setGantiDocReason(e.target.value)}
+                placeholder="Contoh: Pembaruan rekapitulasi setelah penyesuaian kuantitas..."
+                className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Judul Dokumen Revisi Baru <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={gantiDocTitle}
+                onChange={(e) => setGantiDocTitle(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-white"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setGantiDocTargetId(null)}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-medium dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Tutup
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || gantiDocReason.trim().length < 5}
+                className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
+              >
+                {submitting ? 'Memproses...' : 'Terbitkan Dokumen Pengganti'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Modal Dialog Form Tambah / Terbitkan Mutasi Baru */}
       {isModalOpen && (

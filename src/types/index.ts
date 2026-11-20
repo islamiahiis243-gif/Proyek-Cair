@@ -157,6 +157,16 @@ export interface DokumenLaporan {
   approval_level?: string | null;
   workspace_id?: string;
   project_id?: string;
+  db_id?: string;
+  status_dokumen?: StatusDokumenWorkflow;
+  diperiksa_oleh?: string;
+  disetujui_oleh?: string;
+  mengetahui_oleh?: string;
+  tte_qr_code?: string;
+  is_batal?: boolean;
+  is_ganti?: boolean;
+  referensi_ganti_id?: string;
+  alasan_batal_ganti?: string;
 }
 
 export interface UserProfile {
