@@ -1225,8 +1225,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
             </div>
           </div>
 
-          {/* Navigasi 4 POV Terpisah: Satukan Masuk vs Bedakan Keluar vs Jurnal & Kustom vs Dokumen Resmi */}
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 dark:border-slate-800">
+          {/* Navigasi 4 POV Terpisah (Scroll Horizontal Mulus di Mobile) */}
+          <div className="flex overflow-x-auto no-scrollbar touch-scroll whitespace-nowrap items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-1">
             <button
               onClick={() => startTransition(() => setActiveTab('WAREHOUSE_SUMMARY'))}
               className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${

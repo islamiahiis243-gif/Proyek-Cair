@@ -154,13 +154,13 @@ export const NotificationBanner: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 sm:self-center">
+            <div className="flex items-center gap-2 w-full sm:w-auto sm:self-center pt-2 sm:pt-0">
               {n.token_code && (
                 <button
                   type="button"
                   disabled={busy}
                   onClick={() => handleClaim(n.token_code, n.id)}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg hover:bg-emerald-500 active:scale-95 disabled:opacity-50 transition-all"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg hover:bg-emerald-500 active:scale-95 disabled:opacity-50 transition-all cursor-pointer"
                 >
                   <CheckCircle2 className="h-4 w-4" />
                   <span>{busy ? 'Memproses Klaim...' : 'Klaim Sekarang'}</span>

@@ -189,10 +189,10 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
 
-      {/* Navigasi Utama */}
+      {/* Navigasi Utama (Scroll Horizontal Mulus di Mobile & Vertikal di Desktop) */}
       <nav
         aria-label="Navigasi Bilah Sisi"
-        className={`flex gap-1 overflow-x-auto p-2 md:flex-1 md:flex-col md:overflow-y-auto md:overflow-x-hidden ${
+        className={`flex gap-1.5 overflow-x-auto p-2 no-scrollbar touch-scroll md:flex-1 md:flex-col md:overflow-y-auto md:overflow-x-hidden ${
           isCollapsed ? 'md:p-2 space-y-1' : 'md:p-3 space-y-0.5'
         }`}
       >
@@ -209,7 +209,7 @@ export const Sidebar: React.FC = () => {
                   setCurrentView(item.id);
                 });
               }}
-              className={`relative flex w-auto shrink-0 items-center gap-3 whitespace-nowrap rounded-xl transition-all ${
+              className={`relative flex w-auto shrink-0 items-center gap-2.5 whitespace-nowrap rounded-xl transition-all cursor-pointer min-h-[40px] md:min-h-0 ${
                 isCollapsed
                   ? 'md:w-full md:justify-center p-2.5 text-xs'
                   : 'px-3.5 py-2.5 text-xs font-semibold md:w-full justify-between'

@@ -15,3 +15,29 @@
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+/* Optimasi Mobile & Tablet: Scrollbar Halus & Responsif */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.touch-scroll {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Proteksi font input di perangkat mobile agar iOS Safari / Android tidak memaksa auto-zoom */
+@media (max-width: 640px) {
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

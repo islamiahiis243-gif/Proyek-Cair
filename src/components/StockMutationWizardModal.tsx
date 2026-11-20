@@ -1198,23 +1198,23 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
 
           {/* NAVIGASI BAWAH KONSISTEN (Disembunyikan pada kartu DONE_NEXT) */}
           {!isDoneNext && (
-            <div className="flex items-center justify-between gap-3 pt-5 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-4 sm:pt-5 border-t border-slate-200 dark:border-slate-800">
               <button
                 type="button"
                 onClick={onClose}
                 disabled={submitting}
-                className="px-5 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                className="px-4 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
               >
                 Batal
               </button>
 
-              <div className="flex items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
                 {safeStepIndex > 0 && (
                   <button
                     type="button"
                     onClick={handleBack}
                     disabled={submitting}
-                    className="inline-flex items-center gap-1.5 px-5 py-3 text-sm font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3.5 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
                   >
                     <ArrowLeft className="w-4 h-4" />
                     <span>Kembali</span>
@@ -1225,15 +1225,15 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                   <button
                     type="submit"
                     disabled={submitting}
-                    className={`inline-flex items-center gap-2 px-6 py-3 text-sm font-extrabold text-white rounded-xl shadow-md transition-colors disabled:opacity-40 cursor-pointer ${theme.primaryBtn}`}
+                    className={`inline-flex items-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm font-extrabold text-white rounded-xl shadow-md transition-colors disabled:opacity-40 cursor-pointer ${theme.primaryBtn}`}
                   >
                     <CheckCircle2 className="w-4 h-4" />
                     <span>
                       {submitting
                         ? 'Menyimpan...'
                         : answers.mutationType === 'MASUK'
-                        ? 'Simpan Barang Masuk'
-                        : 'Simpan Barang Keluar'}
+                        ? 'Simpan Masuk'
+                        : 'Simpan Keluar'}
                     </span>
                   </button>
                 ) : (
@@ -1241,7 +1241,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                     <button
                       type="button"
                       onClick={handleNext}
-                      className={`inline-flex items-center gap-2 px-6 py-3 text-sm font-extrabold text-white rounded-xl shadow-md transition-colors cursor-pointer ${theme.primaryBtn}`}
+                      className={`inline-flex items-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm font-extrabold text-white rounded-xl shadow-md transition-colors cursor-pointer ${theme.primaryBtn}`}
                     >
                       <span>Selanjutnya</span>
                       <ArrowRight className="w-4 h-4" />

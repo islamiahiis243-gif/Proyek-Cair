@@ -199,7 +199,7 @@ export const Header: React.FC = () => {
 
           {/* Info Identitas: Nama Perusahaan (Biru) & Nama Proyek (Merah) */}
           <div className="min-w-0 pr-1 text-left">
-            <div className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase leading-none truncate max-w-[140px] sm:max-w-[200px]">
+            <div className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase leading-none truncate max-w-[85px] sm:max-w-[200px]">
               {appMode === 'IMPERSONATE'
                 ? (activeCompany.name || 'Perusahaan')
                 : appMode === 'CSA'
@@ -208,7 +208,7 @@ export const Header: React.FC = () => {
                 ? 'GLOBAL PLATFORM'
                 : 'PENGGUNA PRIBADI'}
             </div>
-            <div className="text-xs font-bold text-white tracking-wide leading-tight truncate max-w-[140px] sm:max-w-[200px] mt-0.5">
+            <div className="text-xs font-bold text-white tracking-wide leading-tight truncate max-w-[85px] sm:max-w-[200px] mt-0.5">
               {appMode === 'IMPERSONATE'
                 ? (activeProject?.name || 'Proyek Aktif')
                 : appMode === 'CSA'
@@ -221,7 +221,7 @@ export const Header: React.FC = () => {
 
           {/* Badge Jabatan Tombol Sesuai Gambar */}
           <div
-            className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase border transition-colors ${
+            className={`flex items-center gap-1 rounded-full px-1.5 sm:px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase border transition-colors shrink-0 ${
               appMode === 'IMPERSONATE'
                 ? activeRole === 'Viewer/Pengamat'
                   ? 'border-cyan-500/70 text-cyan-300 bg-cyan-500/10'
@@ -233,7 +233,7 @@ export const Header: React.FC = () => {
                 : 'border-slate-600 text-slate-300 bg-slate-800'
             }`}
           >
-            <span>
+            <span className="truncate max-w-[70px] sm:max-w-none">
               {appMode === 'IMPERSONATE'
                 ? (activeRole === 'Viewer/Pengamat' ? 'VIEWER' : activeRole)
                 : appMode === 'CSA'
@@ -242,13 +242,13 @@ export const Header: React.FC = () => {
                 ? 'PSA'
                 : 'PERSONAL'}
             </span>
-            <ChevronDown className="w-3 h-3 text-slate-400" />
+            <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
           </div>
         </button>
 
-        {/* Panel Dropdown Pemilih Penugasan Jabatan */}
+        {/* Panel Dropdown Pemilih Penugasan Jabatan (Tengah Layar di Ponsel, Rapi di Desktop) */}
         {dropdownOpen && (
-          <div className="absolute left-0 mt-2 w-80 sm:w-96 rounded-2xl border border-slate-800 bg-slate-900/95 p-3.5 shadow-2xl backdrop-blur-xl z-50 text-slate-200 divide-y divide-slate-800/80 animate-in fade-in slide-in-from-top-2 duration-150">
+          <div className="absolute left-1/2 -translate-x-1/2 sm:left-0 sm:translate-x-0 mt-2 w-[calc(100vw-24px)] max-w-sm sm:w-96 rounded-2xl border border-slate-800 bg-slate-900/95 p-3.5 shadow-2xl backdrop-blur-xl z-50 text-slate-200 divide-y divide-slate-800/80 animate-in fade-in slide-in-from-top-2 duration-150 max-h-[82vh] overflow-y-auto">
             {/* 1. Akun Personal */}
             <div className="pb-3">
               <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2 px-2 flex items-center gap-1.5">

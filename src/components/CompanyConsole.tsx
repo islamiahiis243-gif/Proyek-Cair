@@ -416,8 +416,8 @@ export const CompanyConsole: React.FC = () => {
         </div>
       </div>
 
-      {/* Tab Navigasi Bersih & Ramah Pengguna */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 gap-1 sm:gap-2">
+      {/* Tab Navigasi Bersih & Ramah Pengguna (Scroll Horizontal Mulus di Mobile) */}
+      <div className="flex overflow-x-auto no-scrollbar touch-scroll whitespace-nowrap border-b border-slate-200 dark:border-slate-800 gap-1 sm:gap-2 pb-1">
         <button
           onClick={() => setCurrentView('dashboard')}
           className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-semibold rounded-t-lg transition-colors border-b-2 -mb-[2px] ${

@@ -40,7 +40,7 @@ const MainApp: React.FC = () => {
       <Header />
       <div className="flex-1 flex flex-col md:flex-row">
         <Sidebar />
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto overflow-y-auto">
+        <main className="flex-1 p-3 sm:p-5 lg:p-8 max-w-7xl w-full mx-auto overflow-y-auto touch-scroll">
           {/* Kotak Notifikasi / Undangan Resmi In-House */}
           <NotificationBanner />
 

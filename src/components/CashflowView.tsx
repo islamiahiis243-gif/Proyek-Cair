@@ -476,8 +476,8 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
             </div>
           </div>
 
-          {/* Navigasi Tab Kas: Jurnal Transaksi Harian vs Dokumen Resmi & Persetujuan */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800">
+          {/* Navigasi Tab Kas (Scroll Horizontal Mulus di Mobile) */}
+          <div className="flex overflow-x-auto no-scrollbar touch-scroll whitespace-nowrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1">
             <button
               type="button"
               onClick={() => setActiveTab('CASH_JOURNAL')}
