@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { AvatarCropperModal } from './AvatarCropperModal';
 import {
   User,
   ShieldCheck,
@@ -16,7 +17,8 @@ import {
   Database,
   ArrowRight,
   Save,
-  Check
+  Check,
+  Upload
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -47,6 +49,7 @@ export const SettingsView: React.FC = () => {
   const [fullName, setFullName] = useState(user.name || '');
   const [avatarUrl, setAvatarUrl] = useState(user.avatar_url || '');
   const [showAvatarPresets, setShowAvatarPresets] = useState(false);
+  const [isCropperOpen, setIsCropperOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -76,6 +79,21 @@ export const SettingsView: React.FC = () => {
       });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveCroppedAvatar = async (croppedDataUrl: string) => {
+    setAvatarUrl(croppedDataUrl);
+    setIsSaving(true);
+    try {
+      await updateUserProfile({
+        name: fullName.trim() || user.name,
+        avatar_url: croppedDataUrl
+      });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3500);
     } finally {
       setIsSaving(false);
     }
@@ -200,39 +218,49 @@ export const SettingsView: React.FC = () => {
                 <img
                   src={avatarUrl}
                   alt={fullName || user.name}
-                  className="w-16 h-16 rounded-2xl object-cover border-2 border-slate-200 dark:border-slate-700 shadow-xs"
+                  className="w-16 h-16 rounded-2xl object-cover border-2 border-slate-200 dark:border-slate-700 shadow-xs cursor-pointer hover:opacity-90 transition-opacity"
+                  onClick={() => setIsCropperOpen(true)}
                 />
               ) : (
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center font-bold text-xl shadow-xs">
+                <div
+                  onClick={() => setIsCropperOpen(true)}
+                  className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center font-bold text-xl shadow-xs cursor-pointer hover:opacity-90 transition-opacity"
+                >
                   {(fullName || user.name || 'P').slice(0, 2).toUpperCase()}
                 </div>
               )}
               <button
                 type="button"
-                onClick={() => setShowAvatarPresets(!showAvatarPresets)}
-                title="Ganti Foto Profil"
+                onClick={() => setIsCropperOpen(true)}
+                title="Ambil / Unggah Foto (Potong 1:1)"
                 className="absolute -bottom-1 -right-1 p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm cursor-pointer transition-colors"
               >
                 <Camera className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            <div className="flex-1 space-y-1">
-              <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Foto / Avatar Profil
+            <div className="flex-1 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Foto / Avatar Profil
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Format persegi (1:1)
+                </span>
               </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="url"
-                  value={avatarUrl}
-                  onChange={(e) => setAvatarUrl(e.target.value)}
-                  placeholder="https://contoh-url-foto.com/avatar.jpg"
-                  className="w-full text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 px-3 py-2 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCropperOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Ambil / Unggah Foto (Potong 1:1)</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowAvatarPresets(!showAvatarPresets)}
-                  className="shrink-0 px-3 py-2 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors"
+                  className="px-3 py-2 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
                 >
                   Pilih Preset
                 </button>
@@ -544,6 +572,13 @@ export const SettingsView: React.FC = () => {
           <span>Keluar dari Akun</span>
         </button>
       </section>
+      {/* Modal Potong & Manipulasi Foto Profil (Crop 1:1 ala FB) */}
+      <AvatarCropperModal
+        isOpen={isCropperOpen}
+        onClose={() => setIsCropperOpen(false)}
+        onSave={handleSaveCroppedAvatar}
+        currentAvatarUrl={avatarUrl}
+      />
     </div>
   );
 };
