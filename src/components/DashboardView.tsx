@@ -94,7 +94,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Data Supabase
             </span>
           </div>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
             Monitoring arus barang keluar-masuk dan mutasi kas proyek pembangunan Trainer & UDU Office.
           </p>
         </div>
@@ -168,8 +168,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Saldo Kas */}
         <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-medium uppercase tracking-wider">Saldo Kas Proyek</span>
+          <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
+            <span className="text-xs font-semibold uppercase tracking-wider">Saldo Kas Proyek</span>
             <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
               <WalletCards className="w-4 h-4" />
             </div>
@@ -177,7 +177,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="mt-2 text-2xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
             {cashAccess?formatRupiah(currentCashBalance):'Akses terbatas'}
           </div>
-          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-2">
+          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300 font-medium border-t border-slate-100 dark:border-slate-800 pt-2">
             <span>Masuk: {cashAccess?formatRupiah(totalCashIn):'—'}</span>
             <span>Keluar: {cashAccess?formatRupiah(totalCashOut):'—'}</span>
           </div>
@@ -189,7 +189,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:border-blue-400 dark:hover:border-blue-600 cursor-pointer group"
           title="Klik untuk membuka Modul Mutasi Barang & Pemantauan BOQ"
         >
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+          <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
             <span className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1">
               <span>Nilai Kontrak Pelaksanaan</span>
               <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
@@ -201,12 +201,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="mt-2 text-2xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
             {formatRupiah(720000000)}
           </div>
-          <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-            Material: <span className="font-semibold text-slate-700 dark:text-slate-300">Rp 448,15 Jt</span> · Upah: <span className="font-semibold text-slate-700 dark:text-slate-300">Rp 271,85 Jt</span>
+          <div className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+            Material: <span className="font-semibold text-slate-800 dark:text-slate-200">Rp 448,15 Jt</span> · Upah: <span className="font-semibold text-slate-800 dark:text-slate-200">Rp 271,85 Jt</span>
           </div>
           <div className="mt-2 flex items-center justify-between text-[10px] text-purple-600 dark:text-purple-400 border-t border-slate-100 dark:border-slate-800 pt-2 font-medium">
             <span>+ Aset Klien (IMK): Rp 177,57 Jt</span>
-            <span className="text-slate-500 dark:text-slate-400 font-normal">Bruto: Rp 895,97 Jt</span>
+            <span className="text-slate-600 dark:text-slate-300 font-normal">Bruto: Rp 895,97 Jt</span>
           </div>
         </div>
 
@@ -216,8 +216,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:border-emerald-400 dark:hover:border-emerald-600 cursor-pointer group"
           title="Klik untuk melihat rincian pemenuhan 274 pos item BOQ"
         >
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1">
+          <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1">
               <span>Pos Pemenuhan BOQ</span>
               <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
             </span>
@@ -226,15 +226,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums inline-block min-w-[45px]">{items.length}</span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">Pos Pekerjaan & Material</span>
+            <span className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums inline-block min-w-[2.5rem]">{items.length}</span>
+            <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">Pos Pekerjaan & Material</span>
           </div>
-          <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
-            <span className="font-semibold text-blue-600 dark:text-blue-400 inline-block min-w-[105px]">{contractorItemCount} Menara Megah</span>
+          <div className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium flex items-center gap-1">
+            <span className="font-semibold text-blue-600 dark:text-blue-400 inline-block min-w-[7rem]">{contractorItemCount} Menara Megah</span>
             <span>·</span>
             <span className="font-semibold text-purple-600 dark:text-purple-400">{imkItemCount} Free-Issue Klien</span>
           </div>
-          <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-2">
+          <div className="mt-2 flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-300 border-t border-slate-100 dark:border-slate-800 pt-2">
             <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{fulfilledOrArrivedCount} Item Masuk</span>
             <span className="text-amber-600 dark:text-amber-400 font-semibold">{pendingDeliveryCount} Belum Tiba</span>
           </div>
@@ -242,8 +242,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Card 4: Volume Transaksi */}
         <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-medium uppercase tracking-wider">Aktivitas Mutasi</span>
+          <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
+            <span className="text-xs font-semibold uppercase tracking-wider">Aktivitas Mutasi</span>
             <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center">
               <TrendingUp className="w-4 h-4" />
             </div>
@@ -251,7 +251,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
             {stockMutations.length + cashMutations.length}
           </div>
-          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-2">
+          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300 font-medium border-t border-slate-100 dark:border-slate-800 pt-2">
             <span>Stok: {stockMutations.length} trx</span>
             <span>Kas: {cashMutations.length} trx</span>
           </div>
@@ -278,7 +278,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="divide-y divide-slate-100 dark:divide-slate-800 flex-1">
             {stockMutations.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-500 dark:text-slate-400 font-medium">
+              <div className="p-8 text-center text-xs text-slate-600 dark:text-slate-300 font-medium">
                 Belum ada transaksi mutasi barang.
               </div>
             ) : (
@@ -298,10 +298,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
                         {mut.nama_barang}
                       </div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                      <div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium truncate mt-0.5">
                         {mut.tujuan_keperluan}
                       </div>
-                      <div className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5 flex items-center gap-2">
+                      <div className="text-[10px] text-slate-600 dark:text-slate-300 mt-0.5 flex items-center gap-2">
                         <span>PIC: {mut.pic_penerima_penyerah}</span>
                         <span>·</span>
                         <span>{formatDateTime(mut.tanggal)}</span>
@@ -317,7 +317,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     >
                       {mut.jenis === 'MASUK' ? '+' : '-'} {mut.jumlah} {mut.satuan}
                     </div>
-                    <div className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5 font-mono">
+                    <div className="text-[10px] text-slate-600 dark:text-slate-300 mt-0.5 font-mono">
                       Sisa: {mut.stok_sesudah} {mut.satuan}
                     </div>
                   </div>
@@ -345,7 +345,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="divide-y divide-slate-100 dark:divide-slate-800 flex-1">
             {cashMutations.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-500 dark:text-slate-400 font-medium">
+              <div className="p-8 text-center text-xs text-slate-600 dark:text-slate-300 font-medium">
                 {cashAccess?'Belum ada transaksi kas.':'Data kas tidak tersedia untuk role akun ini.'}
               </div>
             ) : (
@@ -365,12 +365,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
                         {c.untuk_apa}
                       </div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2">
+                      <div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium mt-0.5 flex items-center gap-2">
                         <span>{c.kategori_keperluan}</span>
                         <span>·</span>
                         <span>PIC: {c.pic}</span>
                       </div>
-                      <div className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5">
+                      <div className="text-[10px] text-slate-600 dark:text-slate-300 mt-0.5">
                         {formatDateTime(c.tanggal)}
                       </div>
                     </div>

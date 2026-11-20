@@ -114,7 +114,7 @@ export const ReportsView: React.FC = () => {
     setCurrentView('verification');
   };
 
-  if(!dataReady)return <div role="status" aria-live="polite" className="rounded-xl border bg-white p-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Memuat data laporan dan arsip Project aktif…</div>;
+  if(!dataReady)return <div role="status" aria-live="polite" className="rounded-xl border bg-white p-8 text-center text-sm text-slate-600 dark:text-slate-300 font-medium dark:border-slate-800 dark:bg-slate-900">Memuat data laporan dan arsip Project aktif…</div>;
   if(!activeProject||activeProject.workspace_id!==activeWorkspaceId)return <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">Pilih Project aktif untuk membuka Studio Laporan.</div>;
   if(dataError)return <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800"><p>Data laporan gagal dimuat: {dataError}</p><button onClick={()=>void refreshData()} className="mt-3 rounded-lg bg-rose-700 px-3 py-2 text-xs font-semibold text-white">Coba lagi</button></div>;
   return (
@@ -125,7 +125,7 @@ export const ReportsView: React.FC = () => {
           <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
             Studio Laporan & Ekspor PDF
           </h1>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
             Ekspor PDF internal berdasarkan transaksi yang tercatat. Ekspor ini bukan dokumen resmi, tidak memulai approval, dan tidak menerbitkan QR privat.
           </p>
         </div>
@@ -158,7 +158,7 @@ export const ReportsView: React.FC = () => {
               <Printer className="w-4 h-4 text-blue-600 dark:text-blue-400" />
               <span>Konfigurasi Ekspor Laporan Internal</span>
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium mt-0.5">
               Tentukan jenis laporan, rentang tanggal transaksi, dan identitas penyusun. PDF hanya untuk analisis/arsip kerja.
             </p>
           </div>
@@ -184,7 +184,7 @@ export const ReportsView: React.FC = () => {
                   className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
                     reportType === 'stock'
                       ? 'bg-blue-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
                   }`}
                 >
                   <Boxes className="w-5 h-5" />
@@ -193,7 +193,7 @@ export const ReportsView: React.FC = () => {
                   <div className="text-xs font-bold text-slate-900 dark:text-white">
                     Laporan Mutasi Keluar / Masuk Barang
                   </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                  <div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium mt-1">
                     Rekapitulasi keluar-masuk stok material fisik proyek, tujuan pemakaian, volume, dan nama PIC lapangan.
                   </div>
                 </div>
@@ -214,7 +214,7 @@ export const ReportsView: React.FC = () => {
                   className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
                     reportType === 'cash'
                       ? 'bg-emerald-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
                   }`}
                 >
                   <WalletCards className="w-5 h-5" />
@@ -223,7 +223,7 @@ export const ReportsView: React.FC = () => {
                   <div className="text-xs font-bold text-slate-900 dark:text-white">
                     Laporan Mutasi Kas Keuangan Proyek
                   </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                  <div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium mt-1">
                     Buku kas mutasi: Kas masuk (IN), Kas keluar (OUT), peruntukan belanja ("Untuk Apa"), dan saldo kas berjalan.
                   </div>
                 </div>
@@ -265,7 +265,7 @@ export const ReportsView: React.FC = () => {
           </div>
 
           {/* Features info bar */}
-          <div className="bg-slate-50 dark:bg-slate-800/70 p-3.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400 flex items-start gap-2.5">
+          <div className="bg-slate-50 dark:bg-slate-800/70 p-3.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 flex items-start gap-2.5">
             <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
             <div>
               <span className="font-semibold text-slate-900 dark:text-white">Pemisahan Ekspor Internal dan Dokumen Resmi:</span>{' '}
@@ -293,14 +293,14 @@ export const ReportsView: React.FC = () => {
         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <div>
             <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <FileText className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+              <FileText className="w-4 h-4 text-slate-700 dark:text-slate-300" />
               <span>Arsip Dokumen Resmi Mutasi Stok / Kas</span>
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium mt-0.5">
               Dokumen resmi yang dibuat melalui Operations Hub. Dokumen dengan token privat dibuka pada halaman verifikasi resmi; arsip lama hanya mendukung pemeriksaan checksum snapshot.
             </p>
           </div>
-          <span className="text-xs text-slate-400 dark:text-slate-500 font-mono">
+          <span className="text-xs text-slate-600 dark:text-slate-300 font-mono font-medium">
             {canReadDocuments?documents.length:'—'} Dokumen
           </span>
         </div>
@@ -309,7 +309,7 @@ export const ReportsView: React.FC = () => {
           {!canReadDocuments ? (
             <div role="alert" className="p-6 text-center text-xs text-amber-700">Permission document.read pada Project aktif diperlukan untuk melihat arsip dokumen resmi.</div>
           ) : documents.length === 0 ? (
-            <div role="status" className="p-8 text-center text-xs text-slate-400 dark:text-slate-500">
+            <div role="status" className="p-8 text-center text-xs text-slate-600 dark:text-slate-300 font-medium">
               Belum ada dokumen resmi yang diterbitkan melalui Operations Hub.
             </div>
           ) : (
@@ -330,7 +330,7 @@ export const ReportsView: React.FC = () => {
                       </span>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded border border-amber-300 bg-amber-50 text-amber-800">{doc.status || 'DRAFT'}</span>
                     </div>
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex flex-wrap items-center gap-2">
+                    <div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium mt-1 flex flex-wrap items-center gap-2">
                       <span>Periode: {formatDateOnly(doc.periode_awal)} - {formatDateOnly(doc.periode_akhir)}</span>
                       <span>·</span>
                       <span>Penyusun: {doc.penandatangan_nama} (role: {doc.penandatangan_jabatan})</span>

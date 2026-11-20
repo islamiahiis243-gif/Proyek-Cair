@@ -521,8 +521,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
-            <Clock className="w-3 h-3 text-slate-400" />
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700">
+            <Clock className="w-3 h-3 text-slate-500 dark:text-slate-300" />
             <span>Belum Ada Masuk</span>
           </span>
         );
@@ -817,7 +817,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
             <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <span>{noticeMessage}</span>
           </div>
-          <button onClick={() => setNoticeMessage(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">×</button>
+          <button onClick={() => setNoticeMessage(null)} aria-label="Tutup pemberitahuan" className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 text-base font-bold">×</button>
         </div>
       )}
 
@@ -827,7 +827,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
             <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
             <span>{errorMessage}</span>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">×</button>
+          <button onClick={() => setErrorMessage(null)} aria-label="Tutup pesan galat" className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 text-base font-bold">×</button>
         </div>
       )}
 
@@ -849,7 +849,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
                 Modul Mutasi Barang & Pemantauan BOQ
               </h1>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
                 Pencatatan masuk/keluar material untuk pemantauan realisasi kontrak BOQ. Jejak audit abadi tanpa fitur hapus.
               </p>
             </div>
@@ -888,7 +888,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
                 activeTab === 'BOQ_MONITOR'
                   ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20 rounded-t-xl'
-                  : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                  : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
               }`}
             >
               <BarChart3 className="w-4 h-4" />
@@ -906,7 +906,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
                 activeTab === 'MUTATION_HISTORY'
                   ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20 rounded-t-xl'
-                  : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                  : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
               }`}
             >
               <History className="w-4 h-4" />
@@ -950,13 +950,13 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-3.5">
                   <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">1. Material Kontrak</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-300 dark:text-slate-300 tracking-wider">1. Material Kontrak</span>
                     <div className="mt-1 text-base sm:text-lg font-black text-blue-400 font-mono">Rp 448.150.623</div>
                     <span className="text-[10px] text-slate-300">Tanggungan CV Menara Megah</span>
                   </div>
 
                   <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">2. Upah & Jasa (Manpower)</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-300 dark:text-slate-300 tracking-wider">2. Upah & Jasa (Manpower)</span>
                     <div className="mt-1 text-base sm:text-lg font-black text-emerald-400 font-mono">Rp 271.849.378</div>
                     <span className="text-[10px] text-slate-300">Jasa Bongkar & Bangun</span>
                   </div>
@@ -979,7 +979,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Item BOQ</span>
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Total Item BOQ</span>
                     <Boxes className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
@@ -998,33 +998,33 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Realisasi Kedatangan</span>
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Realisasi Kedatangan</span>
                     <ArrowDownLeft className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   </div>
                   <div className="mt-2 text-xl font-bold text-emerald-600 dark:text-emerald-400">
                     {boqMetrics.fulfilledCount + boqMetrics.inProgressCount} Item Masuk
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
                     {boqMetrics.fulfilledCount} Terpenuhi · {boqMetrics.inProgressCount} Dalam Proses
                   </p>
                 </div>
 
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Belum Ada Pengiriman</span>
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Belum Ada Pengiriman</span>
                     <Clock className="w-4 h-4 text-amber-500" />
                   </div>
                   <div className="mt-2 text-xl font-bold text-amber-600 dark:text-amber-400">
                     {boqMetrics.notStartedCount} Item
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
                     Material kontrak yang belum tiba
                   </p>
                 </div>
 
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Tanggung Jawab Penyedia</span>
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Tanggung Jawab Penyedia</span>
                     <Building2 className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                   </div>
                   <div className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
@@ -1039,9 +1039,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               {/* Filter & Kontrol Pencarian BOQ */}
               <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 transition-colors">
                 <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Search className="w-4 h-4 text-slate-500 dark:text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
+                    aria-label="Cari kode BOQ, nama material, atau uraian pekerjaan"
                     placeholder="Cari kode BOQ (I/A/1), nama material (Kayu, Pasir, Semen), atau uraian pekerjaan..."
                     value={boqSearchQuery}
                     onChange={(e) => setBoqSearchQuery(e.target.value)}
@@ -1057,7 +1058,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                       className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
                         boqProviderFilter === 'ALL'
                           ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                          : 'text-slate-600 dark:text-slate-400'
+                          : 'text-slate-700 dark:text-slate-200'
                       }`}
                     >
                       Semua Penyedia
@@ -1067,7 +1068,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                       className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
                         boqProviderFilter === 'KONTRAKTOR'
                           ? 'bg-blue-600 text-white shadow-xs'
-                          : 'text-slate-600 dark:text-slate-400'
+                          : 'text-slate-700 dark:text-slate-200'
                       }`}
                     >
                       🏢 Menara Megah
@@ -1077,7 +1078,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                       className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
                         boqProviderFilter === 'IMK'
                           ? 'bg-purple-600 text-white shadow-xs'
-                          : 'text-slate-600 dark:text-slate-400'
+                          : 'text-slate-700 dark:text-slate-200'
                       }`}
                     >
                       👤 PT IMK
@@ -1102,7 +1103,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-700 pl-2">
                     <button
                       onClick={handleExpandAll}
-                      className="px-2 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                      className="px-2 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                       title="Buka semua hierarki pekerjaan"
                     >
                       Buka Semua
@@ -1110,7 +1111,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     <span className="text-slate-300 dark:text-slate-700">|</span>
                     <button
                       onClick={handleCollapseAll}
-                      className="px-2 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                      className="px-2 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                       title="Tutup semua hierarki pekerjaan"
                     >
                       Tutup Semua
@@ -1124,7 +1125,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
-                      <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
+                      <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold uppercase tracking-wider text-[10px]">
                         <th className="py-3 px-3.5 w-24">Kode BOQ</th>
                         <th className="py-3 px-3.5">Uraian Material & Pekerjaan</th>
                         <th className="py-3 px-3 text-center">Penyedia</th>
@@ -1140,7 +1141,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {groupedBoqData.length === 0 ? (
                         <tr>
-                          <td colSpan={10} className="py-12 text-center text-slate-400">
+                          <td colSpan={10} className="py-12 text-center text-slate-600 dark:text-slate-300 font-medium">
                             Tidak ada item BOQ yang cocok dengan filter pencarian.
                           </td>
                         </tr>
@@ -1222,15 +1223,15 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                                   <div className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">
                                                     Beban Kontraktor: Rp 0 (Disediakan Klien PT IMK)
                                                     {item.harga_satuan > 0 && (
-                                                      <span className="text-slate-400 dark:text-slate-500 text-[9px] ml-1">
+                                                      <span className="text-slate-600 dark:text-slate-300 text-[9px] ml-1 font-medium">
                                                         · Est. Aset Klien: {formatRupiah(item.harga_satuan * item.qty_boq)}
                                                       </span>
                                                     )}
                                                   </div>
                                                 ) : (
-                                                  <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                                                  <div className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">
                                                     {formatRupiah(item.harga_satuan)} / {item.satuan}
-                                                    <span className="ml-1 font-medium text-slate-500 dark:text-slate-400">
+                                                    <span className="ml-1 font-semibold text-slate-700 dark:text-slate-200">
                                                       (Total: {formatRupiah(item.harga_satuan * item.qty_boq)})
                                                     </span>
                                                     {item.keterangan ? ` · ${item.keterangan}` : ''}
@@ -1254,7 +1255,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                               {/* Target BOQ */}
                                               <td className="py-2.5 px-3 text-right font-mono font-medium text-slate-800 dark:text-slate-200">
                                                 {item.qty_boq.toLocaleString('id-ID', { maximumFractionDigits: 3 })}{' '}
-                                                <span className="text-[10px] text-slate-400">{item.satuan}</span>
+                                                <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">{item.satuan}</span>
                                               </td>
 
                                               {/* Realisasi Masuk */}
@@ -1262,7 +1263,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                                 <div>
                                                   {item.qty_masuk_total.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
                                                 </div>
-                                                <div className="text-[9px] font-normal text-slate-400 dark:text-slate-500">
+                                                <div className="text-[9px] font-medium text-slate-600 dark:text-slate-300">
                                                   {masukPct}% tercapai
                                                 </div>
                                               </td>
@@ -1283,7 +1284,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                                   className={
                                                     item.stok_saat_ini > 0
                                                       ? 'text-emerald-600 dark:text-emerald-400'
-                                                      : 'text-slate-400 dark:text-slate-500'
+                                                      : 'text-slate-600 dark:text-slate-300 font-medium'
                                                   }
                                                 >
                                                   {item.stok_saat_ini.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
@@ -1316,8 +1317,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                                   </button>
                                                   <button
                                                     onClick={() => handleViewItemHistory(item)}
+                                                    aria-label="Lihat riwayat mutasi material ini"
                                                     title="Lihat riwayat mutasi material ini"
-                                                    className="p-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:white rounded-lg transition-colors cursor-pointer"
+                                                    className="p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg transition-colors cursor-pointer"
                                                   >
                                                     <History className="w-3.5 h-3.5" />
                                                   </button>
@@ -1362,84 +1364,85 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               {/* Filter & Pencarian */}
               <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 transition-colors">
                 <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Search className="w-4 h-4 text-slate-500 dark:text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
-                placeholder="Cari transaksi, material, keperluan, PIC, atau no surat jalan..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500/20"
-              />
-            </div>
+                    aria-label="Cari transaksi mutasi barang"
+                    placeholder="Cari transaksi, material, keperluan, PIC, atau no surat jalan..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
 
-            <div className="flex flex-wrap items-center gap-1.5">
-              {[
-                { id: 'ALL', label: `Semua (${stockMutations.length})` },
-                { id: 'MASUK', label: `Masuk (${stockMutations.filter((m) => m.jenis === 'MASUK').length})` },
-                { id: 'KELUAR', label: `Keluar (${stockMutations.filter((m) => m.jenis === 'KELUAR').length})` },
-                { id: 'PROYEK_BOQ', label: `Proyek BOQ (${stockMutations.filter((m) => m.beban_biaya === 'PROYEK_BOQ' || m.beban_biaya === 'KONTRAKTOR').length})` },
-                { id: 'PERMINTAAN_KLIEN', label: `Minta Klien (${stockMutations.filter((m) => m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN').length})` },
-                { id: 'BONUS_KLIEN', label: `Bonus Klien (${stockMutations.filter((m) => m.beban_biaya === 'BONUS_KLIEN').length})` },
-                { id: 'OPERASIONAL', label: `Operasional (${stockMutations.filter((m) => m.beban_biaya === 'OPERASIONAL').length})` },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setFilterType(tab.id as any)}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-colors ${
-                    filterType === tab.id
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[
+                    { id: 'ALL', label: `Semua (${stockMutations.length})` },
+                    { id: 'MASUK', label: `Masuk (${stockMutations.filter((m) => m.jenis === 'MASUK').length})` },
+                    { id: 'KELUAR', label: `Keluar (${stockMutations.filter((m) => m.jenis === 'KELUAR').length})` },
+                    { id: 'PROYEK_BOQ', label: `Proyek BOQ (${stockMutations.filter((m) => m.beban_biaya === 'PROYEK_BOQ' || m.beban_biaya === 'KONTRAKTOR').length})` },
+                    { id: 'PERMINTAAN_KLIEN', label: `Minta Klien (${stockMutations.filter((m) => m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN').length})` },
+                    { id: 'BONUS_KLIEN', label: `Bonus Klien (${stockMutations.filter((m) => m.beban_biaya === 'BONUS_KLIEN').length})` },
+                    { id: 'OPERASIONAL', label: `Operasional (${stockMutations.filter((m) => m.beban_biaya === 'OPERASIONAL').length})` },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setFilterType(tab.id as any)}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-colors ${
+                        filterType === tab.id
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          {/* Tabel Riwayat Mutasi Barang */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
-                    <th className="py-3 px-3.5 w-10 text-center">No</th>
-                    <th className="py-3 px-3.5">Tanggal</th>
-                    <th className="py-3 px-3.5 text-center">Jenis</th>
-                    <th className="py-3 px-3.5">Material</th>
-                    <th className="py-3 px-3.5 text-right">Jumlah</th>
-                    <th className="py-3 px-3.5">Asal / Keperluan</th>
-                    <th className="py-3 px-3.5 text-center">Status Dokumen</th>
-                    <th className="py-3 px-3.5 text-center">Alur Persetujuan</th>
-                    <th className="py-3 px-3.5 text-center">Koreksi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {filteredMutations.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="py-12 text-center text-slate-400">
-                        Belum ada riwayat transaksi mutasi barang.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredMutations.map((mut, idx) => {
-                      const isVoid = mut.is_batal;
-                      const isReplaced = mut.is_ganti;
-                      const status = mut.status_dokumen || 'DITERBITKAN';
-
-                      return (
-                        <tr
-                          key={mut.id}
-                          className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors ${
-                            isVoid ? 'opacity-50 bg-rose-50/20 line-through' : isReplaced ? 'opacity-70 bg-amber-50/20' : ''
-                          }`}
-                        >
-                          <td className="py-3 px-3.5 text-center text-slate-400 font-mono text-[11px]">
-                            {idx + 1}
+              {/* Tabel Riwayat Mutasi Barang */}
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold uppercase tracking-wider text-[10px]">
+                        <th className="py-3 px-3.5 w-10 text-center">No</th>
+                        <th className="py-3 px-3.5">Tanggal</th>
+                        <th className="py-3 px-3.5 text-center">Jenis</th>
+                        <th className="py-3 px-3.5">Material</th>
+                        <th className="py-3 px-3.5 text-right">Jumlah</th>
+                        <th className="py-3 px-3.5">Asal / Keperluan</th>
+                        <th className="py-3 px-3.5 text-center">Status Dokumen</th>
+                        <th className="py-3 px-3.5 text-center">Alur Persetujuan</th>
+                        <th className="py-3 px-3.5 text-center">Koreksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {filteredMutations.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="py-12 text-center text-slate-600 dark:text-slate-300 font-medium">
+                            Belum ada riwayat transaksi mutasi barang.
                           </td>
-                          <td className="py-3 px-3.5 text-slate-600 dark:text-slate-400 font-mono text-[11px] whitespace-nowrap">
-                            {formatDateTime(mut.tanggal)}
-                          </td>
+                        </tr>
+                      ) : (
+                        filteredMutations.map((mut, idx) => {
+                          const isVoid = mut.is_batal;
+                          const isReplaced = mut.is_ganti;
+                          const status = mut.status_dokumen || 'DITERBITKAN';
+
+                          return (
+                            <tr
+                              key={mut.id}
+                              className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors ${
+                                isVoid ? 'opacity-50 bg-rose-50/20 line-through' : isReplaced ? 'opacity-70 bg-amber-50/20' : ''
+                              }`}
+                            >
+                              <td className="py-3 px-3.5 text-center text-slate-600 dark:text-slate-300 font-mono text-[11px] font-medium">
+                                {idx + 1}
+                              </td>
+                              <td className="py-3 px-3.5 text-slate-700 dark:text-slate-200 font-mono text-[11px] whitespace-nowrap">
+                                {formatDateTime(mut.tanggal)}
+                              </td>
                           <td className="py-3 px-3.5 text-center">
                             <span
                               className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -1461,13 +1464,13 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                 </span>
                               )}
                             </div>
-                            {mut.catatan && <div className="text-[11px] text-slate-400 italic mt-0.5">{mut.catatan}</div>}
+                            {mut.catatan && <div className="text-[11px] text-slate-600 dark:text-slate-300 italic mt-0.5">{mut.catatan}</div>}
                           </td>
                           <td className="py-3 px-3.5 text-right font-mono font-bold tabular-nums whitespace-nowrap">
                             <span className={mut.jenis === 'MASUK' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
                               {mut.jenis === 'MASUK' ? '+' : '-'} {mut.jumlah.toLocaleString('id-ID')}
                             </span>{' '}
-                            <span className="text-[11px] text-slate-400 font-normal">{mut.satuan}</span>
+                            <span className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">{mut.satuan}</span>
                           </td>
                           <td className="py-3 px-3.5 text-slate-700 dark:text-slate-300 max-w-xs">
                             <div className="flex items-center gap-1.5 mb-1 flex-wrap">
@@ -1502,7 +1505,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                               )}
                             </div>
                             <div className="truncate font-medium">{mut.tujuan_keperluan || '-'}</div>
-                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">PIC: {mut.pic_penerima_penyerah}</div>
+                            <div className="text-[10px] text-slate-600 dark:text-slate-300 font-mono mt-0.5">PIC: {mut.pic_penerima_penyerah}</div>
                           </td>
 
                           {/* Status Dokumen */}
@@ -1606,7 +1609,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                 </button>
                               </div>
                             ) : (
-                              <span className="text-[10px] text-slate-400">—</span>
+                              <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">—</span>
                             )}
                           </td>
                         </tr>
@@ -1640,7 +1643,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   </>
                 )}
               </div>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setIsModalOpen(false)} aria-label="Tutup jendela mutasi" className="text-slate-300 hover:text-white">
                 <XCircle className="w-5 h-5" />
               </button>
             </div>
@@ -1705,7 +1708,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                         <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
                           {currentPhysicalMaterial.nama_barang}
                         </span>
-                        <span className="text-[10px] text-slate-400 font-mono">
+                        <span className="text-[10px] text-slate-600 dark:text-slate-300 font-mono">
                           (Stok: <b className={currentStock > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-600 dark:text-slate-300"}>{currentStock} {currentPhysicalMaterial.satuan}</b>)
                         </span>
                       </div>
@@ -1723,7 +1726,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   ) : (
                     <div className="relative" ref={itemSearchRef}>
                       <div className="relative">
-                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <Search className="w-4 h-4 text-slate-500 dark:text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                         <input
                           type="text"
                           autoFocus
@@ -1740,7 +1743,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                           <button
                             type="button"
                             onClick={() => setIsItemSearchOpen(false)}
-                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                            aria-label="Tutup pencarian material"
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white text-xs font-bold"
                           >
                             ✕
                           </button>
@@ -1773,7 +1777,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                   <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
                                     {pm.nama_barang}
                                   </div>
-                                  <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5 truncate">
+                                  <div className="text-[10px] text-slate-600 dark:text-slate-300 flex items-center gap-1.5 mt-0.5 truncate font-medium">
                                     <span className="font-mono text-blue-600 dark:text-blue-400 font-semibold">
                                       {pm.budget_lines.length} Pos BOQ
                                     </span>
@@ -1792,7 +1796,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                               </button>
                             ))
                           ) : (
-                            <div className="p-4 text-center text-xs text-slate-400">
+                            <div className="p-4 text-center text-xs text-slate-600 dark:text-slate-300 font-medium">
                               Tidak ditemukan material fisik dengan kata kunci "{itemSearchQuery}".
                             </div>
                           )}
@@ -1926,7 +1930,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   {/* Rincian Tambahan Sesuai Pilihan Tujuan Keluar */}
                   {tujuanPengeluaran === 'PROYEK_BOQ' && !isCustomMode && currentPhysicalMaterial && (
                     <div className="pt-1">
-                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                         Pilih Pos Pekerjaan BOQ
                       </label>
                       {currentPhysicalMaterial.budget_lines.length === 1 ? (
@@ -1939,7 +1943,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                               {currentPhysicalMaterial.budget_lines[0].kategori}
                             </span>
                           </div>
-                          <span className="text-[10px] text-slate-500 font-mono shrink-0">
+                          <span className="text-[10px] text-slate-600 dark:text-slate-300 font-mono shrink-0 font-medium">
                             Sisa: <b className="text-emerald-600 dark:text-emerald-400">{currentPhysicalMaterial.budget_lines[0].sisa_anggaran.toLocaleString('id-ID')} {currentPhysicalMaterial.satuan}</b>
                           </span>
                         </div>
@@ -1968,7 +1972,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
                   {tujuanPengeluaran === 'OPERASIONAL' && (
                     <div className="pt-1">
-                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                         Keterangan Operasional Lapangan <span className="text-rose-500">*</span>
                       </label>
                       <input
@@ -2000,7 +2004,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                         onChange={(e) => setKeteranganPengeluaran(e.target.value)}
                         className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500/20"
                       />
-                      <p className="text-[10px] text-slate-400 mt-1">
+                      <p className="text-[10px] text-slate-600 dark:text-slate-300 mt-1 font-medium">
                         ℹ️ Transaksi ini otomatis ditampung ke draf tagihan/invoice pekerjaan tambah ke klien.
                       </p>
                     </div>
@@ -2024,7 +2028,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                         onChange={(e) => setKeteranganPengeluaran(e.target.value)}
                         className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-purple-300 dark:border-purple-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-purple-500/20"
                       />
-                      <p className="text-[10px] text-slate-400 mt-1">
+                      <p className="text-[10px] text-slate-600 dark:text-slate-300 mt-1 font-medium">
                         ℹ️ Tidak ditagihkan ke klien (diserap sebagai penjaminan mutu CV Menara Megah).
                       </p>
                     </div>
@@ -2053,7 +2057,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                       Jumlah ({isCustomMode ? (customItemUom || 'Unit') : (currentPhysicalMaterial?.satuan || 'Unit')}) <span className="text-rose-500">*</span>
                     </label>
                     {!isCustomMode && (
-                      <span className="text-[10px] text-slate-400 font-mono">
+                      <span className="text-[10px] text-slate-600 dark:text-slate-300 font-mono font-medium">
                         Stok jadi: <b className={mutationType === 'MASUK' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>{projectedStock}</b>
                       </span>
                     )}
@@ -2124,7 +2128,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
             <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <Ban className="h-5 w-5 text-rose-500" /> Batalkan Dokumen Mutasi
             </h2>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
               Dokumen ini akan ditandai <b>BATAL</b>. Riwayat audit tetap tersimpan, namun nominal kuantitas (<b>{batalTarget.jumlah} {batalTarget.satuan}</b>) tidak akan diperhitungkan dalam stok fisik.
             </p>
             <div>
@@ -2167,7 +2171,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
             <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <FileEdit className="h-5 w-5 text-amber-500" /> Ganti / Revisi Dokumen Mutasi
             </h2>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
               Dokumen lama akan ditandai <b>DIGANTI</b> dan dokumen baru akan diterbitkan dengan nomor rujukan ke dokumen ini.
             </p>
 

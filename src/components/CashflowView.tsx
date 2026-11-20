@@ -272,7 +272,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
             <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <span>{noticeMessage}</span>
           </div>
-          <button onClick={() => setNoticeMessage(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">×</button>
+          <button onClick={() => setNoticeMessage(null)} aria-label="Tutup pemberitahuan" className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 text-base font-bold">×</button>
         </div>
       )}
 
@@ -282,7 +282,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
             <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
             <span>{errorMessage}</span>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">×</button>
+          <button onClick={() => setErrorMessage(null)} aria-label="Tutup pesan galat" className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 text-base font-bold">×</button>
         </div>
       )}
 
@@ -304,7 +304,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
               <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
                 Modul Mutasi Dana (Arus Kas Proyek)
               </h1>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
                 Pencatatan kas masuk & kas keluar. Saldo dihitung dari riwayat transaksi yang sah tanpa fitur hapus.
               </p>
             </div>
@@ -334,19 +334,19 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
           {/* Kartu Ringkasan Saldo */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs text-slate-500">Saldo Kas Operasional</span>
+              <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">Saldo Kas Operasional</span>
               <div className="mt-1 text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
                 {cashAccess ? formatRupiah(currentCashBalance) : 'Akses Terbatas'}
               </div>
             </div>
             <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs text-slate-500">Total Penerimaan Kas</span>
+              <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">Total Penerimaan Kas</span>
               <div className="mt-1 text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
                 {formatRupiah(totalIn)}
               </div>
             </div>
             <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-xs text-slate-500">Total Pengeluaran Kas</span>
+              <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">Total Pengeluaran Kas</span>
               <div className="mt-1 text-xl font-bold font-mono text-rose-600 dark:text-rose-400">
                 {formatRupiah(totalOut)}
               </div>
@@ -356,9 +356,10 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
           {/* Filter & Pencarian */}
           <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 transition-colors">
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-slate-500 dark:text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
+                aria-label="Cari transaksi kas, peruntukan, PIC, atau no kuitansi"
                 placeholder="Cari transaksi kas, peruntukan, PIC, atau no kuitansi..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -392,7 +393,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
+                  <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold uppercase tracking-wider text-[10px]">
                     <th className="py-3 px-3.5 w-10 text-center">No</th>
                     <th className="py-3 px-3.5">Tanggal</th>
                     <th className="py-3 px-3.5 text-center">Jenis</th>
@@ -407,7 +408,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {filteredList.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-12 text-center text-slate-400">
+                      <td colSpan={9} className="py-12 text-center text-slate-600 dark:text-slate-300 font-medium">
                         Belum ada riwayat transaksi mutasi kas.
                       </td>
                     </tr>
@@ -424,10 +425,10 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                             isVoid ? 'opacity-50 bg-rose-50/20 line-through' : isReplaced ? 'opacity-70 bg-amber-50/20' : ''
                           }`}
                         >
-                          <td className="py-3 px-3.5 text-center text-slate-400 font-mono text-[11px]">
+                          <td className="py-3 px-3.5 text-center text-slate-600 dark:text-slate-300 font-mono text-[11px] font-medium">
                             {idx + 1}
                           </td>
-                          <td className="py-3 px-3.5 text-slate-600 dark:text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                          <td className="py-3 px-3.5 text-slate-700 dark:text-slate-200 font-mono text-[11px] whitespace-nowrap">
                             {formatDateTime(c.tanggal)}
                           </td>
                           <td className="py-3 px-3.5 text-center">
@@ -444,7 +445,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                           </td>
                           <td className="py-3 px-3.5 max-w-sm">
                             <div className="font-semibold text-slate-900 dark:text-white">{c.untuk_apa}</div>
-                            <div className="text-[10px] text-slate-400 mt-0.5 flex gap-2">
+                            <div className="text-[10px] text-slate-600 dark:text-slate-300 mt-0.5 flex gap-2 font-medium">
                               <span className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded">{c.kategori_keperluan}</span>
                               {c.catatan && <span className="italic">{c.catatan}</span>}
                             </div>
@@ -457,7 +458,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                           <td className="py-3 px-3.5 text-slate-700 dark:text-slate-300">
                             <div>{c.pic}</div>
                             {c.nomor_kuitansi && (
-                              <div className="text-[10px] font-mono text-slate-400">Ref: {c.nomor_kuitansi}</div>
+                              <div className="text-[10px] font-mono text-slate-600 dark:text-slate-300 font-medium">Ref: {c.nomor_kuitansi}</div>
                             )}
                           </td>
 
@@ -559,7 +560,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                                 </button>
                               </div>
                             ) : (
-                              <span className="text-[10px] text-slate-400">—</span>
+                              <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">—</span>
                             )}
                           </td>
                         </tr>
@@ -582,7 +583,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                 <WalletCards className="w-4 h-4 text-emerald-400" />
                 <span>Catat Transaksi Kas: {jenis === 'MASUK' ? 'Kas Masuk (IN)' : 'Kas Keluar (OUT)'}</span>
               </div>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setIsModalOpen(false)} aria-label="Tutup jendela mutasi kas" className="text-slate-300 hover:text-white">
                 <XCircle className="w-5 h-5" />
               </button>
             </div>
@@ -619,7 +620,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
               </div>
 
               <div className="bg-slate-50 dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold">Proyeksi Saldo Kas Akhir</span>
+                <span className="text-[10px] text-slate-600 dark:text-slate-300 uppercase font-semibold">Proyeksi Saldo Kas Akhir</span>
                 <div className="text-xs font-bold text-slate-900 dark:text-white font-mono">
                   {formatRupiah(projectedBalance)}
                 </div>
@@ -698,7 +699,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
             <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <Ban className="h-5 w-5 text-rose-500" /> Batalkan Transaksi Kas
             </h2>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
               Dokumen ini akan ditandai <b>BATAL</b>. Riwayat audit tetap tersimpan, namun nominal (<b>{formatRupiah(batalTarget.jumlah_rp)}</b>) tidak akan diperhitungkan dalam saldo kas.
             </p>
             <div>
@@ -741,7 +742,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
             <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <FileEdit className="h-5 w-5 text-amber-500" /> Ganti / Revisi Transaksi Kas
             </h2>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
               Dokumen kas lama akan ditandai <b>DIGANTI</b> dan dokumen baru akan diterbitkan dengan rujukan ke transaksi ini.
             </p>
 

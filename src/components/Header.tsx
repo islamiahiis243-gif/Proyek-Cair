@@ -337,7 +337,7 @@ export const Header: React.FC = () => {
               ) : (
                 <div className="p-3 text-center rounded-xl bg-slate-800/40 border border-slate-800/80 text-slate-400">
                   <p className="text-xs font-semibold text-slate-300">Belum ada penugasan proyek</p>
-                  <p className="text-[10px] text-slate-500 mt-1">
+                  <p className="text-[10px] text-slate-400 mt-1">
                     Aktifkan kode RFIN-B yang Anda terima dari CSA untuk membuka wewenang jabatan proyek Anda.
                   </p>
                 </div>
@@ -462,30 +462,34 @@ export const Header: React.FC = () => {
         )}
 
         {/* Status Database */}
-        <div className="hidden md:flex items-center gap-1.5 text-[11px] text-slate-400 min-w-[90px]" title="Koneksi Supabase">
-          <Database className={`w-3.5 h-3.5 shrink-0 ${supabaseConfig.isConnected ? 'text-emerald-400' : 'text-slate-500'}`} />
+        <div className="hidden md:flex items-center gap-1.5 text-[11px] text-slate-300 min-w-[90px]" title="Koneksi Supabase">
+          <Database className={`w-3.5 h-3.5 shrink-0 ${supabaseConfig.isConnected ? 'text-emerald-400' : 'text-slate-400'}`} />
           <span className="hidden xl:inline">{supabaseConfig.isConnected ? 'Terkoneksi' : 'Offline'}</span>
         </div>
 
         {/* Toggle Mode Terang/Gelap */}
         <button
+          type="button"
           onClick={toggleTheme}
+          aria-label={theme === 'dark' ? 'Beralih ke Mode Terang' : 'Beralih ke Mode Gelap'}
           title={theme === 'dark' ? 'Beralih ke Mode Terang' : 'Beralih ke Mode Gelap'}
-          className="p-2 rounded-xl border border-slate-800 bg-slate-950 text-slate-400 hover:text-white hover:border-slate-700 transition-colors"
+          className="p-2 rounded-xl border border-slate-800 bg-slate-950 text-slate-300 hover:text-white hover:border-slate-700 transition-colors cursor-pointer"
         >
           {theme === 'dark' ? (
             <Sun className="w-4 h-4 text-amber-400" />
           ) : (
-            <Moon className="w-4 h-4 text-slate-400" />
+            <Moon className="w-4 h-4 text-slate-300" />
           )}
         </button>
 
         {/* Tombol Logout */}
         {user.id && (
           <button
+            type="button"
             onClick={() => void logout()}
+            aria-label="Keluar dari akun"
             title="Keluar dari akun"
-            className="flex items-center gap-1.5 p-2 rounded-xl border border-slate-800 bg-slate-950 text-slate-400 hover:text-rose-400 hover:border-rose-900/60 transition-colors text-xs font-semibold"
+            className="flex items-center gap-1.5 p-2 rounded-xl border border-slate-800 bg-slate-950 text-slate-300 hover:text-rose-400 hover:border-rose-900/60 transition-colors text-xs font-semibold cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
             <span className="hidden sm:inline">Keluar</span>

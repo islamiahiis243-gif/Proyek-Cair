@@ -118,7 +118,7 @@ export const RfinARequestView: React.FC = () => {
           </div>
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">Pengajuan Pendaftaran Perusahaan (RFIN-A)</h1>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
               Daftarkan perusahaan baru Anda sebagai Tenant di Proyek Cair. Pengajuan ini akan ditinjau oleh Platform Super Admin (PSA).
             </p>
           </div>
@@ -183,7 +183,7 @@ export const RfinARequestView: React.FC = () => {
               placeholder="16 digit angka (contoh: 0024376584714000)"
               className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm font-mono tracking-wider dark:border-slate-700 dark:bg-slate-950"
             />
-            <p className="mt-1 text-[11px] text-slate-400">
+            <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
               {companyNpwp.length}/16 digit {companyNpwp.length === 16 ? '✓ Lengkap' : '(Wajib 16 digit angka)'}
             </p>
           </div>
@@ -215,7 +215,7 @@ export const RfinARequestView: React.FC = () => {
               placeholder="contoh: admin@email.com"
               className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"
             />
-            <p className="mt-1 text-[11px] text-slate-400">
+            <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
               Bisa email Anda sendiri atau staf/pimpinan yang ditunjuk sebagai administrator utama.
             </p>
           </div>
@@ -264,7 +264,7 @@ export const RfinARequestView: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-base font-bold text-slate-900 dark:text-white">Riwayat Permohonan Saya</h2>
-            <p className="mt-0.5 text-xs text-slate-500">Status verifikasi pendaftaran perusahaan oleh PSA.</p>
+            <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300 font-medium">Status verifikasi pendaftaran perusahaan oleh PSA.</p>
           </div>
           <button
             type="button"
@@ -282,7 +282,7 @@ export const RfinARequestView: React.FC = () => {
               <div key={req.id} className="py-3.5 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="font-semibold text-sm text-slate-900 dark:text-white">{req.legal_name}</div>
-                  <div className="mt-1 text-xs text-slate-500 flex flex-wrap gap-2">
+                  <div className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium flex flex-wrap gap-2">
                     <span>NPWP: {req.npwp_last4 ? `•••• •••• •••• ${req.npwp_last4}` : 'Tercatat'}</span>
                     <span>·</span>
                     <span>Calon CSA: <b>{req.super_admin_email}</b></span>
@@ -290,7 +290,7 @@ export const RfinARequestView: React.FC = () => {
                     <span>Diajukan: {new Date(req.created_at).toLocaleDateString('id-ID')}</span>
                   </div>
                   {req.review_notes && (
-                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-400 italic">
+                    <div className="mt-1 text-xs text-slate-700 dark:text-slate-300 italic">
                       Catatan PSA: {req.review_notes}
                     </div>
                   )}
@@ -317,7 +317,7 @@ export const RfinARequestView: React.FC = () => {
             ))}
           </div>
         ) : (
-          <p className="py-6 text-center text-xs text-slate-400">
+          <p className="py-6 text-center text-xs text-slate-600 dark:text-slate-300 font-medium">
             Belum ada permohonan pendaftaran tenant dari akun Anda.
           </p>
         )}

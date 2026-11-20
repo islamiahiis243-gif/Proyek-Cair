@@ -161,7 +161,7 @@ export const Sidebar: React.FC = () => {
                 <div className="truncate text-xs font-bold text-slate-900 dark:text-white leading-tight">
                   {modeTitle}
                 </div>
-                <div className="truncate text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                <div className="truncate text-[10px] text-slate-600 dark:text-slate-300 font-medium mt-0.5">
                   {modeSubtitle}
                 </div>
               </div>
@@ -172,7 +172,7 @@ export const Sidebar: React.FC = () => {
           <button
             type="button"
             onClick={toggleCollapsed}
-            className="hidden md:flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            className="hidden md:flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             title={isCollapsed ? 'Luaskan Bilah Sisi (Expand)' : 'Ciutkan Bilah Sisi (Collapse)'}
             aria-label={isCollapsed ? 'Luaskan Bilah Sisi' : 'Ciutkan Bilah Sisi'}
           >
@@ -208,7 +208,7 @@ export const Sidebar: React.FC = () => {
               } ${
                 active
                   ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+                  : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
               }`}
               title={isCollapsed ? item.label : undefined}
             >
@@ -220,7 +220,7 @@ export const Sidebar: React.FC = () => {
 
               {/* Badge saat expanded */}
               {!isCollapsed && item.badge && (
-                <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-500 dark:text-rose-400">
+                <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-600 dark:text-rose-300">
                   {item.badge}
                 </span>
               )}
@@ -238,18 +238,19 @@ export const Sidebar: React.FC = () => {
       </nav>
 
       {/* Footer Info & Tombol Toggle Bawah */}
-      <div className="hidden border-t border-slate-100 dark:border-slate-800 p-3 text-[11px] text-slate-500 dark:text-slate-400 md:block">
+      <div className="hidden border-t border-slate-100 dark:border-slate-800 p-3 text-[11px] text-slate-600 dark:text-slate-300 md:block">
         {!isCollapsed ? (
           <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <span>Mode:</span>
-              <span className="font-bold uppercase text-slate-700 dark:text-slate-200">
+              <span className="text-slate-600 dark:text-slate-300 font-medium">Mode:</span>
+              <span className="font-bold uppercase text-slate-800 dark:text-slate-100">
                 {appMode}
               </span>
             </div>
             <button
               type="button"
               onClick={toggleCollapsed}
+              aria-label="Ciutkan Bilah Sisi"
               className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-200 dark:border-slate-800 py-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
@@ -261,7 +262,8 @@ export const Sidebar: React.FC = () => {
             <button
               type="button"
               onClick={toggleCollapsed}
-              className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              aria-label="Luaskan Bilah Sisi"
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               title="Luaskan Bilah Sisi (Expand)"
             >
               <ChevronRight className="h-4 w-4" />

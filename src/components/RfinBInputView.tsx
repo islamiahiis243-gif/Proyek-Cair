@@ -66,7 +66,7 @@ export const RfinBInputView: React.FC = () => {
           </div>
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">Aktivasi Kode Undangan (RFIN-B)</h1>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
               Masukkan kode RFIN-B yang Anda terima dari Company Super Admin (CSA) untuk mengaktifkan Jabatan resmi Anda pada proyek perusahaan.
             </p>
           </div>
@@ -120,7 +120,7 @@ export const RfinBInputView: React.FC = () => {
               <ArrowRight className="h-4 w-4" />
             </button>
           </div>
-          <p className="mt-2 text-[11px] text-slate-400">
+          <p className="mt-2 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
             Kode RFIN-B dikirim ke email Anda oleh CSA dan terikat dengan akun Anda ({user.email}).
           </p>
         </div>
@@ -135,7 +135,7 @@ export const RfinBInputView: React.FC = () => {
 
           <div className="rounded-xl border border-blue-200/60 bg-white p-4 dark:border-blue-900/60 dark:bg-slate-900 grid gap-3 sm:grid-cols-2">
             <div>
-              <span className="text-xs text-slate-500">Perusahaan</span>
+              <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">Perusahaan</span>
               <div className="font-semibold text-sm text-slate-900 dark:text-white flex items-center gap-1.5 mt-0.5">
                 <Building2 className="h-4 w-4 text-blue-500" />
                 {preview.company_name || 'CV Menara Megah'}
@@ -143,14 +143,14 @@ export const RfinBInputView: React.FC = () => {
             </div>
 
             <div>
-              <span className="text-xs text-slate-500">Penerima Undangan</span>
+              <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">Penerima Undangan</span>
               <div className="font-semibold text-sm text-slate-900 dark:text-white mt-0.5">
                 {preview.recipient_email || user.email}
               </div>
             </div>
 
             <div>
-              <span className="text-xs text-slate-500">Jabatan yang Diberikan</span>
+              <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">Jabatan yang Diberikan</span>
               <div className="font-semibold text-sm text-blue-600 dark:text-blue-400 mt-0.5 flex items-center gap-1.5">
                 <Users className="h-4 w-4" />
                 {Array.isArray(preview.personas) && preview.personas.length > 0
@@ -160,7 +160,7 @@ export const RfinBInputView: React.FC = () => {
             </div>
 
             <div>
-              <span className="text-xs text-slate-500">Masa Berlaku</span>
+              <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">Masa Berlaku</span>
               <div className="font-semibold text-sm text-slate-700 dark:text-slate-300 mt-0.5">
                 {preview.expires_at ? new Date(preview.expires_at).toLocaleDateString('id-ID') : '7 Hari'}
               </div>

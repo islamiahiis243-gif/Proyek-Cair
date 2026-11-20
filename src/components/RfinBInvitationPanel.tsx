@@ -161,7 +161,7 @@ export const RfinBInvitationPanel: React.FC<{
           </div>
           <div>
             <h2 className="text-base font-bold text-slate-900 dark:text-white">Penerbitan Undangan Jabatan Tim (RFIN-B)</h2>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
               Terbitkan kode untuk calon anggota tim. Penerima dapat memasukkan kode ini di menu Aktivasi RFIN-B untuk mengaktifkan Jabatan resmi pada proyek.
             </p>
           </div>
@@ -191,12 +191,13 @@ export const RfinBInvitationPanel: React.FC<{
               <button
                 type="button"
                 onClick={() => setIssuedCode('')}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                aria-label="Tutup notifikasi kode"
+                className="text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
               >
                 <XCircle className="h-4 w-4" />
               </button>
             </div>
-            <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
               Salin kode di bawah dan kirimkan ke email calon anggota. Kode ini berlaku selama {expiryDays} hari:
             </p>
             <div className="mt-3 flex items-center gap-2">
@@ -233,7 +234,7 @@ export const RfinBInvitationPanel: React.FC<{
                 placeholder="contoh: staf@email.com"
                 className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"
               />
-              <p className="mt-1 text-[11px] text-slate-400">
+              <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
                 Boleh akun yang belum pernah mendaftar; setelah sign-up ia bisa langsung mengklaim.
               </p>
             </div>
@@ -284,7 +285,7 @@ export const RfinBInvitationPanel: React.FC<{
                       />
                       <span className="text-xs font-bold text-slate-900 dark:text-white">{r.name}</span>
                     </div>
-                    <span className="mt-1.5 text-[11px] text-slate-500 leading-relaxed">{r.desc}</span>
+                    <span className="mt-1.5 text-[11px] text-slate-600 dark:text-slate-300 font-medium leading-relaxed">{r.desc}</span>
                   </label>
                 );
               })}
@@ -308,10 +309,10 @@ export const RfinBInvitationPanel: React.FC<{
                       className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition-colors ${
                         isChecked
                           ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-600 dark:bg-blue-950/50 dark:text-blue-300'
-                          : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800'
+                          : 'border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'
                       }`}
                     >
-                      <span className={`h-2 w-2 rounded-full ${isChecked ? 'bg-blue-600' : 'bg-slate-300'}`} />
+                      <span className={`h-2 w-2 rounded-full ${isChecked ? 'bg-blue-600' : 'bg-slate-400'}`} />
                       <span>{p.project_code || p.name}</span>
                     </button>
                   );
@@ -342,7 +343,7 @@ export const RfinBInvitationPanel: React.FC<{
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-base font-bold text-slate-900 dark:text-white">Riwayat Undangan RFIN-B</h3>
-            <p className="text-xs text-slate-500">Daftar kode token yang pernah diterbitkan oleh CSA.</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">Daftar kode token yang pernah diterbitkan oleh CSA.</p>
           </div>
           <button
             type="button"
@@ -372,7 +373,7 @@ export const RfinBInvitationPanel: React.FC<{
                         ({roleDisplay})
                       </span>
                     </div>
-                    <div className="mt-1 text-xs text-slate-500 flex flex-wrap gap-2">
+                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium flex flex-wrap gap-2">
                       <span>Diterbitkan: {new Date(inv.created_at).toLocaleDateString('id-ID')}</span>
                       <span>·</span>
                       <span>Kedaluwarsa: {new Date(inv.expires_at).toLocaleDateString('id-ID')}</span>
@@ -385,7 +386,7 @@ export const RfinBInvitationPanel: React.FC<{
                         ✓ Sudah Diklaim
                       </span>
                     ) : isRevoked ? (
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-medium">
                         Dicabut
                       </span>
                     ) : isExpired ? (
@@ -415,7 +416,7 @@ export const RfinBInvitationPanel: React.FC<{
             })}
           </div>
         ) : (
-          <p className="py-8 text-center text-xs text-slate-400">
+          <p className="py-8 text-center text-xs text-slate-600 dark:text-slate-300 font-medium">
             Belum ada kode undangan RFIN-B yang diterbitkan untuk perusahaan ini.
           </p>
         )}
