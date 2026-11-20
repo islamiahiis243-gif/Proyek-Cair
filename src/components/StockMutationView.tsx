@@ -1842,9 +1842,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                                     onClick={() => handleOpenItemMutation(item, 'KELUAR')}
                                                     disabled={!rolePermissions.canIssue}
                                                     title="Catat pemakaian (keluar) khusus untuk pos pekerjaan BOQ ini"
-                                                    className="px-2.5 py-1 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-lg text-[10px] font-bold hover:bg-rose-100 dark:hover:bg-rose-900/60 disabled:opacity-40 transition-colors cursor-pointer"
+                                                    className="px-2.5 py-1 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-lg text-[10px] font-bold hover:bg-rose-100 dark:hover:bg-rose-900/60 disabled:opacity-40 transition-colors cursor-pointer whitespace-nowrap"
                                                   >
-                                                    - Pakai / Keluar
+                                                    Pakai
                                                   </button>
                                                   <button
                                                     onClick={() => handleViewItemHistory(item.nama_barang)}
