@@ -136,6 +136,192 @@ export const getProviderMetaForMaterial = (
   return { defaultAsal: 'KONTRAKTOR', isMixed: false, label: 'Kontraktor' };
 };
 
+export interface ProviderDiscrepancyInfo {
+  isMismatch: boolean;
+  kind: 'NONE' | 'TALANGAN_KONTRAKTOR' | 'DIPASOK_KLIEN';
+  contractProviderLabel: string;
+  actualProviderLabel: string;
+  shortBadge: string;
+  pdfNote: string;
+}
+
+/**
+ * Deteksi otomatis selisih penyedia antara Kontrak BOQ vs Realisasi Barang Masuk di lapangan.
+ * Bekerja baik untuk transaksi baru maupun transaksi lama yang sudah tersimpan di database.
+ */
+export const analyzeIncomingProviderDiscrepancy = (
+  mut: Pick<MutasiBarang, 'barang_id' | 'nama_barang' | 'jenis' | 'is_custom_item' | 'source_name' | 'owner_type'>,
+  physicalMaterials: PhysicalMaterialItem[]
+): ProviderDiscrepancyInfo => {
+  const actualRaw = (mut.source_name || '').trim();
+  const actualLower = actualRaw.toLowerCase();
+  const isActualClient =
+    mut.owner_type === 'KLIEN' ||
+    actualLower.includes('klien') ||
+    actualLower.includes('imk') ||
+    actualLower.includes('owner');
+  const isActualOther =
+    !isActualClient && (actualLower.includes('lainnya') || actualLower.includes('toko'));
+
+  const actualProviderLabel = isActualClient
+    ? 'Klien (PT IMK)'
+    : isActualOther
+    ? actualRaw || 'Lainnya / Toko Bebas'
+    : 'Kontraktor (CV Menara Megah)';
+
+  if (mut.jenis !== 'MASUK' || mut.is_custom_item) {
+    return {
+      isMismatch: false,
+      kind: 'NONE',
+      contractProviderLabel: mut.is_custom_item ? 'Barang Kustom' : '-',
+      actualProviderLabel,
+      shortBadge: '',
+      pdfNote: ''
+    };
+  }
+
+  const normName = (mut.nama_barang || '').trim().toLowerCase();
+  const matchedPm =
+    physicalMaterials.find(
+      (pm) =>
+        (mut.barang_id && (pm.id === mut.barang_id || pm.budget_lines.some((bl) => bl.id === mut.barang_id))) ||
+        pm.nama_barang.trim().toLowerCase() === normName
+    ) || null;
+
+  if (!matchedPm) {
+    return {
+      isMismatch: false,
+      kind: 'NONE',
+      contractProviderLabel: '-',
+      actualProviderLabel,
+      shortBadge: '',
+      pdfNote: ''
+    };
+  }
+
+  const prov = getProviderMetaForMaterial(matchedPm);
+
+  // Jatah murni Klien (PT IMK), tetapi realisasi lapangan masuk oleh Kontraktor / Lainnya
+  if (!prov.isMixed && prov.defaultAsal === 'KLIEN' && !isActualClient) {
+    const label = isActualOther
+      ? `Pengadaan Lainnya (Jatah BOQ: PT IMK)`
+      : `Talangan Kontraktor (Jatah BOQ: PT IMK)`;
+    return {
+      isMismatch: true,
+      kind: 'TALANGAN_KONTRAKTOR',
+      contractProviderLabel: 'Klien (PT IMK)',
+      actualProviderLabel,
+      shortBadge: label,
+      pdfNote: label
+    };
+  }
+
+  // Jatah murni Kontraktor (CV Menara Megah), tetapi realisasi lapangan dipasok Klien (PT IMK)
+  if (!prov.isMixed && prov.defaultAsal === 'KONTRAKTOR' && isActualClient) {
+    const label = `Dipasok Klien PT IMK (Jatah BOQ: Kontraktor)`;
+    return {
+      isMismatch: true,
+      kind: 'DIPASOK_KLIEN',
+      contractProviderLabel: 'Kontraktor (CV Menara Megah)',
+      actualProviderLabel,
+      shortBadge: label,
+      pdfNote: label
+    };
+  }
+
+  return {
+    isMismatch: false,
+    kind: 'NONE',
+    contractProviderLabel: prov.label,
+    actualProviderLabel,
+    shortBadge: '',
+    pdfNote: ''
+  };
+};
+
+export interface MaterialDiscrepancySummary {
+  hasMismatch: boolean;
+  kind: 'NONE' | 'TALANGAN_KONTRAKTOR' | 'DIPASOK_KLIEN';
+  mismatchQty: number;
+  contractProviderLabel: string;
+  actualProviderLabel: string;
+  summaryText: string;
+}
+
+/**
+ * Rekap selisih penyedia per material fisik (untuk Tab 1 Rekap Gudang & PDF Rekap Gudang).
+ */
+export const summarizeMaterialIncomingDiscrepancy = (
+  pm: PhysicalMaterialItem,
+  stockMutations: MutasiBarang[]
+): MaterialDiscrepancySummary => {
+  const prov = getProviderMetaForMaterial(pm);
+  if (prov.isMixed) {
+    return {
+      hasMismatch: false,
+      kind: 'NONE',
+      mismatchQty: 0,
+      contractProviderLabel: prov.label,
+      actualProviderLabel: '',
+      summaryText: ''
+    };
+  }
+
+  const lineIds = new Set([pm.id, ...pm.budget_lines.map((bl) => bl.id)]);
+  const normName = pm.nama_barang.trim().toLowerCase();
+
+  let talanganQty = 0;
+  let dipasokKlienQty = 0;
+
+  for (const m of stockMutations) {
+    if (m.jenis !== 'MASUK' || m.is_custom_item || m.is_batal || m.is_ganti || m.status_dokumen === 'BATAL' || m.status_dokumen === 'DIGANTI') {
+      continue;
+    }
+    const match = (m.barang_id && lineIds.has(m.barang_id)) || (m.nama_barang || '').trim().toLowerCase() === normName;
+    if (!match) continue;
+
+    const srcLower = (m.source_name || '').toLowerCase();
+    const isActualClient = m.owner_type === 'KLIEN' || srcLower.includes('klien') || srcLower.includes('imk') || srcLower.includes('owner');
+
+    if (prov.defaultAsal === 'KLIEN' && !isActualClient) {
+      talanganQty += Number(m.jumlah || 0);
+    } else if (prov.defaultAsal === 'KONTRAKTOR' && isActualClient) {
+      dipasokKlienQty += Number(m.jumlah || 0);
+    }
+  }
+
+  if (talanganQty > 0) {
+    return {
+      hasMismatch: true,
+      kind: 'TALANGAN_KONTRAKTOR',
+      mismatchQty: talanganQty,
+      contractProviderLabel: 'Klien (PT IMK)',
+      actualProviderLabel: 'Kontraktor',
+      summaryText: `Talangan Kontraktor: ${talanganQty.toLocaleString('id-ID', { maximumFractionDigits: 3 })} ${pm.satuan} (Jatah BOQ: PT IMK)`
+    };
+  }
+
+  if (dipasokKlienQty > 0) {
+    return {
+      hasMismatch: true,
+      kind: 'DIPASOK_KLIEN',
+      mismatchQty: dipasokKlienQty,
+      contractProviderLabel: 'Kontraktor',
+      actualProviderLabel: 'Klien (PT IMK)',
+      summaryText: `Dipasok Klien PT IMK: ${dipasokKlienQty.toLocaleString('id-ID', { maximumFractionDigits: 3 })} ${pm.satuan} (Jatah BOQ: Kontraktor)`
+    };
+  }
+
+  return {
+    hasMismatch: false,
+    kind: 'NONE',
+    mismatchQty: 0,
+    contractProviderLabel: prov.label,
+    actualProviderLabel: '',
+    summaryText: ''
+  };
+};
+
 export const createInitialWizardAnswers = (
   type: JenisMutasiBarang,
   picName: string,
@@ -365,9 +551,24 @@ export const buildStockMutationPayload = (
       extraLabel = 'Rencana Keperluan Masuk';
       extraValue = finalPurpose;
     } else {
-      finalPurpose = 'Penyediaan Material Kontrak BOQ';
-      extraLabel = 'Aturan Gudang';
-      extraValue = 'Satukan Masuk ke Stok Gudang Proyek';
+      const prov = getProviderMetaForMaterial(pm);
+      if (!prov.isMixed && prov.defaultAsal === 'KLIEN' && answers.asalBarang === 'KONTRAKTOR') {
+        finalPurpose = 'Penyediaan Material Kontrak BOQ — Talangan Kontraktor (Jatah BOQ: PT IMK)';
+        extraLabel = 'Selisih Penyedia (Otomatis)';
+        extraValue = 'Jatah BOQ: PT IMK · Realisasi Masuk: Kontraktor (CV Menara Megah)';
+      } else if (!prov.isMixed && prov.defaultAsal === 'KLIEN' && answers.asalBarang === 'TOKO_BEBAS') {
+        finalPurpose = 'Penyediaan Material Kontrak BOQ — Pengadaan Lainnya (Jatah BOQ: PT IMK)';
+        extraLabel = 'Selisih Penyedia (Otomatis)';
+        extraValue = `Jatah BOQ: PT IMK · Realisasi Masuk: ${detailValue}`;
+      } else if (!prov.isMixed && prov.defaultAsal === 'KONTRAKTOR' && answers.asalBarang === 'KLIEN') {
+        finalPurpose = 'Penyediaan Material Kontrak BOQ — Dipasok Klien PT IMK (Jatah BOQ: Kontraktor)';
+        extraLabel = 'Selisih Penyedia (Otomatis)';
+        extraValue = 'Jatah BOQ: Kontraktor · Realisasi Masuk: Klien (PT IMK)';
+      } else {
+        finalPurpose = 'Penyediaan Material Kontrak BOQ';
+        extraLabel = 'Aturan Gudang';
+        extraValue = 'Satukan Masuk ke Stok Gudang Proyek';
+      }
     }
   } else {
     detailLabel = 'Tujuan Pemakaian';

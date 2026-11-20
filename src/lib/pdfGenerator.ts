@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import QRCode from 'qrcode';
 import { DokumenLaporan, MutasiBarang, MutasiKas, UserProfile, ItemBarang, PhysicalMaterialItem } from '../types';
+import { analyzeIncomingProviderDiscrepancy, summarizeMaterialIncomingDiscrepancy } from './stockMutationEngine';
 
 function stableStringify(value: any): string {
   if (Array.isArray(value)) return '[' + value.map(stableStringify).join(',') + ']';
@@ -101,8 +102,17 @@ export async function generateStockMutationPDF(params: {
   mutations: MutasiBarang[];
   signer: UserProfile;
   projectName?: string;
+  physicalMaterials?: PhysicalMaterialItem[];
 }): Promise<DokumenLaporan> {
-  const { docId, startDate, endDate, mutations, signer, projectName = 'UDU Project (Trainer & UDU Office)' } = params;
+  const {
+    docId,
+    startDate,
+    endDate,
+    mutations,
+    signer,
+    projectName = 'UDU Project (Trainer & UDU Office)',
+    physicalMaterials = []
+  } = params;
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -135,44 +145,79 @@ export async function generateStockMutationPDF(params: {
   doc.text(`Status Alur : Tervalidasi Berjenjang`, pageWidth - 14, 56, { align: 'right' });
 
   // Filter transaksi aktif (abaikan yang BATAL / DIGANTI untuk total)
-  const activeMutations = mutations.filter(m => !m.is_batal && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI');
+  const activeMutations = mutations.filter(m => !m.is_batal && !m.is_ganti && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI');
   const totalMasuk = activeMutations.filter((m) => m.jenis === 'MASUK').reduce((acc, m) => acc + m.jumlah, 0);
   const totalKeluar = activeMutations.filter((m) => m.jenis === 'KELUAR').reduce((acc, m) => acc + m.jumlah, 0);
+
+  // Analisis selisih penyedia (mis. Jatah Klien PT IMK tapi ditalangi Kontraktor)
+  const discrepancyByRow = mutations.map((m) => analyzeIncomingProviderDiscrepancy(m, physicalMaterials));
+  const mismatchCount = mutations.filter(
+    (m, i) => !m.is_batal && !m.is_ganti && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI' && discrepancyByRow[i].isMismatch
+  ).length;
 
   // KPI Summary Box
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(226, 232, 240);
   doc.roundedRect(14, 60, pageWidth - 28, 14, 2, 2, 'FD');
 
-  doc.setFontSize(7.5);
+  doc.setFontSize(7);
   doc.setTextColor(100, 116, 139);
-  doc.text('TOTAL TRANSAKSI', 20, 65);
-  doc.text('TOTAL VOLUME MASUK', 80, 65);
-  doc.text('TOTAL VOLUME KELUAR', 140, 65);
+  doc.text('TOTAL TRANSAKSI', 18, 65);
+  doc.text('TOTAL VOLUME MASUK', 62, 65);
+  doc.text('TOTAL VOLUME KELUAR', 108, 65);
+  doc.text('BEDA PENYEDIA / TALANGAN', 152, 65);
 
-  doc.setFontSize(10);
+  doc.setFontSize(9.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(`${mutations.length} Transaksi`, 20, 71);
+  doc.text(`${mutations.length} Transaksi`, 18, 71);
 
   doc.setTextColor(22, 101, 52);
-  doc.text(`+ ${totalMasuk.toLocaleString('id-ID')} unit`, 80, 71);
+  doc.text(`+ ${totalMasuk.toLocaleString('id-ID')} unit`, 62, 71);
 
   doc.setTextColor(159, 18, 57);
-  doc.text(`- ${totalKeluar.toLocaleString('id-ID')} unit`, 140, 71);
+  doc.text(`- ${totalKeluar.toLocaleString('id-ID')} unit`, 108, 71);
+
+  if (mismatchCount > 0) {
+    doc.setTextColor(180, 83, 9);
+    doc.text(`${mismatchCount} Transaksi`, 152, 71);
+  } else {
+    doc.setTextColor(100, 116, 139);
+    doc.text('0 Transaksi', 152, 71);
+  }
 
   // Table Mutasi
   const tableData = mutations.map((m, index) => {
     const isVoid = m.is_batal || m.status_dokumen === 'BATAL';
     const isReplaced = m.is_ganti || m.status_dokumen === 'DIGANTI';
     const statusText = isVoid ? 'BATAL' : isReplaced ? 'DIGANTI' : (m.status_dokumen || 'DITERBITKAN');
+    const disc = discrepancyByRow[index];
+
+    const providerLine =
+      m.jenis === 'MASUK'
+        ? `Asal: ${m.source_name || disc.actualProviderLabel}`
+        : m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN'
+        ? 'Beban: Permintaan Klien'
+        : m.beban_biaya === 'BONUS_KLIEN'
+        ? 'Beban: Bonus Klien'
+        : m.beban_biaya === 'OPERASIONAL'
+        ? 'Beban: Operasional'
+        : 'Beban: Proyek BOQ';
+
+    const purposeRaw = (m.tujuan_keperluan || '-').trim();
+    const mismatchLine = disc.isMismatch ? `\n[!] ${disc.pdfNote}` : '';
+    const detailCell =
+      disc.isMismatch && purposeRaw.toLowerCase().includes('talangan')
+        ? `${providerLine}${mismatchLine}`
+        : `${providerLine}\n${purposeRaw}${mismatchLine}`;
+
     return [
       (index + 1).toString(),
       formatDateTime(m.tanggal),
       m.nama_barang,
       m.jenis,
       isVoid ? '0 (Batal)' : `${m.jumlah} ${m.satuan}`,
-      m.tujuan_keperluan || '-',
+      detailCell,
       m.pic_penerima_penyerah || '-',
       statusText
     ];
@@ -180,7 +225,7 @@ export async function generateStockMutationPDF(params: {
 
   autoTable(doc, {
     startY: 78,
-    head: [['No', 'Waktu', 'Nama Material / Barang', 'Jenis', 'Volume', 'Peruntukan / Lokasi', 'PIC', 'Status Alur']],
+    head: [['No', 'Waktu', 'Nama Material / Barang', 'Jenis', 'Volume', 'Asal / Peruntukan', 'PIC', 'Status']],
     body: tableData,
     theme: 'grid',
     headStyles: {
@@ -190,18 +235,30 @@ export async function generateStockMutationPDF(params: {
       fontSize: 7.5,
     },
     styles: {
-      fontSize: 7,
-      cellPadding: 2,
+      fontSize: 6.8,
+      cellPadding: 1.8,
     },
     columnStyles: {
-      0: { cellWidth: 10, halign: 'center' },
-      1: { cellWidth: 26 },
-      2: { cellWidth: 46 },
-      3: { cellWidth: 16, halign: 'center' },
-      4: { cellWidth: 22, halign: 'right' },
-      5: { cellWidth: 32 },
-      6: { cellWidth: 20 },
-      7: { cellWidth: 20, halign: 'center' },
+      0: { cellWidth: 9, halign: 'center' },
+      1: { cellWidth: 24 },
+      2: { cellWidth: 40 },
+      3: { cellWidth: 14, halign: 'center' },
+      4: { cellWidth: 20, halign: 'right' },
+      5: { cellWidth: 45 },
+      6: { cellWidth: 15 },
+      7: { cellWidth: 15, halign: 'center' },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body') {
+        const disc = discrepancyByRow[data.row.index];
+        if (disc?.isMismatch) {
+          data.cell.styles.fillColor = [254, 243, 199];
+          if (data.column.index === 5) {
+            data.cell.styles.textColor = [146, 64, 14];
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      }
     },
     margin: { left: 14, right: 14 },
   });
@@ -856,13 +913,15 @@ export async function generateWarehouseSummaryPDF(params: {
   projectName?: string;
   filterSummary?: string;
   signer?: UserProfile;
+  stockMutations?: MutasiBarang[];
 }): Promise<DokumenLaporan> {
   const {
     docId,
     materials,
     projectName = 'UDU Project (Trainer & UDU Office)',
     filterSummary,
-    signer
+    signer,
+    stockMutations = []
   } = params;
 
   const doc = new jsPDF({
@@ -881,11 +940,14 @@ export async function generateWarehouseSummaryPDF(params: {
   doc.setFont('helvetica', 'bold');
   doc.text('REKAPITULASI GUDANG MATERIAL ("SATUKAN MASUK")', 14, 40);
 
+  const discrepancyList = materials.map((pm) => summarizeMaterialIncomingDiscrepancy(pm, stockMutations));
+  const mismatchMatCount = discrepancyList.filter((d) => d.hasMismatch).length;
+
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
   doc.text(
-    `Proyek: ${projectName} | Tanggal Cetak: ${formatDateOnly(new Date().toISOString())}${filterSummary ? ` | ${filterSummary}` : ''} | Total Baris: ${materials.length} Material`,
+    `Proyek: ${projectName} | Tanggal Cetak: ${formatDateOnly(new Date().toISOString())}${filterSummary ? ` | ${filterSummary}` : ''} | Total Baris: ${materials.length} Material${mismatchMatCount > 0 ? ` | Beda Penyedia/Talangan: ${mismatchMatCount} Material` : ''}`,
     14,
     45
   );
@@ -903,9 +965,14 @@ export async function generateWarehouseSummaryPDF(params: {
         ? 'Habis Terpakai'
         : 'Belum Ada Masuk';
 
+    const disc = discrepancyList[idx];
+    const nameCell = disc.hasMismatch
+      ? `${pm.nama_barang} (${pm.budget_lines.length} Pos BOQ)\n[!] ${disc.summaryText}`
+      : `${pm.nama_barang} (${pm.budget_lines.length} Pos BOQ)`;
+
     return [
       String(idx + 1),
-      `${pm.nama_barang} (${pm.budget_lines.length} Pos BOQ)`,
+      nameCell,
       pm.satuan,
       totalTarget.toLocaleString('id-ID', { maximumFractionDigits: 3 }),
       `${totalMasuk.toLocaleString('id-ID', { maximumFractionDigits: 3 })} (${pctTiba}%)`,
@@ -951,6 +1018,18 @@ export async function generateWarehouseSummaryPDF(params: {
       6: { cellWidth: 24, halign: 'right' },
       7: { cellWidth: 24, halign: 'right' },
       8: { cellWidth: 27, halign: 'center' },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body') {
+        const disc = discrepancyList[data.row.index];
+        if (disc?.hasMismatch) {
+          data.cell.styles.fillColor = [254, 243, 199];
+          if (data.column.index === 1) {
+            data.cell.styles.textColor = [146, 64, 14];
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      }
     },
     margin: { left: 14, right: 14 },
   });

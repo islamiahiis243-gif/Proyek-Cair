@@ -36,8 +36,10 @@ import {
 } from 'lucide-react';
 import { formatDateTime, formatRupiah, generateBOQReportPDF, generateStockMutationPDF, generateWarehouseSummaryPDF } from '../lib/pdfGenerator';
 import {
+  analyzeIncomingProviderDiscrepancy,
   buildOccurredAtIso,
   getTodayLocalDate,
+  summarizeMaterialIncomingDiscrepancy,
   toLocalDateInput
 } from '../lib/stockMutationEngine';
 import { StockMutationWizardModal } from './StockMutationWizardModal';
@@ -76,7 +78,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<'ALL' | 'MASUK' | 'KELUAR' | 'PROYEK_BOQ' | 'PERMINTAAN_KLIEN' | 'BONUS_KLIEN' | 'OPERASIONAL'>('ALL');
+  const [filterType, setFilterType] = useState<'ALL' | 'MASUK' | 'KELUAR' | 'BEDA_PENYEDIA' | 'PROYEK_BOQ' | 'PERMINTAAN_KLIEN' | 'BONUS_KLIEN' | 'OPERASIONAL'>('ALL');
 
   // 4 POV Terpisah Sesuai Kesepakatan:
   // 1) WAREHOUSE_SUMMARY ("Satukan Masuk" - 1 baris per nama material fisik)
@@ -264,6 +266,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       let matchFilter = true;
       if (filterType === 'MASUK') matchFilter = m.jenis === 'MASUK';
       else if (filterType === 'KELUAR') matchFilter = m.jenis === 'KELUAR';
+      else if (filterType === 'BEDA_PENYEDIA') {
+        matchFilter = !m.is_batal && !m.is_ganti && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI' &&
+          analyzeIncomingProviderDiscrepancy(m, physicalMaterials).isMismatch;
+      }
       else if (filterType === 'PROYEK_BOQ') matchFilter = m.beban_biaya === 'PROYEK_BOQ' || m.beban_biaya === 'KONTRAKTOR';
       else if (filterType === 'PERMINTAAN_KLIEN') matchFilter = m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN';
       else if (filterType === 'BONUS_KLIEN') matchFilter = m.beban_biaya === 'BONUS_KLIEN';
@@ -296,7 +302,20 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           return 0;
       }
     });
-  }, [stockMutations, searchQuery, filterType, journalSort]);
+  }, [stockMutations, searchQuery, filterType, journalSort, physicalMaterials]);
+
+  const providerMismatchCount = useMemo(
+    () =>
+      stockMutations.filter(
+        (m) =>
+          !m.is_batal &&
+          !m.is_ganti &&
+          m.status_dokumen !== 'BATAL' &&
+          m.status_dokumen !== 'DIGANTI' &&
+          analyzeIncomingProviderDiscrepancy(m, physicalMaterials).isMismatch
+      ).length,
+    [stockMutations, physicalMaterials]
+  );
 
   // Helper Pengelompokan Kategori BOQ (Divisi & Sub-Pekerjaan)
   const parseCategory = (cat: string) => {
@@ -966,7 +985,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         materials: filteredWarehouseMaterials,
         projectName: 'Trainer & UDU Office (PT IMK)',
         filterSummary: `${filterLabelMap[warehouseFilter]}${searchPart} · ${sortLabel}`,
-        signer: user || undefined
+        signer: user || undefined,
+        stockMutations
       });
       setNoticeMessage(`PDF Rekap Gudang (${filteredWarehouseMaterials.length} material sesuai sortir layar) berhasil diunduh.`);
     } catch (err: any) {
@@ -1033,7 +1053,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         startDate,
         endDate,
         mutations: filteredMutations,
-        signer: user
+        signer: user,
+        physicalMaterials
       });
       setNoticeMessage(`PDF Jurnal Mutasi (${filteredMutations.length} baris sesuai sortir layar) berhasil diunduh.`);
     } catch (err: any) {
@@ -1053,7 +1074,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         startDate: '2026-01-01',
         endDate: today,
         mutations: validMutations,
-        signer: user
+        signer: user,
+        physicalMaterials
       });
       setNoticeMessage(`Dokumen PDF Resmi (${docCode}) dengan QR Code Verifikasi berhasil diunduh.`);
     } catch (err: any) {
@@ -1352,12 +1374,17 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                           const sisaBelumTiba = Math.max(0, totalTarget - totalMasuk);
                           const pctTiba = totalTarget > 0 ? Math.round((totalMasuk / totalTarget) * 100) : 0;
                           const posCount = pm.budget_lines.length;
+                          const matDiscrepancy = summarizeMaterialIncomingDiscrepancy(pm, stockMutations);
 
                           return (
                             <tr
                               key={pm.id}
                               className={`hover:bg-slate-50/90 dark:hover:bg-slate-800/60 transition-colors ${
-                                totalMasuk > 0 ? 'bg-emerald-50/20 dark:bg-emerald-950/10' : ''
+                                matDiscrepancy.hasMismatch
+                                  ? 'bg-amber-50/50 dark:bg-amber-950/20'
+                                  : totalMasuk > 0
+                                  ? 'bg-emerald-50/20 dark:bg-emerald-950/10'
+                                  : ''
                               }`}
                             >
                               <td className="py-3 px-3.5 text-center font-mono text-[11px] text-slate-600 dark:text-slate-300 font-medium">
@@ -1377,6 +1404,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                     {posCount > 5 ? ` (+${posCount - 5} pos lainnya)` : ''}
                                   </span>
                                 </div>
+                                {matDiscrepancy.hasMismatch && (
+                                  <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/70 dark:text-amber-200 dark:border-amber-700/70">
+                                    <AlertTriangle className="w-3 h-3 shrink-0 text-amber-600 dark:text-amber-400" />
+                                    <span>{matDiscrepancy.summaryText}</span>
+                                  </div>
+                                )}
                               </td>
                               <td className="py-3 px-3 text-center font-mono font-semibold text-slate-700 dark:text-slate-200">
                                 {pm.satuan}
@@ -1925,6 +1958,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     { id: 'ALL', label: `Semua (${stockMutations.length})` },
                     { id: 'MASUK', label: `Masuk (${stockMutations.filter((m) => m.jenis === 'MASUK').length})` },
                     { id: 'KELUAR', label: `Keluar (${stockMutations.filter((m) => m.jenis === 'KELUAR').length})` },
+                    { id: 'BEDA_PENYEDIA', label: `⚠️ Beda Penyedia / Talangan (${providerMismatchCount})` },
                     { id: 'PROYEK_BOQ', label: `Proyek BOQ (${stockMutations.filter((m) => m.beban_biaya === 'PROYEK_BOQ' || m.beban_biaya === 'KONTRAKTOR').length})` },
                     { id: 'PERMINTAAN_KLIEN', label: `Minta Klien (${stockMutations.filter((m) => m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN').length})` },
                     { id: 'BONUS_KLIEN', label: `Bonus Klien (${stockMutations.filter((m) => m.beban_biaya === 'BONUS_KLIEN').length})` },
@@ -1996,12 +2030,19 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                           const isVoid = mut.is_batal || mut.status_dokumen === 'BATAL';
                           const isReplaced = mut.is_ganti || mut.status_dokumen === 'DIGANTI';
                           const canCorrectRow = rolePermissions.canInitiateBatalGanti || rolePermissions.canInstructBatalGanti;
+                          const rowDiscrepancy = analyzeIncomingProviderDiscrepancy(mut, physicalMaterials);
 
                           return (
                             <tr
                               key={mut.id}
                               className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors ${
-                                isVoid ? 'opacity-55 bg-rose-50/20 line-through' : isReplaced ? 'opacity-65 bg-amber-50/20 line-through' : ''
+                                isVoid
+                                  ? 'opacity-55 bg-rose-50/20 line-through'
+                                  : isReplaced
+                                  ? 'opacity-65 bg-amber-50/20 line-through'
+                                  : rowDiscrepancy.isMismatch
+                                  ? 'bg-amber-50/50 dark:bg-amber-950/20'
+                                  : ''
                               }`}
                             >
                               <td className="py-3 px-3.5 text-center text-slate-600 dark:text-slate-300 font-mono text-[11px] font-medium">
@@ -2051,15 +2092,23 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                               <td className="py-3 px-3.5 text-slate-700 dark:text-slate-300 max-w-xs">
                                 <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                                   {mut.jenis === 'MASUK' ? (
-                                    <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                                      mut.source_name?.includes('Klien')
-                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300'
-                                        : mut.source_name?.includes('Toko')
-                                        ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300'
-                                        : 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300'
-                                    }`}>
-                                      {mut.source_name || '🏢 CV Menara Megah'}
-                                    </span>
+                                    <>
+                                      <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                                        mut.source_name?.includes('Klien')
+                                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300'
+                                          : mut.source_name?.includes('Toko')
+                                          ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300'
+                                          : 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300'
+                                      }`}>
+                                        {mut.source_name || '🏢 CV Menara Megah'}
+                                      </span>
+                                      {rowDiscrepancy.isMismatch && (
+                                        <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/80 dark:text-amber-200 dark:border-amber-700">
+                                          <AlertTriangle className="w-2.5 h-2.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                                          {rowDiscrepancy.shortBadge}
+                                        </span>
+                                      )}
+                                    </>
                                   ) : (
                                     mut.beban_biaya === 'KLIEN' || (mut.beban_biaya as string) === 'PERMINTAAN_KLIEN' ? (
                                       <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300">
