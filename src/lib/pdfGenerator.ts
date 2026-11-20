@@ -150,7 +150,7 @@ export async function generateStockMutationPDF(params: {
   const totalKeluar = activeMutations.filter((m) => m.jenis === 'KELUAR').reduce((acc, m) => acc + m.jumlah, 0);
 
   // Analisis selisih penyedia (mis. Jatah Klien PT IMK tapi ditalangi Kontraktor)
-  const discrepancyByRow = mutations.map((m) => analyzeIncomingProviderDiscrepancy(m, physicalMaterials));
+  const discrepancyByRow = mutations.map((m) => analyzeIncomingProviderDiscrepancy(m, physicalMaterials, mutations));
   const mismatchCount = mutations.filter(
     (m, i) => !m.is_batal && !m.is_ganti && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI' && discrepancyByRow[i].isMismatch
   ).length;
@@ -966,9 +966,13 @@ export async function generateWarehouseSummaryPDF(params: {
         : 'Belum Ada Masuk';
 
     const disc = discrepancyList[idx];
-    const nameCell = disc.hasMismatch
-      ? `${pm.nama_barang} (${pm.budget_lines.length} Pos BOQ)\n[!] ${disc.summaryText}`
-      : `${pm.nama_barang} (${pm.budget_lines.length} Pos BOQ)`;
+    const extraLines: string[] = [];
+    if (disc.mixedBreakdownText) extraLines.push(disc.mixedBreakdownText);
+    if (disc.hasMismatch) extraLines.push(`[!] ${disc.summaryText}`);
+    const nameCell =
+      extraLines.length > 0
+        ? `${pm.nama_barang} (${pm.budget_lines.length} Pos BOQ)\n${extraLines.join('\n')}`
+        : `${pm.nama_barang} (${pm.budget_lines.length} Pos BOQ)`;
 
     return [
       String(idx + 1),

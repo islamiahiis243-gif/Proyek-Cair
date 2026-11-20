@@ -745,9 +745,13 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                   <p className="mt-1.5 text-sm text-teal-800 dark:text-teal-200 font-semibold">
                     {(() => {
                       const meta = getProviderMetaForMaterial(answers.physicalMaterial);
+                      if (meta.isMixed) {
+                        const fmt = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 3 });
+                        return `ℹ️ Jatah BOQ campuran — Kontraktor: ${fmt(meta.kontraktorQty)} ${activeUom} · PT IMK: ${fmt(meta.imkQty)} ${activeUom}. Pilih penyedia sesuai kenyataan lapangan.`;
+                      }
                       return answers.asalBarang === meta.defaultAsal
                         ? `✓ Otomatis sesuai kontrak BOQ (${meta.label}). Ubah hanya jika kondisi lapangan berbeda.`
-                        : `ℹ️ Berbeda dari penyedia standar BOQ (${meta.label}) — dicatat sesuai kenyataan lapangan.`;
+                        : `⚠️ Berbeda dari jatah BOQ (${meta.label}) — dicatat sebagai talangan / beda penyedia sesuai kenyataan lapangan.`;
                     })()}
                   </p>
                 )}

@@ -268,7 +268,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       else if (filterType === 'KELUAR') matchFilter = m.jenis === 'KELUAR';
       else if (filterType === 'BEDA_PENYEDIA') {
         matchFilter = !m.is_batal && !m.is_ganti && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI' &&
-          analyzeIncomingProviderDiscrepancy(m, physicalMaterials).isMismatch;
+          analyzeIncomingProviderDiscrepancy(m, physicalMaterials, stockMutations).isMismatch;
       }
       else if (filterType === 'PROYEK_BOQ') matchFilter = m.beban_biaya === 'PROYEK_BOQ' || m.beban_biaya === 'KONTRAKTOR';
       else if (filterType === 'PERMINTAAN_KLIEN') matchFilter = m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN';
@@ -312,7 +312,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           !m.is_ganti &&
           m.status_dokumen !== 'BATAL' &&
           m.status_dokumen !== 'DIGANTI' &&
-          analyzeIncomingProviderDiscrepancy(m, physicalMaterials).isMismatch
+          analyzeIncomingProviderDiscrepancy(m, physicalMaterials, stockMutations).isMismatch
       ).length,
     [stockMutations, physicalMaterials]
   );
@@ -1404,6 +1404,11 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                     {posCount > 5 ? ` (+${posCount - 5} pos lainnya)` : ''}
                                   </span>
                                 </div>
+                                {matDiscrepancy.mixedBreakdownText && (
+                                  <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-indigo-50 text-indigo-800 border border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-200 dark:border-indigo-800/70 mr-1.5">
+                                    <span>{matDiscrepancy.mixedBreakdownText}</span>
+                                  </div>
+                                )}
                                 {matDiscrepancy.hasMismatch && (
                                   <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/70 dark:text-amber-200 dark:border-amber-700/70">
                                     <AlertTriangle className="w-3 h-3 shrink-0 text-amber-600 dark:text-amber-400" />
@@ -2030,7 +2035,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                           const isVoid = mut.is_batal || mut.status_dokumen === 'BATAL';
                           const isReplaced = mut.is_ganti || mut.status_dokumen === 'DIGANTI';
                           const canCorrectRow = rolePermissions.canInitiateBatalGanti || rolePermissions.canInstructBatalGanti;
-                          const rowDiscrepancy = analyzeIncomingProviderDiscrepancy(mut, physicalMaterials);
+                          const rowDiscrepancy = analyzeIncomingProviderDiscrepancy(mut, physicalMaterials, stockMutations);
 
                           return (
                             <tr

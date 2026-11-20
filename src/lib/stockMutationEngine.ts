@@ -99,9 +99,15 @@ export const formatIndonesianDate = (dateStr: string): string => {
 
 export const getProviderMetaForMaterial = (
   pm: PhysicalMaterialItem | null
-): { defaultAsal: 'KONTRAKTOR' | 'KLIEN'; isMixed: boolean; label: string } => {
+): {
+  defaultAsal: 'KONTRAKTOR' | 'KLIEN';
+  isMixed: boolean;
+  label: string;
+  kontraktorQty: number;
+  imkQty: number;
+} => {
   if (!pm || !pm.budget_lines || pm.budget_lines.length === 0) {
-    return { defaultAsal: 'KONTRAKTOR', isMixed: false, label: 'Kontraktor' };
+    return { defaultAsal: 'KONTRAKTOR', isMixed: false, label: 'Kontraktor', kontraktorQty: 0, imkQty: 0 };
   }
   let imkQty = 0;
   let kontraktorQty = 0;
@@ -124,16 +130,18 @@ export const getProviderMetaForMaterial = (
   const hasKontraktor = kontraktorQty > 0 || kontraktorCount > 0;
 
   if (hasImk && !hasKontraktor) {
-    return { defaultAsal: 'KLIEN', isMixed: false, label: 'Klien (PT IMK)' };
+    return { defaultAsal: 'KLIEN', isMixed: false, label: 'Klien (PT IMK)', kontraktorQty: 0, imkQty };
   }
   if (hasImk && hasKontraktor) {
     return {
       defaultAsal: imkQty > kontraktorQty ? 'KLIEN' : 'KONTRAKTOR',
       isMixed: true,
-      label: 'Kontraktor & PT IMK'
+      label: 'Kontraktor & PT IMK',
+      kontraktorQty,
+      imkQty
     };
   }
-  return { defaultAsal: 'KONTRAKTOR', isMixed: false, label: 'Kontraktor' };
+  return { defaultAsal: 'KONTRAKTOR', isMixed: false, label: 'Kontraktor', kontraktorQty, imkQty: 0 };
 };
 
 export interface ProviderDiscrepancyInfo {
@@ -145,21 +153,30 @@ export interface ProviderDiscrepancyInfo {
   pdfNote: string;
 }
 
-/**
- * Deteksi otomatis selisih penyedia antara Kontrak BOQ vs Realisasi Barang Masuk di lapangan.
- * Bekerja baik untuk transaksi baru maupun transaksi lama yang sudah tersimpan di database.
- */
-export const analyzeIncomingProviderDiscrepancy = (
-  mut: Pick<MutasiBarang, 'barang_id' | 'nama_barang' | 'jenis' | 'is_custom_item' | 'source_name' | 'owner_type'>,
-  physicalMaterials: PhysicalMaterialItem[]
-): ProviderDiscrepancyInfo => {
-  const actualRaw = (mut.source_name || '').trim();
-  const actualLower = actualRaw.toLowerCase();
-  const isActualClient =
+const isActualClientMutation = (
+  mut: Pick<MutasiBarang, 'source_name' | 'owner_type'>
+): boolean => {
+  const actualLower = (mut.source_name || '').trim().toLowerCase();
+  return (
     mut.owner_type === 'KLIEN' ||
     actualLower.includes('klien') ||
     actualLower.includes('imk') ||
-    actualLower.includes('owner');
+    actualLower.includes('owner')
+  );
+};
+
+/**
+ * Deteksi otomatis selisih penyedia antara Kontrak BOQ vs Realisasi Barang Masuk di lapangan.
+ * Mendukung barang murni 1 penyedia MAUPUN barang campuran (Kontraktor & PT IMK) jika melampaui kuota penyedia.
+ */
+export const analyzeIncomingProviderDiscrepancy = (
+  mut: Pick<MutasiBarang, 'id' | 'tanggal' | 'barang_id' | 'nama_barang' | 'jenis' | 'jumlah' | 'satuan' | 'is_custom_item' | 'source_name' | 'owner_type'>,
+  physicalMaterials: PhysicalMaterialItem[],
+  allMutations?: MutasiBarang[]
+): ProviderDiscrepancyInfo => {
+  const actualRaw = (mut.source_name || '').trim();
+  const actualLower = actualRaw.toLowerCase();
+  const isActualClient = isActualClientMutation(mut);
   const isActualOther =
     !isActualClient && (actualLower.includes('lainnya') || actualLower.includes('toko'));
 
@@ -201,7 +218,7 @@ export const analyzeIncomingProviderDiscrepancy = (
 
   const prov = getProviderMetaForMaterial(matchedPm);
 
-  // Jatah murni Klien (PT IMK), tetapi realisasi lapangan masuk oleh Kontraktor / Lainnya
+  // 1) Jatah murni Klien (PT IMK), tetapi realisasi lapangan masuk oleh Kontraktor / Lainnya
   if (!prov.isMixed && prov.defaultAsal === 'KLIEN' && !isActualClient) {
     const label = isActualOther
       ? `Pengadaan Lainnya (Jatah BOQ: PT IMK)`
@@ -216,7 +233,7 @@ export const analyzeIncomingProviderDiscrepancy = (
     };
   }
 
-  // Jatah murni Kontraktor (CV Menara Megah), tetapi realisasi lapangan dipasok Klien (PT IMK)
+  // 2) Jatah murni Kontraktor (CV Menara Megah), tetapi realisasi lapangan dipasok Klien (PT IMK)
   if (!prov.isMixed && prov.defaultAsal === 'KONTRAKTOR' && isActualClient) {
     const label = `Dipasok Klien PT IMK (Jatah BOQ: Kontraktor)`;
     return {
@@ -227,6 +244,62 @@ export const analyzeIncomingProviderDiscrepancy = (
       shortBadge: label,
       pdfNote: label
     };
+  }
+
+  // 3) Material Campuran (Kontraktor & PT IMK): cek apakah kumulatif masuk penyedia ini melampaui kuota BOQ-nya
+  if (prov.isMixed && allMutations && allMutations.length > 0) {
+    const lineIds = new Set([matchedPm.id, ...matchedPm.budget_lines.map((bl) => bl.id)]);
+    const relatedIn = allMutations
+      .filter(
+        (m) =>
+          m.jenis === 'MASUK' &&
+          !m.is_custom_item &&
+          !m.is_batal &&
+          !m.is_ganti &&
+          m.status_dokumen !== 'BATAL' &&
+          m.status_dokumen !== 'DIGANTI' &&
+          ((m.barang_id && lineIds.has(m.barang_id)) || (m.nama_barang || '').trim().toLowerCase() === normName)
+      )
+      .sort((a, b) => {
+        const diff = new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime();
+        return diff !== 0 ? diff : a.id.localeCompare(b.id);
+      });
+
+    let cumKontraktor = 0;
+    let cumKlien = 0;
+    for (const m of relatedIn) {
+      const mIsClient = isActualClientMutation(m);
+      if (mIsClient) cumKlien += Number(m.jumlah || 0);
+      else cumKontraktor += Number(m.jumlah || 0);
+
+      if (m.id === mut.id) {
+        if (!mIsClient && cumKontraktor > prov.kontraktorQty + 0.0001) {
+          const excess = Math.min(Number(mut.jumlah || 0), cumKontraktor - prov.kontraktorQty);
+          const label = `Talangan Kontraktor +${excess.toLocaleString('id-ID', { maximumFractionDigits: 3 })} ${mut.satuan} (Melebihi Kuota Kontraktor · Jatah PT IMK)`;
+          return {
+            isMismatch: true,
+            kind: 'TALANGAN_KONTRAKTOR',
+            contractProviderLabel: 'Kontraktor & PT IMK',
+            actualProviderLabel,
+            shortBadge: label,
+            pdfNote: label
+          };
+        }
+        if (mIsClient && cumKlien > prov.imkQty + 0.0001) {
+          const excess = Math.min(Number(mut.jumlah || 0), cumKlien - prov.imkQty);
+          const label = `Dipasok Klien PT IMK +${excess.toLocaleString('id-ID', { maximumFractionDigits: 3 })} ${mut.satuan} (Melebihi Kuota PT IMK · Jatah Kontraktor)`;
+          return {
+            isMismatch: true,
+            kind: 'DIPASOK_KLIEN',
+            contractProviderLabel: 'Kontraktor & PT IMK',
+            actualProviderLabel,
+            shortBadge: label,
+            pdfNote: label
+          };
+        }
+        break;
+      }
+    }
   }
 
   return {
@@ -246,32 +319,22 @@ export interface MaterialDiscrepancySummary {
   contractProviderLabel: string;
   actualProviderLabel: string;
   summaryText: string;
+  mixedBreakdownText: string;
 }
 
 /**
- * Rekap selisih penyedia per material fisik (untuk Tab 1 Rekap Gudang & PDF Rekap Gudang).
+ * Rekap selisih penyedia & porsi masuk per material fisik (untuk Tab 1 Rekap Gudang & PDF Rekap Gudang).
  */
 export const summarizeMaterialIncomingDiscrepancy = (
   pm: PhysicalMaterialItem,
   stockMutations: MutasiBarang[]
 ): MaterialDiscrepancySummary => {
   const prov = getProviderMetaForMaterial(pm);
-  if (prov.isMixed) {
-    return {
-      hasMismatch: false,
-      kind: 'NONE',
-      mismatchQty: 0,
-      contractProviderLabel: prov.label,
-      actualProviderLabel: '',
-      summaryText: ''
-    };
-  }
-
   const lineIds = new Set([pm.id, ...pm.budget_lines.map((bl) => bl.id)]);
   const normName = pm.nama_barang.trim().toLowerCase();
 
-  let talanganQty = 0;
-  let dipasokKlienQty = 0;
+  let masukKontraktor = 0;
+  let masukKlien = 0;
 
   for (const m of stockMutations) {
     if (m.jenis !== 'MASUK' || m.is_custom_item || m.is_batal || m.is_ganti || m.status_dokumen === 'BATAL' || m.status_dokumen === 'DIGANTI') {
@@ -280,35 +343,76 @@ export const summarizeMaterialIncomingDiscrepancy = (
     const match = (m.barang_id && lineIds.has(m.barang_id)) || (m.nama_barang || '').trim().toLowerCase() === normName;
     if (!match) continue;
 
-    const srcLower = (m.source_name || '').toLowerCase();
-    const isActualClient = m.owner_type === 'KLIEN' || srcLower.includes('klien') || srcLower.includes('imk') || srcLower.includes('owner');
-
-    if (prov.defaultAsal === 'KLIEN' && !isActualClient) {
-      talanganQty += Number(m.jumlah || 0);
-    } else if (prov.defaultAsal === 'KONTRAKTOR' && isActualClient) {
-      dipasokKlienQty += Number(m.jumlah || 0);
+    if (isActualClientMutation(m)) {
+      masukKlien += Number(m.jumlah || 0);
+    } else {
+      masukKontraktor += Number(m.jumlah || 0);
     }
   }
 
-  if (talanganQty > 0) {
+  const fmt = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 3 });
+
+  if (prov.isMixed) {
+    const mixedBreakdownText = `Porsi Masuk — Kontraktor: ${fmt(masukKontraktor)}/${fmt(prov.kontraktorQty)} · PT IMK: ${fmt(masukKlien)}/${fmt(prov.imkQty)} ${pm.satuan}`;
+
+    if (masukKontraktor > prov.kontraktorQty + 0.0001) {
+      const excess = masukKontraktor - prov.kontraktorQty;
+      return {
+        hasMismatch: true,
+        kind: 'TALANGAN_KONTRAKTOR',
+        mismatchQty: excess,
+        contractProviderLabel: prov.label,
+        actualProviderLabel: 'Kontraktor',
+        summaryText: `Talangan Kontraktor: +${fmt(excess)} ${pm.satuan} melebihi porsi Kontraktor (Jatah PT IMK)`,
+        mixedBreakdownText
+      };
+    }
+
+    if (masukKlien > prov.imkQty + 0.0001) {
+      const excess = masukKlien - prov.imkQty;
+      return {
+        hasMismatch: true,
+        kind: 'DIPASOK_KLIEN',
+        mismatchQty: excess,
+        contractProviderLabel: prov.label,
+        actualProviderLabel: 'Klien (PT IMK)',
+        summaryText: `Dipasok Klien PT IMK: +${fmt(excess)} ${pm.satuan} melebihi porsi PT IMK (Jatah Kontraktor)`,
+        mixedBreakdownText
+      };
+    }
+
     return {
-      hasMismatch: true,
-      kind: 'TALANGAN_KONTRAKTOR',
-      mismatchQty: talanganQty,
-      contractProviderLabel: 'Klien (PT IMK)',
-      actualProviderLabel: 'Kontraktor',
-      summaryText: `Talangan Kontraktor: ${talanganQty.toLocaleString('id-ID', { maximumFractionDigits: 3 })} ${pm.satuan} (Jatah BOQ: PT IMK)`
+      hasMismatch: false,
+      kind: 'NONE',
+      mismatchQty: 0,
+      contractProviderLabel: prov.label,
+      actualProviderLabel: '',
+      summaryText: '',
+      mixedBreakdownText
     };
   }
 
-  if (dipasokKlienQty > 0) {
+  if (prov.defaultAsal === 'KLIEN' && masukKontraktor > 0) {
+    return {
+      hasMismatch: true,
+      kind: 'TALANGAN_KONTRAKTOR',
+      mismatchQty: masukKontraktor,
+      contractProviderLabel: 'Klien (PT IMK)',
+      actualProviderLabel: 'Kontraktor',
+      summaryText: `Talangan Kontraktor: ${fmt(masukKontraktor)} ${pm.satuan} (Jatah BOQ: PT IMK)`,
+      mixedBreakdownText: ''
+    };
+  }
+
+  if (prov.defaultAsal === 'KONTRAKTOR' && masukKlien > 0) {
     return {
       hasMismatch: true,
       kind: 'DIPASOK_KLIEN',
-      mismatchQty: dipasokKlienQty,
+      mismatchQty: masukKlien,
       contractProviderLabel: 'Kontraktor',
       actualProviderLabel: 'Klien (PT IMK)',
-      summaryText: `Dipasok Klien PT IMK: ${dipasokKlienQty.toLocaleString('id-ID', { maximumFractionDigits: 3 })} ${pm.satuan} (Jatah BOQ: Kontraktor)`
+      summaryText: `Dipasok Klien PT IMK: ${fmt(masukKlien)} ${pm.satuan} (Jatah BOQ: Kontraktor)`,
+      mixedBreakdownText: ''
     };
   }
 
@@ -318,7 +422,8 @@ export const summarizeMaterialIncomingDiscrepancy = (
     mismatchQty: 0,
     contractProviderLabel: prov.label,
     actualProviderLabel: '',
-    summaryText: ''
+    summaryText: '',
+    mixedBreakdownText: ''
   };
 };
 
