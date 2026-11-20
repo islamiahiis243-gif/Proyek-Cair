@@ -34,7 +34,7 @@ import {
   ArrowUp,
   ArrowDown
 } from 'lucide-react';
-import { formatDateTime, formatRupiah, generateBOQReportPDF, generateStockMutationPDF } from '../lib/pdfGenerator';
+import { formatDateTime, formatRupiah, generateBOQReportPDF, generateStockMutationPDF, generateWarehouseSummaryPDF } from '../lib/pdfGenerator';
 import {
   buildOccurredAtIso,
   getTodayLocalDate,
@@ -163,26 +163,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   const [boqStatusFilter, setBoqStatusFilter] = useState<'ALL' | 'Belum dipenuhi' | 'Dalam pemenuhan' | 'Terpenuhi' | 'Melebihi BOQ'>('ALL');
   const [collapsedDivisions, setCollapsedDivisions] = useState<Set<string>>(new Set());
   const [collapsedSubSections, setCollapsedSubSections] = useState<Set<string>>(new Set());
+  const [isExportingWarehouse, setIsExportingWarehouse] = useState(false);
   const [isExportingBoq, setIsExportingBoq] = useState(false);
-
-  const handleExportBOQPDF = async () => {
-    try {
-      setIsExportingBoq(true);
-      const docId = `BOQ-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
-      await generateBOQReportPDF({
-        docId,
-        items,
-        projectName: 'Trainer & UDU Office (PT IMK)',
-        signer: user || undefined
-      });
-      setNoticeMessage('Dokumen PDF BOQ berhasil dibuat dan diunduh.');
-    } catch (err: any) {
-      console.error('Error exporting BOQ PDF:', err);
-      setErrorMessage('Gagal mengunduh PDF BOQ: ' + (err.message || 'Kesalahan sistem'));
-    } finally {
-      setIsExportingBoq(false);
-    }
-  };
+  const [isExportingJournal, setIsExportingJournal] = useState(false);
 
   // State Peluncur Wizard Tanya-Jawab Cerdas (StockMutationWizardModal)
   const [wizardType, setWizardType] = useState<JenisMutasiBarang>(preselectedType || 'MASUK');
@@ -958,6 +941,109 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     }
   };
 
+  // Ekspor PDF Tab 1: Rekap Gudang ("Satukan Masuk") — sesuai filter & urutan sortir layar
+  const handleExportWarehousePDF = async () => {
+    if (filteredWarehouseMaterials.length === 0) {
+      setErrorMessage('Tidak ada data material di layar untuk diekspor ke PDF.');
+      return;
+    }
+    try {
+      setIsExportingWarehouse(true);
+      const docId = `GDG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const filterLabelMap: Record<typeof warehouseFilter, string> = {
+        ALL: 'Semua Material',
+        HAS_ARRIVED: 'Sudah Ada Masuk',
+        IN_STOCK: 'Tersedia di Gudang',
+        NOT_ARRIVED: 'Belum Tiba'
+      };
+      const sortLabel = warehouseSort
+        ? `Urut: ${warehouseSort.key} (${warehouseSort.dir === 'asc' ? 'Naik' : 'Turun'})`
+        : 'Urut: Default';
+      const searchPart = warehouseSearchQuery.trim() ? ` · Cari: "${warehouseSearchQuery.trim()}"` : '';
+
+      await generateWarehouseSummaryPDF({
+        docId,
+        materials: filteredWarehouseMaterials,
+        projectName: 'Trainer & UDU Office (PT IMK)',
+        filterSummary: `${filterLabelMap[warehouseFilter]}${searchPart} · ${sortLabel}`,
+        signer: user || undefined
+      });
+      setNoticeMessage(`PDF Rekap Gudang (${filteredWarehouseMaterials.length} material sesuai sortir layar) berhasil diunduh.`);
+    } catch (err: any) {
+      console.error('Error exporting Warehouse PDF:', err);
+      setErrorMessage('Gagal mengunduh PDF Rekap Gudang: ' + (err?.message || 'Kesalahan sistem'));
+    } finally {
+      setIsExportingWarehouse(false);
+    }
+  };
+
+  // Ekspor PDF Tab 2: Realisasi per Pos BOQ ("Bedakan Keluar") — sesuai filter & urutan sortir layar
+  const handleExportBOQPDF = async () => {
+    const visibleItems = groupedBoqData.flatMap((d) => d.subSections.flatMap((s) => s.items));
+    if (visibleItems.length === 0) {
+      setErrorMessage('Tidak ada pos BOQ di layar untuk diekspor ke PDF.');
+      return;
+    }
+    try {
+      setIsExportingBoq(true);
+      const docId = `BOQ-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const providerLabel =
+        boqProviderFilter === 'KONTRAKTOR' ? 'CV Menara Megah' : boqProviderFilter === 'IMK' ? 'PT IMK' : 'Semua Penyedia';
+      const statusLabel = boqStatusFilter === 'ALL' ? 'Semua Status' : boqStatusFilter;
+      const sortLabel = boqSort
+        ? `Urut: ${boqSort.key} (${boqSort.dir === 'asc' ? 'Naik' : 'Turun'})`
+        : 'Urut: Default';
+      const searchPart = boqSearchQuery.trim() ? ` · Cari: "${boqSearchQuery.trim()}"` : '';
+
+      await generateBOQReportPDF({
+        docId,
+        items: visibleItems,
+        projectName: 'Trainer & UDU Office (PT IMK)',
+        signer: user || undefined,
+        preserveOrder: true,
+        filterSummary: `${providerLabel} · ${statusLabel}${searchPart} · ${sortLabel}`
+      });
+      setNoticeMessage(`PDF Realisasi BOQ (${visibleItems.length} pos sesuai sortir layar) berhasil diunduh.`);
+    } catch (err: any) {
+      console.error('Error exporting BOQ PDF:', err);
+      setErrorMessage('Gagal mengunduh PDF BOQ: ' + (err?.message || 'Kesalahan sistem'));
+    } finally {
+      setIsExportingBoq(false);
+    }
+  };
+
+  // Ekspor PDF Tab 3: Jurnal Transaksi & Barang Kustom — sesuai filter & urutan sortir layar
+  const handleExportJournalPDF = async () => {
+    if (filteredMutations.length === 0) {
+      setErrorMessage('Tidak ada baris transaksi di layar untuk diekspor ke PDF.');
+      return;
+    }
+    try {
+      setIsExportingJournal(true);
+      const docId = `JRN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const dates = filteredMutations
+        .map((m) => (m.tanggal ? new Date(m.tanggal).getTime() : NaN))
+        .filter((t) => !Number.isNaN(t));
+      const today = new Date().toISOString().slice(0, 10);
+      const startDate = dates.length > 0 ? new Date(Math.min(...dates)).toISOString().slice(0, 10) : today;
+      const endDate = dates.length > 0 ? new Date(Math.max(...dates)).toISOString().slice(0, 10) : today;
+
+      await generateStockMutationPDF({
+        docId,
+        startDate,
+        endDate,
+        mutations: filteredMutations,
+        signer: user
+      });
+      setNoticeMessage(`PDF Jurnal Mutasi (${filteredMutations.length} baris sesuai sortir layar) berhasil diunduh.`);
+    } catch (err: any) {
+      console.error('Error exporting Journal PDF:', err);
+      setErrorMessage('Gagal mengunduh PDF Jurnal Transaksi: ' + (err?.message || 'Kesalahan sistem'));
+    } finally {
+      setIsExportingJournal(false);
+    }
+  };
+
   const handleDownloadStockDocPDF = async (docCode: string) => {
     try {
       const validMutations = stockMutations.filter((m) => !m.is_batal && !m.is_ganti);
@@ -1148,16 +1234,28 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
               {/* Filter & Pencarian Gudang Material */}
               <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-slate-500 dark:text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    aria-label="Cari nama material di gudang"
-                    placeholder="Cari nama material fisik (contoh: Pasir, Semen, Kayu, Besi)..."
-                    value={warehouseSearchQuery}
-                    onChange={(e) => setWarehouseSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-emerald-500/20"
-                  />
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <div className="relative flex-1 min-w-0">
+                    <Search className="w-4 h-4 text-slate-500 dark:text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      aria-label="Cari nama material di gudang"
+                      placeholder="Cari nama material fisik (contoh: Pasir, Semen, Kayu, Besi)..."
+                      value={warehouseSearchQuery}
+                      onChange={(e) => setWarehouseSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleExportWarehousePDF}
+                    disabled={isExportingWarehouse || filteredWarehouseMaterials.length === 0}
+                    title="Ekspor PDF sesuai filter & urutan sortir di layar"
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer disabled:opacity-40"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>{isExportingWarehouse ? 'Menyiapkan...' : 'Ekspor PDF'}</span>
+                  </button>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {[
@@ -1418,16 +1516,28 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
               {/* Filter & Kontrol Pencarian BOQ */}
               <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 transition-colors">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-slate-500 dark:text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    aria-label="Cari kode BOQ, nama material, atau uraian pekerjaan"
-                    placeholder="Cari kode BOQ (I/A/1), nama material (Kayu, Pasir, Semen), atau uraian pekerjaan..."
-                    value={boqSearchQuery}
-                    onChange={(e) => setBoqSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500/20"
-                  />
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <div className="relative flex-1 min-w-0">
+                    <Search className="w-4 h-4 text-slate-500 dark:text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      aria-label="Cari kode BOQ, nama material, atau uraian pekerjaan"
+                      placeholder="Cari kode BOQ (I/A/1), nama material (Kayu, Pasir, Semen), atau uraian pekerjaan..."
+                      value={boqSearchQuery}
+                      onChange={(e) => setBoqSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleExportBOQPDF}
+                    disabled={isExportingBoq || groupedBoqData.length === 0}
+                    title="Ekspor PDF sesuai filter & urutan sortir di layar"
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors cursor-pointer disabled:opacity-40"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>{isExportingBoq ? 'Menyiapkan...' : 'Ekspor PDF'}</span>
+                  </button>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -1786,16 +1896,28 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
               {/* Filter & Pencarian */}
               <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 transition-colors">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-slate-500 dark:text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    aria-label="Cari transaksi mutasi barang"
-                    placeholder="Cari transaksi, material, keperluan, PIC, atau no surat jalan..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500/20"
-                  />
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <div className="relative flex-1 min-w-0">
+                    <Search className="w-4 h-4 text-slate-500 dark:text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      aria-label="Cari transaksi mutasi barang"
+                      placeholder="Cari transaksi, material, keperluan, PIC, atau no surat jalan..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleExportJournalPDF}
+                    disabled={isExportingJournal || filteredMutations.length === 0}
+                    title="Ekspor PDF sesuai filter & urutan sortir di layar"
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors cursor-pointer disabled:opacity-40"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>{isExportingJournal ? 'Menyiapkan...' : 'Ekspor PDF'}</span>
+                  </button>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5">

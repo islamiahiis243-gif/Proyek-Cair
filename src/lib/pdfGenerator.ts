@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import QRCode from 'qrcode';
-import { DokumenLaporan, MutasiBarang, MutasiKas, UserProfile, ItemBarang } from '../types';
+import { DokumenLaporan, MutasiBarang, MutasiKas, UserProfile, ItemBarang, PhysicalMaterialItem } from '../types';
 
 function stableStringify(value: any): string {
   if (Array.isArray(value)) return '[' + value.map(stableStringify).join(',') + ']';
@@ -566,8 +566,16 @@ export async function generateBOQReportPDF(params: {
   items: ItemBarang[];
   projectName?: string;
   signer?: UserProfile;
+  preserveOrder?: boolean;
+  filterSummary?: string;
 }): Promise<DokumenLaporan> {
-  const { docId, items, projectName = 'UDU Project (Trainer & UDU Office)' } = params;
+  const {
+    docId,
+    items,
+    projectName = 'UDU Project (Trainer & UDU Office)',
+    preserveOrder = false,
+    filterSummary
+  } = params;
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
@@ -590,7 +598,7 @@ export async function generateBOQReportPDF(params: {
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
   doc.text(
-    `Klien: PT INDO MURO KENCANA | Proyek: ${projectName} | Tanggal Cetak: ${formatDateOnly(new Date().toISOString())}`,
+    `Klien: PT INDO MURO KENCANA | Proyek: ${projectName} | Tanggal Cetak: ${formatDateOnly(new Date().toISOString())}${filterSummary ? ` | ${filterSummary}` : ''}`,
     14,
     45
   );
@@ -631,8 +639,10 @@ export async function generateBOQReportPDF(params: {
   doc.setTextColor(126, 34, 206);
   doc.text('* Pengadaan Klien (Free-Issue PT IMK): Rp 177.571.280 (Beban Kontraktor: Rp 0)', pageWidth - 18, 53, { align: 'right' });
 
-  // Siapkan Data Tabel Berdasarkan Hierarki
-  const sortedItems = [...items].sort((a, b) => (a.source_excel_row || 0) - (b.source_excel_row || 0));
+  // Siapkan Data Tabel Berdasarkan Hierarki (pertahankan urutan layar bila preserveOrder = true)
+  const sortedItems = preserveOrder
+    ? [...items]
+    : [...items].sort((a, b) => (a.source_excel_row || 0) - (b.source_excel_row || 0));
   
   const tableData: any[] = [];
   let currentDivision = '';
@@ -834,5 +844,162 @@ export async function generateBOQReportPDF(params: {
     total_transaksi: items.length,
     ringkasan_nilai_rp: 720000000,
     qr_payload: `TTE-CV-MENARA-MEGAH:${docId}:DIREKTUR:ROLLY_YOHANES_KARINAH:NPWP_0024376584714000:BOQ_VALID`,
+  };
+}
+
+/**
+ * Generate PDF for Rekap Gudang Material ("Satukan Masuk") sesuai filter & sortiran layar
+ */
+export async function generateWarehouseSummaryPDF(params: {
+  docId: string;
+  materials: PhysicalMaterialItem[];
+  projectName?: string;
+  filterSummary?: string;
+  signer?: UserProfile;
+}): Promise<DokumenLaporan> {
+  const {
+    docId,
+    materials,
+    projectName = 'UDU Project (Trainer & UDU Office)',
+    filterSummary,
+    signer
+  } = params;
+
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  drawOfficialHeader(doc, pageWidth);
+
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.text('REKAPITULASI GUDANG MATERIAL ("SATUKAN MASUK")', 14, 40);
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text(
+    `Proyek: ${projectName} | Tanggal Cetak: ${formatDateOnly(new Date().toISOString())}${filterSummary ? ` | ${filterSummary}` : ''} | Total Baris: ${materials.length} Material`,
+    14,
+    45
+  );
+
+  const tableBody = materials.map((pm, idx) => {
+    const totalTarget = pm.total_qty_boq || 0;
+    const totalMasuk = pm.total_qty_masuk || 0;
+    const totalKeluar = pm.total_qty_keluar || 0;
+    const sisaBelumTiba = Math.max(0, totalTarget - totalMasuk);
+    const pctTiba = totalTarget > 0 ? Math.round((totalMasuk / totalTarget) * 100) : 0;
+    const statusLabel =
+      pm.stok_fisik > 0
+        ? `Tersedia (${pm.stok_fisik.toLocaleString('id-ID', { maximumFractionDigits: 3 })})`
+        : totalMasuk > 0
+        ? 'Habis Terpakai'
+        : 'Belum Ada Masuk';
+
+    return [
+      String(idx + 1),
+      `${pm.nama_barang} (${pm.budget_lines.length} Pos BOQ)`,
+      pm.satuan,
+      totalTarget.toLocaleString('id-ID', { maximumFractionDigits: 3 }),
+      `${totalMasuk.toLocaleString('id-ID', { maximumFractionDigits: 3 })} (${pctTiba}%)`,
+      sisaBelumTiba.toLocaleString('id-ID', { maximumFractionDigits: 3 }),
+      totalKeluar.toLocaleString('id-ID', { maximumFractionDigits: 3 }),
+      pm.stok_fisik.toLocaleString('id-ID', { maximumFractionDigits: 3 }),
+      statusLabel
+    ];
+  });
+
+  autoTable(doc, {
+    startY: 50,
+    head: [[
+      'No',
+      'Nama Material & Cakupan Pos BOQ',
+      'Satuan',
+      'Kebutuhan Proyek',
+      'Sudah Masuk Gudang',
+      'Sisa Belum Tiba',
+      'Sudah Dipakai',
+      'Saldo Gudang',
+      'Status Gudang'
+    ]],
+    body: tableBody,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [15, 118, 110],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7.5,
+    },
+    styles: {
+      fontSize: 7,
+      cellPadding: 2,
+    },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' },
+      1: { cellWidth: 82 },
+      2: { cellWidth: 18, halign: 'center' },
+      3: { cellWidth: 26, halign: 'right' },
+      4: { cellWidth: 32, halign: 'right' },
+      5: { cellWidth: 26, halign: 'right' },
+      6: { cellWidth: 24, halign: 'right' },
+      7: { cellWidth: 24, halign: 'right' },
+      8: { cellWidth: 27, halign: 'center' },
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  const finalY = (doc as any).lastAutoTable?.finalY || 150;
+  let signY = finalY + 8;
+  if (signY + 35 > pageHeight) {
+    doc.addPage();
+    signY = 25;
+  }
+
+  const qrPayload = `TTE-CV-MENARA-MEGAH:${docId}:GUDANG:${materials.length}_MATERIAL`;
+  const qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 100, margin: 0 });
+  doc.addImage(qrDataUrl, 'PNG', pageWidth - 30, signY, 16, 16);
+
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Dicetak oleh: ${signer?.name || 'Clerk'}`, 14, signY + 5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Kode Dokumen: ${docId} | CV. MENARA MEGAH - Puruk Cahu`, 14, signY + 10);
+
+  const hash = await sha256Hex(stableStringify({ docId, count: materials.length, projectName }));
+  doc.setFontSize(6);
+  doc.setTextColor(148, 163, 184);
+  doc.text(
+    `Integritas Dokumen SHA-256: ${hash} | CV. MENARA MEGAH - Puruk Cahu`,
+    pageWidth / 2,
+    pageHeight - 5,
+    { align: 'center' }
+  );
+
+  doc.save(`${docId}_Rekap_Gudang_Material_CV_MENARA_MEGAH.pdf`);
+
+  return {
+    id: docId,
+    judul: 'Rekapitulasi Gudang Material ("Satukan Masuk")',
+    jenis: 'MUTASI_STOK',
+    status: 'TERVERIFIKASI',
+    periode_awal: new Date().toISOString(),
+    periode_akhir: new Date().toISOString(),
+    dibuat_pada: new Date().toISOString(),
+    penandatangan_nama: signer?.name || 'Clerk',
+    penandatangan_jabatan: 'Pelaksana Administrasi',
+    penandatangan_email: signer?.email || '',
+    hash_keamanan: hash,
+    total_transaksi: materials.length,
+    ringkasan_nilai_rp: 0,
+    qr_payload: qrPayload,
   };
 }

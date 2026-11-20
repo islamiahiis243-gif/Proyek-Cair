@@ -975,19 +975,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const { error } = await client.from('documents').insert({
         workspace_id: wsId,
         project_id: prId,
-        document_code: docCode,
+        document_no: docCode,
         document_type: params.jenis,
         title: params.judul.trim(),
         status: 'ISSUED',
         status_dokumen: 'DITERBITKAN',
-        content_hash: `SHA256:${shaHash}`,
-        payload: {
+        signer_name: user.name,
+        signer_role: activeRole,
+        signer_email: user.email || null,
+        content_sha256: `SHA256:${shaHash}`,
+        qr_payload: `DOC:${docCode}:${activeCompany.npwp}`,
+        snapshot: {
           periode: params.periode,
           ringkasan: params.ringkasan,
           total_nilai_atau_item: params.total_nilai_atau_item,
           penandatangan: user.name,
           jabatan: activeRole
         },
+        created_by: user.id || null,
         issued_at: new Date().toISOString()
       });
 
@@ -1086,20 +1091,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const { data: insertedDoc, error: insertErr } = await client.from('documents').insert({
         workspace_id: wsId,
         project_id: prId,
-        document_code: newDocCode,
+        document_no: newDocCode,
         document_type: newParams.jenis,
         title: newParams.judul.trim(),
         status: 'ISSUED',
         status_dokumen: 'DITERBITKAN',
+        signer_name: user.name,
+        signer_role: activeRole,
+        signer_email: user.email || null,
         referensi_ganti_id: docDbId,
-        content_hash: `SHA256:${shaHash}`,
-        payload: {
+        content_sha256: `SHA256:${shaHash}`,
+        qr_payload: `DOC:${newDocCode}:${activeCompany.npwp}`,
+        snapshot: {
           periode: newParams.periode,
           ringkasan: newParams.ringkasan,
           total_nilai_atau_item: newParams.total_nilai_atau_item,
           penandatangan: user.name,
           jabatan: activeRole
         },
+        created_by: user.id || null,
         issued_at: new Date().toISOString()
       }).select().single();
 
@@ -1109,7 +1119,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         is_ganti: true,
         status: 'REVOKED',
         status_dokumen: 'DIGANTI',
-        alasan_batal_ganti: `Digantikan oleh Dokumen Revisi ${insertedDoc?.document_code || newDocCode} oleh ${user.name} (${activeRole}). Alasan: ${reason.trim()}`
+        alasan_batal_ganti: `Digantikan oleh Dokumen Revisi ${insertedDoc?.document_no || newDocCode} oleh ${user.name} (${activeRole}). Alasan: ${reason.trim()}`
       }).eq('id', docDbId);
 
       if (updateErr) throw updateErr;
