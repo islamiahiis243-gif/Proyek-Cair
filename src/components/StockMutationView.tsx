@@ -220,6 +220,22 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   }, [physicalMaterials, itemSearchQuery]);
 
   const currentStock = currentPhysicalMaterial?.stok_fisik || 0;
+  const existingCustomItems = useMemo(() => {
+    const map = new Map<string, { nama_barang: string; satuan: string; stok: number; lastPurposeIn: string }>();
+    [...stockMutations].reverse().forEach((m) => {
+      if (!m.is_custom_item || m.is_batal) return;
+      const k = `${(m.nama_barang || '').trim().toLowerCase()}|${(m.satuan || '').trim().toLowerCase()}`;
+      if (!map.has(k)) {
+        map.set(k, { nama_barang: m.nama_barang, satuan: m.satuan, stok: 0, lastPurposeIn: '' });
+      }
+      const entry = map.get(k)!;
+      entry.stok += m.jenis === 'MASUK' ? m.jumlah : -m.jumlah;
+      if (m.jenis === 'MASUK' && m.tujuan_keperluan) {
+        entry.lastPurposeIn = m.tujuan_keperluan;
+      }
+    });
+    return Array.from(map.values());
+  }, [stockMutations]);
   const projectedStock =
     mutationType === 'MASUK'
       ? currentStock + Number(qty || 0)
@@ -646,7 +662,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       // KELUAR
       if (tujuanPengeluaran === 'PROYEK_BOQ') {
         calculatedBeban = 'PROYEK_BOQ';
-        finalPurpose = selectedBudgetLine
+        finalPurpose = isCustomMode
+          ? (keteranganPengeluaran.trim() || 'Pemakaian Pekerjaan Proyek (Item Kustom)')
+          : selectedBudgetLine
           ? `Pekerjaan: ${selectedBudgetLine.kode_boq} - ${selectedBudgetLine.kategori}`
           : 'Pekerjaan Proyek BOQ';
       } else if (tujuanPengeluaran === 'OPERASIONAL') {
@@ -1761,6 +1779,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                       setIsCustomMode(next);
                       if (next) {
                         setBebanBiaya('OPERASIONAL');
+                        setTujuanPengeluaran('OPERASIONAL');
                         setPurpose('');
                       } else {
                         setBebanBiaya('KONTRAKTOR');
@@ -1782,23 +1801,46 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 </div>
 
                 {isCustomMode ? (
-                  <div className="grid grid-cols-3 gap-2">
-                    <input
-                      type="text"
-                      required
-                      placeholder="Nama barang (Cth: Beras 50kg, Balok Camp, Solar...)"
-                      value={customItemName}
-                      onChange={(e) => setCustomItemName(e.target.value)}
-                      className="col-span-2 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-purple-300 dark:border-purple-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-purple-500/20"
-                    />
-                    <input
-                      type="text"
-                      required
-                      placeholder="Satuan (Kg, Zak...)"
-                      value={customItemUom}
-                      onChange={(e) => setCustomItemUom(e.target.value)}
-                      className="col-span-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-purple-300 dark:border-purple-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-purple-500/20"
-                    />
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-3 gap-2">
+                      <input
+                        type="text"
+                        required
+                        placeholder="Nama barang (Cth: Beras 50kg, Balok Camp, Solar...)"
+                        value={customItemName}
+                        onChange={(e) => setCustomItemName(e.target.value)}
+                        className="col-span-2 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-purple-300 dark:border-purple-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-purple-500/20"
+                      />
+                      <input
+                        type="text"
+                        required
+                        placeholder="Satuan (Kg, Zak...)"
+                        value={customItemUom}
+                        onChange={(e) => setCustomItemUom(e.target.value)}
+                        className="col-span-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-purple-300 dark:border-purple-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-purple-500/20"
+                      />
+                    </div>
+                    {existingCustomItems.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                        <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                          Pilih cepat barang kustom tercatat:
+                        </span>
+                        {existingCustomItems.map((ci) => (
+                          <button
+                            key={`${ci.nama_barang}|${ci.satuan}`}
+                            type="button"
+                            onClick={() => {
+                              setCustomItemName(ci.nama_barang);
+                              setCustomItemUom(ci.satuan);
+                            }}
+                            title={ci.lastPurposeIn ? `Peruntukan masuk awal: ${ci.lastPurposeIn}` : undefined}
+                            className="px-2 py-0.5 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/70 dark:bg-purple-950/40 text-purple-800 dark:text-purple-200 text-[10px] font-semibold hover:bg-purple-100 cursor-pointer"
+                          >
+                            {ci.nama_barang} ({ci.stok} {ci.satuan})
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   currentPhysicalMaterial && !isItemSearchOpen ? (
@@ -1959,15 +2001,19 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   {isCustomMode && (
                     <div className="mt-2">
                       <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Alasan / Catatan Pengadaan
+                        Rencana Peruntukan Saat Masuk (Item Kustom) <span className="text-rose-500">*</span>
                       </label>
                       <input
                         type="text"
-                        placeholder="Contoh: Logistik dapur tukang minggu ke-3, Bahan bedeng camp..."
+                        required
+                        placeholder="Contoh: Stok logistik dapur camp, Cadangan bahan bedeng, Titipan lapangan..."
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}
                         className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl text-xs"
                       />
+                      <p className="text-[10px] text-slate-600 dark:text-slate-300 mt-1 font-medium">
+                        ℹ️ Untuk barang kustom (Non-BOQ), peruntukan saat masuk dan saat keluar dicatat terpisah karena pemakaian aktual di lapangan bisa berubah sesuai keadaan.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -2027,6 +2073,22 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   </div>
 
                   {/* Rincian Tambahan Sesuai Pilihan Tujuan Keluar */}
+                  {tujuanPengeluaran === 'PROYEK_BOQ' && isCustomMode && (
+                    <div className="pt-1">
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Peruntukan Aktual Pekerjaan Proyek (Item Kustom) <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Contoh: Dipakai darurat untuk perancah tambahan / penutup area cor..."
+                        value={keteranganPengeluaran}
+                        onChange={(e) => setKeteranganPengeluaran(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500/20"
+                      />
+                    </div>
+                  )}
+
                   {tujuanPengeluaran === 'PROYEK_BOQ' && !isCustomMode && currentPhysicalMaterial && (
                     <div className="pt-1">
                       <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
