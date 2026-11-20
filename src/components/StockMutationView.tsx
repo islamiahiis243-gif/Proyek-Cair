@@ -88,7 +88,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   );
 
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [filterType, setFilterType] = useState<'ALL' | 'MASUK' | 'KELUAR' | 'BEDA_PENYEDIA' | 'PROYEK_BOQ' | 'PERMINTAAN_KLIEN' | 'BONUS_KLIEN' | 'OPERASIONAL'>('ALL');
+  const deferredFilterType = useDeferredValue(filterType);
 
   // 4 POV Terpisah Sesuai Kesepakatan:
   // 1) WAREHOUSE_SUMMARY ("Satukan Masuk" - 1 baris per nama material fisik)
@@ -99,14 +101,20 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
   // State untuk Tab 1: Rekap Gudang ("Satukan Masuk")
   const [warehouseSearchQuery, setWarehouseSearchQuery] = useState('');
+  const deferredWarehouseSearchQuery = useDeferredValue(warehouseSearchQuery);
   const [warehouseFilter, setWarehouseFilter] = useState<'ALL' | 'HAS_ARRIVED' | 'IN_STOCK' | 'NOT_ARRIVED'>('ALL');
+  const deferredWarehouseFilter = useDeferredValue(warehouseFilter);
 
   // State Sortir untuk Ke-4 Tabel (Rekap Gudang, Pos BOQ, Jurnal Transaksi, Dokumen Resmi)
   type SortDir = 'asc' | 'desc';
   const [warehouseSort, setWarehouseSort] = useState<{ key: string; dir: SortDir } | null>(null);
+  const deferredWarehouseSort = useDeferredValue(warehouseSort);
   const [boqSort, setBoqSort] = useState<{ key: string; dir: SortDir } | null>(null);
+  const deferredBoqSort = useDeferredValue(boqSort);
   const [journalSort, setJournalSort] = useState<{ key: string; dir: SortDir }>({ key: 'tanggal', dir: 'desc' });
+  const deferredJournalSort = useDeferredValue(journalSort);
   const [docSort, setDocSort] = useState<{ key: string; dir: SortDir }>({ key: 'tanggal', dir: 'desc' });
+  const deferredDocSort = useDeferredValue(docSort);
 
   const toggleSort = (
     current: { key: string; dir: SortDir } | null,
@@ -172,7 +180,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   const [boqSearchQuery, setBoqSearchQuery] = useState('');
   const deferredBoqSearchQuery = useDeferredValue(boqSearchQuery);
   const [boqProviderFilter, setBoqProviderFilter] = useState<'ALL' | 'KONTRAKTOR' | 'IMK'>('ALL');
+  const deferredBoqProviderFilter = useDeferredValue(boqProviderFilter);
   const [boqStatusFilter, setBoqStatusFilter] = useState<'ALL' | 'Belum dipenuhi' | 'Dalam pemenuhan' | 'Terpenuhi' | 'Melebihi BOQ'>('ALL');
+  const deferredBoqStatusFilter = useDeferredValue(boqStatusFilter);
   const [collapsedDivisions, setCollapsedDivisions] = useState<Set<string>>(new Set());
   const [collapsedSubSections, setCollapsedSubSections] = useState<Set<string>>(new Set());
   const [isExportingWarehouse, setIsExportingWarehouse] = useState(false);
@@ -265,30 +275,31 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   }, [stockMutations]);
 
   const filteredMutations = useMemo(() => {
+    const q = deferredSearchQuery.toLowerCase();
     const list = stockMutations.filter((m) => {
       const matchSearch =
-        (m.nama_barang || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (m.tujuan_keperluan || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (m.pic_penerima_penyerah || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (m.source_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (m.nomor_surat_jalan && m.nomor_surat_jalan.toLowerCase().includes(searchQuery.toLowerCase()));
+        (m.nama_barang || '').toLowerCase().includes(q) ||
+        (m.tujuan_keperluan || '').toLowerCase().includes(q) ||
+        (m.pic_penerima_penyerah || '').toLowerCase().includes(q) ||
+        (m.source_name || '').toLowerCase().includes(q) ||
+        (m.nomor_surat_jalan && m.nomor_surat_jalan.toLowerCase().includes(q));
 
       let matchFilter = true;
-      if (filterType === 'MASUK') matchFilter = m.jenis === 'MASUK';
-      else if (filterType === 'KELUAR') matchFilter = m.jenis === 'KELUAR';
-      else if (filterType === 'BEDA_PENYEDIA') {
+      if (deferredFilterType === 'MASUK') matchFilter = m.jenis === 'MASUK';
+      else if (deferredFilterType === 'KELUAR') matchFilter = m.jenis === 'KELUAR';
+      else if (deferredFilterType === 'BEDA_PENYEDIA') {
         matchFilter = !m.is_batal && !m.is_ganti && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI' &&
           analyzeIncomingProviderDiscrepancy(m, physicalMaterials, stockMutations, providerLabels).isMismatch;
       }
-      else if (filterType === 'PROYEK_BOQ') matchFilter = m.beban_biaya === 'PROYEK_BOQ' || m.beban_biaya === 'KONTRAKTOR';
-      else if (filterType === 'PERMINTAAN_KLIEN') matchFilter = m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN';
-      else if (filterType === 'BONUS_KLIEN') matchFilter = m.beban_biaya === 'BONUS_KLIEN';
-      else if (filterType === 'OPERASIONAL') matchFilter = m.beban_biaya === 'OPERASIONAL';
+      else if (deferredFilterType === 'PROYEK_BOQ') matchFilter = m.beban_biaya === 'PROYEK_BOQ' || m.beban_biaya === 'KONTRAKTOR';
+      else if (deferredFilterType === 'PERMINTAAN_KLIEN') matchFilter = m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN';
+      else if (deferredFilterType === 'BONUS_KLIEN') matchFilter = m.beban_biaya === 'BONUS_KLIEN';
+      else if (deferredFilterType === 'OPERASIONAL') matchFilter = m.beban_biaya === 'OPERASIONAL';
 
       return matchSearch && matchFilter;
     });
 
-    const mult = journalSort.dir === 'asc' ? 1 : -1;
+    const mult = deferredJournalSort.dir === 'asc' ? 1 : -1;
     const statusRank = (m: MutasiBarang) =>
       m.is_batal || m.status_dokumen === 'BATAL'
         ? 0
@@ -297,7 +308,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         : 2;
 
     return [...list].sort((a, b) => {
-      switch (journalSort.key) {
+      switch (deferredJournalSort.key) {
         case 'tanggal':
           return (new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime()) * mult;
         case 'jenis':
@@ -312,7 +323,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           return 0;
       }
     });
-  }, [stockMutations, searchQuery, filterType, journalSort, physicalMaterials]);
+  }, [stockMutations, deferredSearchQuery, deferredFilterType, deferredJournalSort, physicalMaterials, providerLabels]);
 
   const providerMismatchCount = useMemo(
     () =>
@@ -327,48 +338,59 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     [stockMutations, physicalMaterials, providerLabels]
   );
 
-  // Helper Pengelompokan Kategori BOQ (Divisi & Sub-Pekerjaan)
+  // Helper Pengelompokan Kategori BOQ dengan cache instan
+  const categoryCacheRef = useRef<Map<string, { division: string; subSection: string }>>(new Map());
   const parseCategory = (cat: string) => {
+    let hit = categoryCacheRef.current.get(cat);
+    if (hit) return hit;
     if (cat.includes(' / ')) {
       const parts = cat.split(' / ');
-      return {
+      hit = {
         division: parts[0].trim(),
         subSection: parts.slice(1).join(' / ').trim()
       };
-    }
-    if (cat.startsWith('IV.')) {
-      return {
+    } else if (cat.startsWith('IV.')) {
+      hit = {
         division: 'IV - BIAYA JASA & PEKERJAAN',
         subSection: cat.trim()
       };
+    } else {
+      hit = {
+        division: cat || 'Kategori Umum',
+        subSection: cat || 'Umum'
+      };
     }
-    return {
-      division: cat || 'Kategori Umum',
-      subSection: cat || 'Umum'
-    };
+    categoryCacheRef.current.set(cat, hit);
+    return hit;
   };
 
   const toggleDivision = (divName: string) => {
-    setCollapsedDivisions((prev) => {
-      const next = new Set(prev);
-      if (next.has(divName)) next.delete(divName);
-      else next.add(divName);
-      return next;
+    startTransition(() => {
+      setCollapsedDivisions((prev) => {
+        const next = new Set(prev);
+        if (next.has(divName)) next.delete(divName);
+        else next.add(divName);
+        return next;
+      });
     });
   };
 
   const toggleSubSection = (subKey: string) => {
-    setCollapsedSubSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(subKey)) next.delete(subKey);
-      else next.add(subKey);
-      return next;
+    startTransition(() => {
+      setCollapsedSubSections((prev) => {
+        const next = new Set(prev);
+        if (next.has(subKey)) next.delete(subKey);
+        else next.add(subKey);
+        return next;
+      });
     });
   };
 
   const handleExpandAll = () => {
-    setCollapsedDivisions(new Set());
-    setCollapsedSubSections(new Set());
+    startTransition(() => {
+      setCollapsedDivisions(new Set());
+      setCollapsedSubSections(new Set());
+    });
   };
 
   // Grouped BOQ Data untuk Tab 1 (Dioptimasi dengan useDeferredValue)
@@ -376,9 +398,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     const q = deferredBoqSearchQuery.trim().toLowerCase();
     const filtered = items.filter((item) => {
       const isClientItem = isClientProvidedRemark(item.keterangan, tenantBranding.clientName);
-      if (boqProviderFilter === 'IMK' && !isClientItem) return false;
-      if (boqProviderFilter === 'KONTRAKTOR' && isClientItem) return false;
-      if (boqStatusFilter !== 'ALL' && item.status_pemenuhan !== boqStatusFilter) return false;
+      if (deferredBoqProviderFilter === 'IMK' && !isClientItem) return false;
+      if (deferredBoqProviderFilter === 'KONTRAKTOR' && isClientItem) return false;
+      if (deferredBoqStatusFilter !== 'ALL' && item.status_pemenuhan !== deferredBoqStatusFilter) return false;
       if (q) {
         const matchName = item.nama_barang.toLowerCase().includes(q);
         const matchCode = (item.kode_boq || '').toLowerCase().includes(q);
@@ -445,12 +467,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
             ? 1
             : 0;
 
-        if (!boqSort) {
+        if (!deferredBoqSort) {
           subItems.sort((a, b) => (a.source_excel_row || 0) - (b.source_excel_row || 0));
         } else {
-          const mult = boqSort.dir === 'asc' ? 1 : -1;
+          const mult = deferredBoqSort.dir === 'asc' ? 1 : -1;
           subItems.sort((a, b) => {
-            switch (boqSort.key) {
+            switch (deferredBoqSort.key) {
               case 'kode_boq':
                 return (a.kode_boq || '').localeCompare(b.kode_boq || '', 'id', { numeric: true }) * mult;
               case 'nama_barang':
@@ -521,16 +543,18 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     });
 
     return divisions;
-  }, [items, deferredBoqSearchQuery, boqProviderFilter, boqStatusFilter, boqSort]);
+  }, [items, deferredBoqSearchQuery, deferredBoqProviderFilter, deferredBoqStatusFilter, deferredBoqSort, tenantBranding.clientName]);
 
   const handleCollapseAll = () => {
-    const allDivs = new Set(groupedBoqData.map((d) => d.name));
-    const allSubs = new Set<string>();
-    groupedBoqData.forEach((d) => {
-      d.subSections.forEach((s) => allSubs.add(`${d.name}__${s.name}`));
+    startTransition(() => {
+      const allDivs = new Set(groupedBoqData.map((d) => d.name));
+      const allSubs = new Set<string>();
+      groupedBoqData.forEach((d) => {
+        d.subSections.forEach((s) => allSubs.add(`${d.name}__${s.name}`));
+      });
+      setCollapsedDivisions(allDivs);
+      setCollapsedSubSections(allSubs);
     });
-    setCollapsedDivisions(allDivs);
-    setCollapsedSubSections(allSubs);
   };
 
   // Metrik Progres Kontrak BOQ Keseluruhan (Satukan Masuk di Gudang, Bedakan Keluar per Pos BOQ)
@@ -609,13 +633,13 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
   // Filter Material Gudang untuk Tab 1 ("Satukan Masuk" - 1 Baris per Nama Material)
   const filteredWarehouseMaterials = useMemo(() => {
-    const q = warehouseSearchQuery.trim().toLowerCase();
+    const q = deferredWarehouseSearchQuery.trim().toLowerCase();
     const list = (physicalMaterials || [])
       .filter((pm) => pm.is_stock_item)
       .filter((pm) => {
-        if (warehouseFilter === 'HAS_ARRIVED' && pm.total_qty_masuk <= 0) return false;
-        if (warehouseFilter === 'IN_STOCK' && pm.stok_fisik <= 0) return false;
-        if (warehouseFilter === 'NOT_ARRIVED' && pm.total_qty_masuk > 0) return false;
+        if (deferredWarehouseFilter === 'HAS_ARRIVED' && pm.total_qty_masuk <= 0) return false;
+        if (deferredWarehouseFilter === 'IN_STOCK' && pm.stok_fisik <= 0) return false;
+        if (deferredWarehouseFilter === 'NOT_ARRIVED' && pm.total_qty_masuk > 0) return false;
         if (q) {
           const matchName = pm.nama_barang.toLowerCase().includes(q);
           const matchUom = pm.satuan.toLowerCase().includes(q);
@@ -631,13 +655,13 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       pm.stok_fisik > 0 ? 2 : pm.total_qty_masuk > 0 ? 1 : 0;
 
     return [...list].sort((a, b) => {
-      if (!warehouseSort) {
+      if (!deferredWarehouseSort) {
         if (a.total_qty_masuk > 0 && b.total_qty_masuk === 0) return -1;
         if (a.total_qty_masuk === 0 && b.total_qty_masuk > 0) return 1;
         return a.nama_barang.localeCompare(b.nama_barang);
       }
-      const mult = warehouseSort.dir === 'asc' ? 1 : -1;
-      switch (warehouseSort.key) {
+      const mult = deferredWarehouseSort.dir === 'asc' ? 1 : -1;
+      switch (deferredWarehouseSort.key) {
         case 'nama_barang':
           return a.nama_barang.localeCompare(b.nama_barang) * mult;
         case 'satuan':
@@ -661,12 +685,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           return 0;
       }
     });
-  }, [physicalMaterials, warehouseSearchQuery, warehouseFilter, warehouseSort]);
+  }, [physicalMaterials, deferredWarehouseSearchQuery, deferredWarehouseFilter, deferredWarehouseSort]);
 
   // Daftar Dokumen Resmi Mutasi Barang (Tab 4)
   const stockDocuments = useMemo(() => {
     const list = (documents || []).filter((d) => d.jenis === 'MUTASI_STOK' || d.jenis === 'GABUNGAN_PROYEK');
-    const mult = docSort.dir === 'asc' ? 1 : -1;
+    const mult = deferredDocSort.dir === 'asc' ? 1 : -1;
     const wfRank = (s?: string) => {
       if (s === 'MENGETAHUI') return 4;
       if (s === 'DISETUJUI') return 3;
@@ -675,7 +699,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       return 0;
     };
     return [...list].sort((a, b) => {
-      switch (docSort.key) {
+      switch (deferredDocSort.key) {
         case 'tanggal':
           return (new Date(a.dibuat_pada).getTime() - new Date(b.dibuat_pada).getTime()) * mult;
         case 'judul':
@@ -686,7 +710,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           return 0;
       }
     });
-  }, [documents, docSort]);
+  }, [documents, deferredDocSort]);
 
   // Aksi Cepat Mutasi dari Baris Material BOQ (Khusus Pemakaian / Keluar per Pos di Tab 2)
   const handleOpenItemMutation = (item: ItemBarang, type: JenisMutasiBarang) => {
@@ -1324,7 +1348,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     <button
                       key={f.id}
                       type="button"
-                      onClick={() => setWarehouseFilter(f.id as any)}
+                      onClick={() => startTransition(() => setWarehouseFilter(f.id as any))}
                       className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-colors cursor-pointer ${
                         warehouseFilter === f.id
                           ? 'bg-emerald-600 text-white shadow-xs'
@@ -1346,48 +1370,48 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                         <th className="py-3 px-3.5 w-10 text-center">No</th>
                         <th className="py-3 px-3.5">
                           {renderSortBtn('Nama Material & Cakupan Pos BOQ', 'nama_barang', warehouseSort, () =>
-                            setWarehouseSort((prev) => toggleSort(prev, 'nama_barang', 'asc'))
+                            startTransition(() => setWarehouseSort((prev) => toggleSort(prev, 'nama_barang', 'asc')))
                           )}
                         </th>
                         <th className="py-3 px-3 text-center">
                           {renderSortBtn('Satuan', 'satuan', warehouseSort, () =>
-                            setWarehouseSort((prev) => toggleSort(prev, 'satuan', 'asc')),
+                            startTransition(() => setWarehouseSort((prev) => toggleSort(prev, 'satuan', 'asc'))),
                             'center'
                           )}
                         </th>
                         <th className="py-3 px-3 text-right">
                           {renderSortBtn('Total Kebutuhan Proyek', 'total_qty_boq', warehouseSort, () =>
-                            setWarehouseSort((prev) => toggleSort(prev, 'total_qty_boq', 'desc')),
+                            startTransition(() => setWarehouseSort((prev) => toggleSort(prev, 'total_qty_boq', 'desc'))),
                             'right'
                           )}
                         </th>
                         <th className="py-3 px-3 text-right">
                           {renderSortBtn('Total Sudah Masuk Gudang', 'total_qty_masuk', warehouseSort, () =>
-                            setWarehouseSort((prev) => toggleSort(prev, 'total_qty_masuk', 'desc')),
+                            startTransition(() => setWarehouseSort((prev) => toggleSort(prev, 'total_qty_masuk', 'desc'))),
                             'right'
                           )}
                         </th>
                         <th className="py-3 px-3 text-right">
                           {renderSortBtn('Sisa Belum Tiba', 'sisa_belum_tiba', warehouseSort, () =>
-                            setWarehouseSort((prev) => toggleSort(prev, 'sisa_belum_tiba', 'desc')),
+                            startTransition(() => setWarehouseSort((prev) => toggleSort(prev, 'sisa_belum_tiba', 'desc'))),
                             'right'
                           )}
                         </th>
                         <th className="py-3 px-3 text-right">
                           {renderSortBtn('Total Sudah Dipakai (Keluar)', 'total_qty_keluar', warehouseSort, () =>
-                            setWarehouseSort((prev) => toggleSort(prev, 'total_qty_keluar', 'desc')),
+                            startTransition(() => setWarehouseSort((prev) => toggleSort(prev, 'total_qty_keluar', 'desc'))),
                             'right'
                           )}
                         </th>
                         <th className="py-3 px-3 text-right">
                           {renderSortBtn('Saldo Fisik Gudang', 'stok_fisik', warehouseSort, () =>
-                            setWarehouseSort((prev) => toggleSort(prev, 'stok_fisik', 'desc')),
+                            startTransition(() => setWarehouseSort((prev) => toggleSort(prev, 'stok_fisik', 'desc'))),
                             'right'
                           )}
                         </th>
                         <th className="py-3 px-3 text-center">
                           {renderSortBtn('Status Gudang', 'status', warehouseSort, () =>
-                            setWarehouseSort((prev) => toggleSort(prev, 'status', 'desc')),
+                            startTransition(() => setWarehouseSort((prev) => toggleSort(prev, 'status', 'desc'))),
                             'center'
                           )}
                         </th>
@@ -1616,8 +1640,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 <div className="flex flex-wrap items-center gap-1.5">
                   <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
                     <button
-                      onClick={() => setBoqProviderFilter('ALL')}
-                      className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
+                      onClick={() => startTransition(() => setBoqProviderFilter('ALL'))}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
                         boqProviderFilter === 'ALL'
                           ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
                           : 'text-slate-700 dark:text-slate-200'
@@ -1626,8 +1650,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                       Semua Penyedia
                     </button>
                     <button
-                      onClick={() => setBoqProviderFilter('KONTRAKTOR')}
-                      className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
+                      onClick={() => startTransition(() => setBoqProviderFilter('KONTRAKTOR'))}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
                         boqProviderFilter === 'KONTRAKTOR'
                           ? 'bg-blue-600 text-white shadow-xs'
                           : 'text-slate-700 dark:text-slate-200'
@@ -1636,8 +1660,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                       🏢 {tenantBranding.contractorName}
                     </button>
                     <button
-                      onClick={() => setBoqProviderFilter('IMK')}
-                      className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
+                      onClick={() => startTransition(() => setBoqProviderFilter('IMK'))}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
                         boqProviderFilter === 'IMK'
                           ? 'bg-purple-600 text-white shadow-xs'
                           : 'text-slate-700 dark:text-slate-200'
@@ -1649,7 +1673,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
                   <select
                     value={boqStatusFilter}
-                    onChange={(e) => setBoqStatusFilter(e.target.value as any)}
+                    onChange={(e) => {
+                      const val = e.target.value as any;
+                      startTransition(() => setBoqStatusFilter(val));
+                    }}
                     aria-label="Filter status pemakaian pos BOQ"
                     className="px-2.5 py-1.5 text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-hidden"
                   >
@@ -1662,14 +1689,14 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
                   <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-700 pl-2">
                     <button
-                      onClick={handleExpandAll}
+                      onClick={() => startTransition(handleExpandAll)}
                       className="px-2 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                     >
                       Buka Semua
                     </button>
                     <span className="text-slate-300 dark:text-slate-700">|</span>
                     <button
-                      onClick={handleCollapseAll}
+                      onClick={() => startTransition(handleCollapseAll)}
                       className="px-2 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                     >
                       Tutup Semua
@@ -1686,47 +1713,47 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                       <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold uppercase tracking-wider text-[10px]">
                         <th className="py-3 px-3.5 w-24">
                           {renderSortBtn('Kode BOQ', 'kode_boq', boqSort, () =>
-                            setBoqSort((prev) => toggleSort(prev, 'kode_boq', 'asc'))
+                            startTransition(() => setBoqSort((prev) => toggleSort(prev, 'kode_boq', 'asc')))
                           )}
                         </th>
                         <th className="py-3 px-3.5">
                           {renderSortBtn('Uraian Material & Pekerjaan', 'nama_barang', boqSort, () =>
-                            setBoqSort((prev) => toggleSort(prev, 'nama_barang', 'asc'))
+                            startTransition(() => setBoqSort((prev) => toggleSort(prev, 'nama_barang', 'asc')))
                           )}
                         </th>
                         <th className="py-3 px-3 text-center">
                           {renderSortBtn('Penyedia', 'penyedia', boqSort, () =>
-                            setBoqSort((prev) => toggleSort(prev, 'penyedia', 'asc')),
+                            startTransition(() => setBoqSort((prev) => toggleSort(prev, 'penyedia', 'asc'))),
                             'center'
                           )}
                         </th>
                         <th className="py-3 px-3 text-right">
                           {renderSortBtn('Target Pos BOQ', 'qty_boq', boqSort, () =>
-                            setBoqSort((prev) => toggleSort(prev, 'qty_boq', 'desc')),
+                            startTransition(() => setBoqSort((prev) => toggleSort(prev, 'qty_boq', 'desc'))),
                             'right'
                           )}
                         </th>
                         <th className="py-3 px-3 text-right">
                           {renderSortBtn('Terpakai di Pos Ini (Keluar)', 'qty_keluar_total', boqSort, () =>
-                            setBoqSort((prev) => toggleSort(prev, 'qty_keluar_total', 'desc')),
+                            startTransition(() => setBoqSort((prev) => toggleSort(prev, 'qty_keluar_total', 'desc'))),
                             'right'
                           )}
                         </th>
                         <th className="py-3 px-3 text-right">
                           {renderSortBtn('Sisa Kebutuhan Pos', 'qty_pemenuhan_sisa', boqSort, () =>
-                            setBoqSort((prev) => toggleSort(prev, 'qty_pemenuhan_sisa', 'desc')),
+                            startTransition(() => setBoqSort((prev) => toggleSort(prev, 'qty_pemenuhan_sisa', 'desc'))),
                             'right'
                           )}
                         </th>
                         <th className="py-3 px-3 text-center">
                           {renderSortBtn('Ketersediaan Gudang', 'stok_saat_ini', boqSort, () =>
-                            setBoqSort((prev) => toggleSort(prev, 'stok_saat_ini', 'desc')),
+                            startTransition(() => setBoqSort((prev) => toggleSort(prev, 'stok_saat_ini', 'desc'))),
                             'center'
                           )}
                         </th>
                         <th className="py-3 px-3 text-center">
                           {renderSortBtn('Status Pos', 'status_pemenuhan', boqSort, () =>
-                            setBoqSort((prev) => toggleSort(prev, 'status_pemenuhan', 'desc')),
+                            startTransition(() => setBoqSort((prev) => toggleSort(prev, 'status_pemenuhan', 'desc'))),
                             'center'
                           )}
                         </th>
@@ -2006,8 +2033,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   ].map((tab) => (
                     <button
                       key={tab.id}
-                      onClick={() => setFilterType(tab.id as any)}
-                      className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-colors ${
+                      onClick={() => startTransition(() => setFilterType(tab.id as any))}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-colors cursor-pointer ${
                         filterType === tab.id
                           ? 'bg-blue-600 text-white shadow-sm'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -2028,30 +2055,30 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                         <th className="py-3 px-3.5 w-10 text-center">No</th>
                         <th className="py-3 px-3.5">
                           {renderSortBtn('Tanggal', 'tanggal', journalSort, () =>
-                            setJournalSort((prev) => toggleSort(prev, 'tanggal', 'desc'))
+                            startTransition(() => setJournalSort((prev) => toggleSort(prev, 'tanggal', 'desc')))
                           )}
                         </th>
                         <th className="py-3 px-3.5 text-center">
                           {renderSortBtn('Jenis', 'jenis', journalSort, () =>
-                            setJournalSort((prev) => toggleSort(prev, 'jenis', 'asc')),
+                            startTransition(() => setJournalSort((prev) => toggleSort(prev, 'jenis', 'asc'))),
                             'center'
                           )}
                         </th>
                         <th className="py-3 px-3.5">
                           {renderSortBtn('Material', 'nama_barang', journalSort, () =>
-                            setJournalSort((prev) => toggleSort(prev, 'nama_barang', 'asc'))
+                            startTransition(() => setJournalSort((prev) => toggleSort(prev, 'nama_barang', 'asc')))
                           )}
                         </th>
                         <th className="py-3 px-3.5 text-right">
                           {renderSortBtn('Jumlah', 'jumlah', journalSort, () =>
-                            setJournalSort((prev) => toggleSort(prev, 'jumlah', 'desc')),
+                            startTransition(() => setJournalSort((prev) => toggleSort(prev, 'jumlah', 'desc'))),
                             'right'
                           )}
                         </th>
                         <th className="py-3 px-3.5">Asal / Peruntukan & Jejak Audit</th>
                         <th className="py-3 px-3.5 text-center">
                           {renderSortBtn('Status Baris Data', 'status', journalSort, () =>
-                            setJournalSort((prev) => toggleSort(prev, 'status', 'desc')),
+                            startTransition(() => setJournalSort((prev) => toggleSort(prev, 'status', 'desc'))),
                             'center'
                           )}
                         </th>
@@ -2315,18 +2342,18 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                       <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold uppercase tracking-wider text-[10px]">
                         <th className="py-3 px-3.5">
                           {renderSortBtn('Kode & Tanggal', 'tanggal', docSort, () =>
-                            setDocSort((prev) => toggleSort(prev, 'tanggal', 'desc'))
+                            startTransition(() => setDocSort((prev) => toggleSort(prev, 'tanggal', 'desc')))
                           )}
                         </th>
                         <th className="py-3 px-3.5">
                           {renderSortBtn('Judul Dokumen & Ringkasan', 'judul', docSort, () =>
-                            setDocSort((prev) => toggleSort(prev, 'judul', 'asc'))
+                            startTransition(() => setDocSort((prev) => toggleSort(prev, 'judul', 'asc')))
                           )}
                         </th>
                         <th className="py-3 px-3.5">Jejak Persetujuan Berantai</th>
                         <th className="py-3 px-3.5 text-center">
                           {renderSortBtn('Status Dokumen', 'status', docSort, () =>
-                            setDocSort((prev) => toggleSort(prev, 'status', 'desc')),
+                            startTransition(() => setDocSort((prev) => toggleSort(prev, 'status', 'desc'))),
                             'center'
                           )}
                         </th>

@@ -108,14 +108,37 @@ const resolveProviderLabels = (labels?: ProviderLabels) => {
   return { contractor, client };
 };
 
+const clientTokensCache = new Map<string, string[]>();
+function getClientTokens(clientName: string): string[] {
+  let tokens = clientTokensCache.get(clientName);
+  if (!tokens) {
+    const stopWords = new Set(['pt', 'cv', 'tbk', 'persero', 'ltd', 'inc', 'co', 'dan', 'the']);
+    tokens = clientName
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length >= 3 && !stopWords.has(t));
+    clientTokensCache.set(clientName, tokens);
+  }
+  return tokens;
+}
+
+const remarkCache = new Map<string, boolean>();
+
 /**
  * Deteksi generik apakah sebuah pos BOQ merupakan barang free-issue / pasokan Klien.
  * Mendukung pola umum ('by klien', 'by client', 'by owner', 'free-issue', 'pemilik')
  * maupun nama klien proyek aktif (termasuk singkatan seperti 'imk').
+ * Dioptimasi dengan caching instan agar filtering/sorting ratusan baris BOQ < 1ms.
  */
 export const isClientProvidedRemark = (remark?: string, clientName?: string): boolean => {
-  const lower = (remark || '').toLowerCase();
-  if (!lower) return false;
+  if (!remark) return false;
+  const key = `${remark}__${clientName || ''}`;
+  const cached = remarkCache.get(key);
+  if (cached !== undefined) return cached;
+
+  const lower = remark.toLowerCase();
+  let result = false;
   if (
     lower.includes('by klien') ||
     lower.includes('by client') ||
@@ -128,20 +151,16 @@ export const isClientProvidedRemark = (remark?: string, clientName?: string): bo
     lower.includes('pemilik') ||
     /\bimk\b/.test(lower)
   ) {
-    return true;
-  }
-  if (clientName) {
-    const stopWords = new Set(['pt', 'cv', 'tbk', 'persero', 'ltd', 'inc', 'co', 'dan', 'the']);
-    const tokens = clientName
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter((t) => t.length >= 3 && !stopWords.has(t));
+    result = true;
+  } else if (clientName) {
+    const tokens = getClientTokens(clientName);
     if (tokens.some((t) => lower.includes(t))) {
-      return true;
+      result = true;
     }
   }
-  return false;
+
+  remarkCache.set(key, result);
+  return result;
 };
 
 export const getProviderMetaForMaterial = (

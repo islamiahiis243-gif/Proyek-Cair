@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, startTransition } from 'react';
 import {
   ItemBarang,
   MutasiBarang,
@@ -155,7 +155,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeProjectId, setActiveProjectIdState] = useState(() => localStorage.getItem('udu_active_project') || '');
   const [user, setUser] = useState<UserProfile>(() => getStoredUser());
   const [supabaseConfig] = useState<SupabaseConfig>(() => getStoredConfig());
-  const [currentView, setCurrentView] = useState('dashboard');
+  const [currentView, setCurrentViewRaw] = useState('dashboard');
+  const setCurrentView = useCallback((view: string) => {
+    startTransition(() => {
+      setCurrentViewRaw(view);
+    });
+  }, []);
   const [verifyingDocId, setVerifyingDocId] = useState<string | null>(null);
   const [dataReady, setDataReady] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
