@@ -3,6 +3,7 @@ import { AppProvider, useApp } from './context/AppContext';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
+import { PersonalDashboardView } from './components/PersonalDashboardView';
 import { InventoryView } from './components/InventoryView';
 import { StockMutationView } from './components/StockMutationView';
 import { CashflowView } from './components/CashflowView';
@@ -52,8 +53,9 @@ const MainApp: React.FC = () => {
           {/* Mode Personal */}
           {appMode === 'PERSONAL' && (
             <>
-              {currentView === 'dashboard' && <DashboardView onOpenStockModal={handleOpenStockModal} onOpenCashModal={handleOpenCashModal} />}
+              {currentView === 'dashboard' && <PersonalDashboardView />}
               {currentView === 'rfin-a-request' && <RfinARequestView />}
+              {currentView === 'rfin-b-input' && <RfinBInputView />}
               {currentView === 'settings' && <SettingsView />}
             </>
           )}

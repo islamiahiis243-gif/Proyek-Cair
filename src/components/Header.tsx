@@ -70,16 +70,6 @@ export const Header: React.FC = () => {
     return 'Clerk';
   };
 
-  const ALL_PERSONA_ROLES: { role: ImpersonateRole; label: string; desc: string; icon: string }[] = [
-    { role: 'Clerk', label: 'Clerk / Juru Tulis', desc: 'Entri data material & kas (Draf)', icon: '📝' },
-    { role: 'Foreman', label: 'Foreman / Mandor', desc: 'Pemeriksaan fisik lapangan (Diperiksa)', icon: '👷' },
-    { role: 'Spv.', label: 'Supervisor (Spv.)', desc: 'Verifikasi & persetujuan divisi', icon: '🔍' },
-    { role: 'Dept. Manager', label: 'Dept. Manager', desc: 'Persetujuan manajerial & TTE QR', icon: '📋' },
-    { role: 'KTT/Proj. Manager', label: 'KTT / Project Manager', desc: 'Pengesahan tertinggi proyek & TTE QR', icon: '🏗️' },
-    { role: 'CEO/Direktur', label: 'CEO / Direktur Utama', desc: 'Otorisasi legal korporasi & TTE QR', icon: '🏛️' },
-    { role: 'Viewer/Pengamat', label: 'Viewer / Pengamat', desc: 'Akses pantau read-only (Konsultan, Pendana, Klien)', icon: '👁️' },
-  ];
-
   const userAssignments = activeContext?.projects || [];
   const isCSA = (activeContext?.workspaces || []).some(
     w => w.type === 'COMPANY' && w.is_company_super_admin === true
@@ -97,12 +87,6 @@ export const Header: React.FC = () => {
       }
     }
   }, [userAssignments, appMode, activeProjectId, activeWorkspaceId]);
-
-  const handleSelectRoleDirect = (role: ImpersonateRole) => {
-    setActiveRole(role);
-    setAppMode('IMPERSONATE');
-    setDropdownOpen(false);
-  };
 
   const handleSelectAssignment = (proj: any) => {
     const role = mapRoleCode(proj.role_code);
@@ -342,52 +326,6 @@ export const Header: React.FC = () => {
                   </p>
                 </div>
               )}
-
-              {/* 7 Tingkat Jabatan Proyek (Simulasi & Uji Coba Lapangan) */}
-              <div className="mt-3 pt-2.5 border-t border-slate-800/80">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2 px-1 flex items-center justify-between">
-                  <span>7 Tingkat Jabatan Proyek</span>
-                  <span className="text-[9px] text-amber-400 font-medium">Beralih Cepat</span>
-                </div>
-                <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
-                  {ALL_PERSONA_ROLES.map((item) => {
-                    const isSelected = appMode === 'IMPERSONATE' && activeRole === item.role;
-                    return (
-                      <button
-                        key={item.role}
-                        type="button"
-                        onClick={() => handleSelectRoleDirect(item.role)}
-                        className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-left transition-all border ${
-                          isSelected
-                            ? item.role === 'Viewer/Pengamat'
-                              ? 'bg-cyan-950/60 border-cyan-500/50 text-cyan-200 font-semibold shadow-xs'
-                              : 'bg-amber-950/60 border-amber-500/50 text-amber-200 font-semibold shadow-xs'
-                            : 'border-slate-800/60 hover:bg-slate-800/80 text-slate-300'
-                        }`}
-                      >
-                        <div className="min-w-0 flex items-center gap-2">
-                          <span className="text-sm shrink-0">{item.icon}</span>
-                          <div className="min-w-0">
-                            <div className="text-xs font-bold leading-tight truncate">
-                              {item.label}
-                            </div>
-                            <div className="text-[10px] text-slate-400 leading-tight truncate mt-0.5">
-                              {item.desc}
-                            </div>
-                          </div>
-                        </div>
-                        {isSelected && (
-                          <CheckCircle2
-                            className={`w-4 h-4 shrink-0 ${
-                              item.role === 'Viewer/Pengamat' ? 'text-cyan-400' : 'text-amber-400'
-                            }`}
-                          />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
             </div>
 
             {/* 3. Konsol Pengelola (Hanya muncul jika pengguna sah memegang kursi CSA atau PSA) */}

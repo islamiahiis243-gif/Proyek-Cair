@@ -89,7 +89,8 @@ export const Sidebar: React.FC = () => {
     ModeIcon = User;
     themeAccent = 'emerald';
     navItems = [
-      { id: 'dashboard', label: 'Dasbor & Analitik', icon: LayoutDashboard },
+      { id: 'dashboard', label: 'Dasbor Personal', icon: LayoutDashboard },
+      { id: 'rfin-b-input', label: 'Aktivasi RFIN-B', icon: KeyRound },
       { id: 'rfin-a-request', label: 'Pengajuan RFIN-A', icon: Building2 },
       { id: 'settings', label: 'Pengaturan Akun', icon: Settings }
     ];

@@ -137,13 +137,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [dataError, setDataError] = useState<string | null>(null);
   const [cashAccess, setCashAccess] = useState(false);
 
-  // App Mode & Impersonate State
+  // App Mode & Impersonate State (Default aman selalu PERSONAL)
   const [appMode, setAppModeState] = useState<AppMode>(() => {
     try {
       const saved = localStorage.getItem(APP_MODE_KEY);
       if (saved === 'PERSONAL' || saved === 'IMPERSONATE' || saved === 'CSA' || saved === 'PSA') return saved;
     } catch {}
-    return 'IMPERSONATE';
+    return 'PERSONAL';
   });
 
   const [activeRole, setActiveRoleState] = useState<ImpersonateRole>(() => {
@@ -157,9 +157,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [activeCompany, setActiveCompany] = useState<{ id: string; name: string; npwp: string }>({
-    id: 'menara-megah',
-    name: 'MENARA MEGAH',
-    npwp: '0024376584714000'
+    id: '',
+    name: 'Akun Pribadi',
+    npwp: ''
   });
 
   const setAppMode = (mode: AppMode) => {
@@ -195,15 +195,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const next = await resolveMyActiveContext();
       setActiveContext(next);
+
+      const isPlatformAdmin = Boolean(next.is_platform_super_admin);
+      const isCompanyAdmin = (next.workspaces || []).some(w => w.type === 'COMPANY' && (w as any).is_company_super_admin);
+      const hasProjects = (next.projects || []).length > 0;
+
+      // Pengamanan E2E: Cegah akun tanpa wewenang proyek masuk ke mode IMPERSONATE
+      if (appMode === 'IMPERSONATE' && !hasProjects) {
+        if (isCompanyAdmin) {
+          setAppModeState('CSA');
+        } else if (isPlatformAdmin) {
+          setAppModeState('PSA');
+        } else {
+          setAppModeState('PERSONAL');
+        }
+      }
+
       if (next.workspaces.length > 0) {
         const companyWs = next.workspaces.find(w => w.type === 'COMPANY');
         if (companyWs) {
           setActiveCompany({
             id: companyWs.company_id || companyWs.id,
-            name: companyWs.name || 'MENARA MEGAH',
-            npwp: (companyWs as any).npwp || '0024376584714000'
+            name: companyWs.name || 'CV. MENARA MEGAH',
+            npwp: (companyWs as any).company_npwp || (companyWs as any).npwp || '0024376584714000'
+          });
+        } else {
+          setActiveCompany({
+            id: '',
+            name: 'Akun Pribadi',
+            npwp: ''
           });
         }
+      } else {
+        setActiveCompany({
+          id: '',
+          name: 'Akun Pribadi',
+          npwp: ''
+        });
       }
     } catch {
       // Ignored
@@ -259,13 +287,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    // Isolasi E2E: Jika Akun Personal, PSA, atau tidak memiliki penugasan proyek yang sah,
+    // data rahasia operasional tenant (BOQ, mutasi kas, stok) TIDAK dimuat.
+    if (appMode === 'PERSONAL' || appMode === 'PSA' || next.projects.length === 0 || !selectedProject) {
+      setItems([]);
+      setPhysicalMaterials([]);
+      setBoqSections([]);
+      setStockMutations([]);
+      setCashMutations([]);
+      setDocuments([]);
+      setDataReady(true);
+      setDataError(null);
+      return;
+    }
+
     const client = getSupabaseClient();
     const [boqRes, sectionsRes, stockRes, cashRes, docsRes, reversalsRes] = await Promise.all([
-      client.from('boq_items').select('*').eq('is_active', true).order('source_row'),
-      client.from('boq_sections').select('*').eq('is_active', true).order('sort_order'),
-      client.from('inventory_transactions').select('*').order('occurred_at', { ascending: true }).order('created_at', { ascending: true }),
-      client.from('cash_transactions').select('*').order('occurred_at', { ascending: true }).order('created_at', { ascending: true }),
-      client.from('documents').select('*').in('document_type', ['MUTASI_KAS', 'MUTASI_STOK']).order('created_at', { ascending: false }),
+      client.from('boq_items').select('*').eq('project_id', selectedProject.id).eq('is_active', true).order('source_row'),
+      client.from('boq_sections').select('*').eq('project_id', selectedProject.id).eq('is_active', true).order('sort_order'),
+      client.from('inventory_transactions').select('*').eq('project_id', selectedProject.id).order('occurred_at', { ascending: true }).order('created_at', { ascending: true }),
+      client.from('cash_transactions').select('*').eq('project_id', selectedProject.id).order('occurred_at', { ascending: true }).order('created_at', { ascending: true }),
+      client.from('documents').select('*').eq('project_id', selectedProject.id).in('document_type', ['MUTASI_KAS', 'MUTASI_STOK']).order('created_at', { ascending: false }),
       client.from('inventory_transaction_reversals').select('original_transaction_id')
     ]);
 
