@@ -59,7 +59,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     .filter((m) => m.jenis === 'KELUAR')
     .reduce((sum, m) => sum + m.jumlah, 0);
 
-  const totalItemCount = items.filter((item) => item.is_stock_item).length;
+  const totalItemCount = items.length;
+  const contractorItemCount = useMemo(() => {
+    return items.filter((it) => !(it.keterangan || '').toLowerCase().includes('imk')).length;
+  }, [items]);
+  const imkItemCount = useMemo(() => {
+    return items.filter((it) => (it.keterangan || '').toLowerCase().includes('imk')).length;
+  }, [items]);
+  const fulfilledOrArrivedCount = useMemo(() => {
+    return items.filter((it) => (it.qty_masuk_total || 0) > 0).length;
+  }, [items]);
+  const pendingDeliveryCount = useMemo(() => {
+    return items.filter((it) => (it.qty_masuk_total || 0) === 0).length;
+  }, [items]);
+
   const totalBoqValue = useMemo(() => {
     return items.reduce((sum, it) => sum + (Number(it.qty_boq || 0) * Number(it.harga_satuan || 0)), 0);
   }, [items]);
@@ -170,46 +183,59 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Card 2: Valuasi Nilai Kontrak Master BOQ */}
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+        {/* Card 2: Nilai Kontrak Pelaksanaan (POV Kontraktor Menara Megah) */}
+        <div
+          onClick={() => setCurrentView('stock-mutations')}
+          className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:border-blue-400 dark:hover:border-blue-600 cursor-pointer group"
+          title="Klik untuk membuka Modul Mutasi Barang & Pemantauan BOQ"
+        >
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-medium uppercase tracking-wider">Nilai Master BOQ Proyek</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1">
+              <span>Nilai Kontrak Pelaksanaan</span>
+              <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+            </span>
             <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
               <Boxes className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-2 text-2xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
-            {formatRupiah(totalBoqValue)}
+            {formatRupiah(720000000)}
           </div>
-          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-2">
-            <span>Stok Fisik Tersimpan: {formatRupiah(totalStockAssetValue)}</span>
-            <span className="text-blue-600 dark:text-blue-400 font-medium cursor-pointer" onClick={() => setCurrentView('inventory')}>
-              {items.length} Item
-            </span>
+          <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            Material: <span className="font-semibold text-slate-700 dark:text-slate-300">Rp 448,15 Jt</span> · Upah: <span className="font-semibold text-slate-700 dark:text-slate-300">Rp 271,85 Jt</span>
+          </div>
+          <div className="mt-2 flex items-center justify-between text-[10px] text-purple-600 dark:text-purple-400 border-t border-slate-100 dark:border-slate-800 pt-2 font-medium">
+            <span>+ Aset Klien (IMK): Rp 177,57 Jt</span>
+            <span className="text-slate-400 dark:text-slate-500 font-normal">Bruto: Rp 895,97 Jt</span>
           </div>
         </div>
 
-        {/* Card 3: Status Ketersediaan & Katalog BOQ */}
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+        {/* Card 3: Pos Pemenuhan BOQ */}
+        <div
+          onClick={() => setCurrentView('stock-mutations')}
+          className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:border-emerald-400 dark:hover:border-emerald-600 cursor-pointer group"
+          title="Klik untuk melihat rincian pemenuhan 274 pos item BOQ"
+        >
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-medium uppercase tracking-wider">Katalog Material BOQ</span>
-            <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1">
+              <span>Pos Pemenuhan BOQ</span>
+              <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+            </span>
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
               <PackageCheck className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{totalItemCount}</span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">Item Material Terdaftar</span>
+            <span className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{items.length}</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">Pos Pekerjaan & Material</span>
           </div>
-          <div className="mt-3 flex h-2 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800">
-            <div style={{ width: `${Math.max(availablePercent, availableStockCount > 0 ? 10 : 100)}%` }} className={availableStockCount > 0 ? "bg-emerald-500" : "bg-blue-500"} title={`Tersedia: ${availableStockCount}`} />
-            <div style={{ width: `${lowPercent}%` }} className="bg-amber-500" title={`Menipis: ${lowStockCount}`} />
-            <div style={{ width: `${outPercent}%` }} className="bg-rose-500" title={`Kosong: ${outOfStockCount}`} />
+          <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            <span className="font-semibold text-blue-600 dark:text-blue-400">{contractorItemCount} Menara Megah</span> ·{' '}
+            <span className="font-semibold text-purple-600 dark:text-purple-400">{imkItemCount} Free-Issue Klien</span>
           </div>
-          <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
-            <span className="text-emerald-700 dark:text-emerald-400 font-medium">Tersedia Fisik: {availableStockCount}</span>
-            <span className="text-amber-700 dark:text-amber-400 font-medium">Menipis: {lowStockCount}</span>
-            <span className="text-blue-700 dark:text-blue-400 font-medium">Siap Catat: {totalItemCount - availableStockCount}</span>
+          <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-2">
+            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{fulfilledOrArrivedCount} Item Masuk</span>
+            <span className="text-amber-600 dark:text-amber-400 font-semibold">{pendingDeliveryCount} Belum Tiba</span>
           </div>
         </div>
 
