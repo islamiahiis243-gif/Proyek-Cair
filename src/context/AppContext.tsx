@@ -722,7 +722,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (error) throw error;
       await refreshData();
-      return { success: true, message: 'Mutasi inventaris berhasil diterbitkan dan siap diverifikasi secara berjenjang.' };
+      return { success: true, message: 'Catatan mutasi barang berhasil disimpan.' };
     } catch (e: any) {
       return { success: false, message: e.message || 'Penerbitan mutasi inventaris gagal.' };
     }
