@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useDeferredValue, startTransition } from 'react';
 import { useApp, computeItemStatus } from '../context/AppContext';
 import {
   ItemBarang,
@@ -74,6 +74,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
   // State untuk Tab 1: Pantau Pemenuhan BOQ
   const [boqSearchQuery, setBoqSearchQuery] = useState('');
+  const deferredBoqSearchQuery = useDeferredValue(boqSearchQuery);
   const [boqProviderFilter, setBoqProviderFilter] = useState<'ALL' | 'KONTRAKTOR' | 'IMK'>('ALL');
   const [boqStatusFilter, setBoqStatusFilter] = useState<'ALL' | 'Belum dipenuhi' | 'Dalam pemenuhan' | 'Terpenuhi' | 'Melebihi BOQ'>('ALL');
   const [collapsedDivisions, setCollapsedDivisions] = useState<Set<string>>(new Set());
@@ -271,15 +272,15 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     setCollapsedSubSections(new Set());
   };
 
-  // Grouped BOQ Data untuk Tab 1
+  // Grouped BOQ Data untuk Tab 1 (Dioptimasi dengan useDeferredValue)
   const groupedBoqData = useMemo(() => {
+    const q = deferredBoqSearchQuery.trim().toLowerCase();
     const filtered = items.filter((item) => {
       const isImk = (item.keterangan || '').toLowerCase().includes('imk');
       if (boqProviderFilter === 'IMK' && !isImk) return false;
       if (boqProviderFilter === 'KONTRAKTOR' && isImk) return false;
       if (boqStatusFilter !== 'ALL' && item.status_pemenuhan !== boqStatusFilter) return false;
-      if (boqSearchQuery.trim()) {
-        const q = boqSearchQuery.toLowerCase();
+      if (q) {
         const matchName = item.nama_barang.toLowerCase().includes(q);
         const matchCode = (item.kode_boq || '').toLowerCase().includes(q);
         const matchCat = (item.kategori || '').toLowerCase().includes(q);
@@ -383,7 +384,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     });
 
     return divisions;
-  }, [items, boqSearchQuery, boqProviderFilter, boqStatusFilter]);
+  }, [items, deferredBoqSearchQuery, boqProviderFilter, boqStatusFilter]);
 
   const handleCollapseAll = () => {
     const allDivs = new Set(groupedBoqData.map((d) => d.name));
@@ -848,8 +849,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           {/* Navigasi Tab Terpadu: Pantau BOQ vs Riwayat Transaksi */}
           <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800">
             <button
-              onClick={() => setActiveTab('BOQ_MONITOR')}
-              className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all ${
+              onClick={() => {
+                startTransition(() => {
+                  setActiveTab('BOQ_MONITOR');
+                });
+              }}
+              className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
                 activeTab === 'BOQ_MONITOR'
                   ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20 rounded-t-xl'
                   : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
@@ -862,8 +867,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               </span>
             </button>
             <button
-              onClick={() => setActiveTab('MUTATION_HISTORY')}
-              className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all ${
+              onClick={() => {
+                startTransition(() => {
+                  setActiveTab('MUTATION_HISTORY');
+                });
+              }}
+              className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
                 activeTab === 'MUTATION_HISTORY'
                   ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20 rounded-t-xl'
                   : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
@@ -1083,7 +1092,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
                                   return (
                                     <React.Fragment key={subKey}>
-                                      <tr className="bg-[#DCFCE7] dark:bg-[#064E3B]/60 border-y border-emerald-300 dark:border-emerald-900/60 text-emerald-950 dark:text-emerald-200 font-semibold transition-colors">
+                                      <tr className="bg-[#DCFCE7] dark:bg-[#064E3B]/60 border-y border-emerald-300 dark:border-emerald-900/60 text-emerald-950 dark:text-emerald-200 font-semibold transition-colors [content-visibility:auto] [contain-intrinsic-size:0_36px]">
                                         <td colSpan={10} className="py-2 px-4">
                                           <button
                                             onClick={() => toggleSubSection(subKey)}
@@ -1111,7 +1120,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                           return (
                                             <tr
                                               key={item.id}
-                                              className="hover:bg-slate-50/90 dark:hover:bg-slate-800/60 transition-colors bg-white dark:bg-slate-900"
+                                              className="hover:bg-slate-50/90 dark:hover:bg-slate-800/60 transition-colors bg-white dark:bg-slate-900 [content-visibility:auto] [contain-intrinsic-size:0_45px]"
                                             >
                                               {/* Kode BOQ */}
                                               <td className="py-2.5 px-3.5 font-mono text-[11px] font-bold text-slate-700 dark:text-slate-300">

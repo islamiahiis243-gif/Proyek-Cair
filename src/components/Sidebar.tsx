@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, startTransition } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   LayoutDashboard,
@@ -190,7 +190,11 @@ export const Sidebar: React.FC = () => {
             <button
               key={item.id}
               type="button"
-              onClick={() => setCurrentView(item.id)}
+              onClick={() => {
+                startTransition(() => {
+                  setCurrentView(item.id);
+                });
+              }}
               className={`relative flex w-auto shrink-0 items-center gap-3 whitespace-nowrap rounded-xl transition-all ${
                 isCollapsed
                   ? 'md:w-full md:justify-center p-2.5 text-xs'
