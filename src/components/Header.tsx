@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   Hexagon,
@@ -14,9 +14,12 @@ import {
   CheckCircle2,
   Database,
   FolderKanban,
-  Eye
+  Eye,
+  Bell,
+  Mail
 } from 'lucide-react';
 import { formatRupiah } from '../lib/pdfGenerator';
+import { getSupabaseClient } from '../lib/supabase';
 import { ImpersonateRole, AppMode } from '../types';
 
 export const Header: React.FC = () => {
@@ -40,22 +43,114 @@ export const Header: React.FC = () => {
     setActiveWorkspaceId,
     activeContext,
     supabaseConfig,
-    setCurrentView
+    setCurrentView,
+    refreshActiveContext
   } = useApp();
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Tutup dropdown saat klik di luar
+  // State Notifikasi Aplikasi (tanda-B)
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const [claimingToken, setClaimingToken] = useState<string | null>(null);
+  const [notifNotice, setNotifNotice] = useState('');
+  const [notifError, setNotifError] = useState('');
+
+  // Tutup dropdown penugasan & dropdown notifikasi saat klik di luar
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (dropdownRef.current && !dropdownRef.current.contains(target)) {
         setDropdownOpen(false);
+      }
+      if (notifRef.current && !notifRef.current.contains(target)) {
+        setNotifOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Muat notifikasi resmi untuk user aktif
+  const loadNotifications = useCallback(async () => {
+    if (!user.email) return;
+    try {
+      const db = getSupabaseClient();
+      const { data, error: err } = await db
+        .from('internal_notifications')
+        .select('*')
+        .ilike('recipient_email', user.email.trim())
+        .eq('is_claimed', false)
+        .order('created_at', { ascending: false });
+
+      if (!err && data) {
+        const tokenCodes = data.map((d: any) => d.token_code).filter(Boolean);
+        let validSet = new Set<string>();
+
+        if (tokenCodes.length > 0) {
+          const { data: validTokens } = await db
+            .from('rfin_tokens')
+            .select('token_code')
+            .in('token_code', tokenCodes)
+            .is('revoked_at', null)
+            .is('redeemed_at', null);
+
+          validSet = new Set((validTokens || []).map((t: any) => t.token_code));
+        }
+
+        const activeOnly = data.filter((d: any) => {
+          if (appMode === 'CSA' && d.category === 'RFIN_A') return false;
+          return d.token_code ? validSet.has(d.token_code) : true;
+        });
+
+        const latestByCategory: Record<string, any> = {};
+        for (const item of activeOnly) {
+          if (!latestByCategory[item.category]) {
+            latestByCategory[item.category] = item;
+          }
+        }
+        setNotifications(Object.values(latestByCategory));
+      } else {
+        setNotifications([]);
+      }
+    } catch {
+      // Ignore
+    }
+  }, [user.email, appMode]);
+
+  useEffect(() => {
+    void loadNotifications();
+    const interval = setInterval(loadNotifications, 30000);
+    return () => clearInterval(interval);
+  }, [loadNotifications]);
+
+  const handleQuickClaim = async (tokenCode: string, notifId: string) => {
+    if (!tokenCode || claimingToken) return;
+    setClaimingToken(tokenCode);
+    setNotifNotice('Mengklaim undangan resmi...');
+    setNotifError('');
+    try {
+      const db = getSupabaseClient();
+      const { data, error: err } = await db.rpc('redeem_rfin', {
+        p_code: tokenCode.trim(),
+      });
+      if (err) throw err;
+      if (!data?.ok) throw new Error(data?.error || 'Klaim token gagal.');
+
+      setNotifNotice('Undangan berhasil diklaim!');
+      setNotifications(prev => prev.filter(n => n.id !== notifId));
+      setTimeout(async () => {
+        if (refreshActiveContext) await refreshActiveContext();
+        window.location.reload();
+      }, 800);
+    } catch (e: any) {
+      setNotifError(e?.message || 'Gagal mengklaim token.');
+    } finally {
+      setClaimingToken(null);
+    }
+  };
 
   const mapRoleCode = (code?: string): ImpersonateRole => {
     if (!code) return 'Clerk';
@@ -192,8 +287,21 @@ export const Header: React.FC = () => {
               <ShieldAlert className="w-5 h-5 text-blue-400" />
             ) : appMode === 'PSA' ? (
               <ShieldCheck className="w-5 h-5 text-purple-400" />
+            ) : user.avatar_url ? (
+              <img
+                src={user.avatar_url}
+                alt={user.name || 'Profil'}
+                className="w-5 h-5 rounded-full object-cover border border-emerald-400/60 shadow-xs"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                }}
+              />
             ) : (
               <User className="w-5 h-5 text-emerald-400" />
+            )}
+            {appMode === 'PERSONAL' && user.avatar_url && (
+              <User className="hidden w-5 h-5 text-emerald-400" />
             )}
           </div>
 
@@ -423,6 +531,103 @@ export const Header: React.FC = () => {
           <Database className={`w-3.5 h-3.5 shrink-0 ${supabaseConfig.isConnected ? 'text-emerald-400' : 'text-slate-400'}`} />
           <span className="hidden xl:inline">{supabaseConfig.isConnected ? 'Terkoneksi' : 'Offline'}</span>
         </div>
+
+        {/* IKON NOTIFIKASI APP (tanda-B) */}
+        {user.id && (
+          <div className="relative" ref={notifRef}>
+            <button
+              type="button"
+              onClick={() => setNotifOpen(v => !v)}
+              aria-label="Notifikasi Aplikasi"
+              title={notifications.length > 0 ? `${notifications.length} notifikasi baru` : 'Notifikasi Aplikasi'}
+              className="relative p-2 rounded-xl border border-slate-800 bg-slate-950 text-slate-300 hover:text-white hover:border-slate-700 transition-colors cursor-pointer"
+            >
+              <Bell className="w-4 h-4" />
+              {notifications.length > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-rose-500 text-[10px] font-extrabold text-white shadow-sm ring-2 ring-slate-950 animate-pulse">
+                  {notifications.length}
+                </span>
+              )}
+            </button>
+
+            {/* Panel Dropdown Notifikasi */}
+            {notifOpen && (
+              <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl border border-slate-800 bg-slate-900/95 p-3.5 shadow-2xl backdrop-blur-xl z-50 text-slate-200 animate-in fade-in slide-in-from-top-2 duration-150 max-h-[82vh] overflow-y-auto">
+                <div className="flex items-center justify-between pb-2.5 border-b border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <Bell className="w-4 h-4 text-blue-400" />
+                    <span className="text-xs font-bold text-white">Notifikasi Aplikasi</span>
+                  </div>
+                  {notifications.length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-bold">
+                      {notifications.length} Baru
+                    </span>
+                  )}
+                </div>
+
+                {notifNotice && (
+                  <div className="mt-2.5 p-2 rounded-lg bg-emerald-950/80 border border-emerald-500/40 text-xs text-emerald-200">
+                    {notifNotice}
+                  </div>
+                )}
+                {notifError && (
+                  <div className="mt-2.5 p-2 rounded-lg bg-rose-950/80 border border-rose-500/40 text-xs text-rose-200">
+                    {notifError}
+                  </div>
+                )}
+
+                <div className="mt-2.5 space-y-2">
+                  {notifications.length > 0 ? (
+                    notifications.map((n) => (
+                      <div
+                        key={n.id}
+                        className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 space-y-2"
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 shrink-0 mt-0.5">
+                            <Mail className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-white leading-snug">{n.title}</p>
+                            <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">{n.message}</p>
+                            {n.token_code && (
+                              <div className="mt-1.5 flex items-center gap-1.5">
+                                <span className="text-[10px] text-slate-400 font-semibold">Kode Token:</span>
+                                <span className="font-mono text-xs font-bold text-amber-300 bg-black/40 px-1.5 py-0.5 rounded border border-amber-400/30">
+                                  {n.token_code}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {n.token_code && (
+                          <div className="pt-1 flex justify-end">
+                            <button
+                              type="button"
+                              disabled={Boolean(claimingToken)}
+                              onClick={() => handleQuickClaim(n.token_code, n.id)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors disabled:opacity-40 cursor-pointer shadow-xs"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>{claimingToken === n.token_code ? 'Mengklaim…' : 'Klaim Sekarang'}</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="py-6 text-center text-slate-400">
+                      <CheckCircle2 className="w-8 h-8 text-emerald-400/80 mx-auto mb-2" />
+                      <p className="text-xs font-semibold text-slate-300">Semua Beres</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Tidak ada notifikasi atau undangan baru saat ini.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Toggle Mode Terang/Gelap (Khusus Mode Personal/Admin - Bebas Pengaturan di Impersonate) */}
         {appMode !== 'IMPERSONATE' && (

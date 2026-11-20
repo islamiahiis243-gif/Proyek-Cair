@@ -232,6 +232,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const next = await resolveMyActiveContext();
       setActiveContext(next);
 
+      const latestStored = getStoredUser();
+      if (latestStored?.id) {
+        setUser(latestStored);
+      }
+
       const isPlatformAdmin = Boolean(next.is_platform_super_admin);
       const isCompanyAdmin = (next.workspaces || []).some(w => w.type === 'COMPANY' && (w as any).is_company_super_admin);
       const hasProjects = (next.projects || []).length > 0;

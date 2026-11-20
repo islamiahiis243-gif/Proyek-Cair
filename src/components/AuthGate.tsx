@@ -37,7 +37,7 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
       const { data: profile, error: profileError } = await client
         .from('profiles')
-        .select('id,full_name,is_active,personal_workspace_id')
+        .select('id,full_name,avatar_url,is_active,personal_workspace_id')
         .eq('id', session.user.id)
         .maybeSingle();
       if (!isCurrent()) return;
@@ -75,11 +75,19 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
       }
 
       const personalWsId = profile?.personal_workspace_id || activeContext.workspaces?.find((w: any) => w.type === 'PERSONAL')?.id || activeContext.workspaces?.[0]?.id;
+      
+      // Prioritas foto profil:
+      // 1. Foto profil aplikasi (tersimpan di profiles / user_metadata)
+      // 2. Foto profil Google OAuth (picture / Google avatar_url)
+      const appAvatar = profile?.avatar_url || session.user.user_metadata?.avatar_url;
+      const googleAvatar = session.user.user_metadata?.picture || (session.user.app_metadata?.provider === 'google' ? session.user.user_metadata?.avatar_url : undefined);
+      const resolvedAvatar = appAvatar || googleAvatar;
+
       saveStoredUser({
         id: session.user.id,
         name: profile?.full_name || session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Pengguna',
         email: session.user.email || '',
-        avatar_url: session.user.user_metadata?.avatar_url,
+        avatar_url: resolvedAvatar,
         role: 'User',
         personalWorkspaceId: personalWsId,
         workspaceType: 'PERSONAL',
