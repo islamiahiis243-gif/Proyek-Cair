@@ -32,6 +32,7 @@ export const Sidebar: React.FC = () => {
     appMode,
     activeRole,
     activeCompany,
+    activeProject,
     outOfStockCount,
     user
   } = useApp();
@@ -93,8 +94,8 @@ export const Sidebar: React.FC = () => {
     ];
   } else {
     // Mode Impersonate (Karyawan / Anggota Proyek)
-    modeTitle = activeCompany.name;
-    modeSubtitle = `Jabatan: ${activeRole}`;
+    modeTitle = activeProject?.name || activeCompany.name || 'UDU Project';
+    modeSubtitle = `${activeCompany.name || 'Perusahaan'} · Jabatan: ${activeRole}`;
     ModeIcon = Hexagon;
     themeAccent = 'amber';
     navItems = [

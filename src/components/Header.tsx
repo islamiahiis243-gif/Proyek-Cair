@@ -33,6 +33,7 @@ export const Header: React.FC = () => {
     activeCompany,
     setActiveCompany,
     activeProjectId,
+    activeProject,
     setActiveProjectId,
     setActiveWorkspaceId,
     activeContext,
@@ -186,17 +187,21 @@ export const Header: React.FC = () => {
             )}
           </div>
 
-          {/* Info Nama & NPWP */}
-          <div className="min-w-0 pr-1">
-            <div className="text-[10px] font-mono tracking-wider text-slate-400 leading-none">
-              {appMode === 'IMPERSONATE' || appMode === 'CSA'
-                ? activeCompany.npwp
+          {/* Info Identitas: Nama Perusahaan (Biru) & Nama Proyek (Merah) */}
+          <div className="min-w-0 pr-1 text-left">
+            <div className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase leading-none truncate max-w-[140px] sm:max-w-[200px]">
+              {appMode === 'IMPERSONATE'
+                ? (activeCompany.name || 'CV MENARA MEGAH')
+                : appMode === 'CSA'
+                ? (activeCompany.npwp || 'KONSOL PERUSAHAAN')
                 : appMode === 'PSA'
                 ? 'GLOBAL PLATFORM'
                 : 'PENGGUNA PRIBADI'}
             </div>
-            <div className="text-xs font-bold text-white tracking-wide leading-tight truncate">
-              {appMode === 'IMPERSONATE' || appMode === 'CSA'
+            <div className="text-xs font-bold text-white tracking-wide leading-tight truncate max-w-[140px] sm:max-w-[200px] mt-0.5">
+              {appMode === 'IMPERSONATE'
+                ? (activeProject?.name || 'UDU Project')
+                : appMode === 'CSA'
                 ? activeCompany.name
                 : appMode === 'PSA'
                 ? 'PLATFORM ADMIN'
@@ -262,7 +267,7 @@ export const Header: React.FC = () => {
                 <span className="flex items-center gap-1.5">
                   <Building2 className="w-3 h-3" /> Penugasan Jabatan Proyek
                 </span>
-                <span className="font-mono text-[9px] text-slate-400">{activeCompany.npwp}</span>
+                <span className="text-[10px] text-slate-400 font-semibold">{activeCompany.name}</span>
               </div>
 
               {/* Tampilkan Penugasan Nyata dari Database jika ada */}
@@ -276,28 +281,29 @@ export const Header: React.FC = () => {
                         key={`${proj.id}-${proj.role_code}`}
                         type="button"
                         onClick={() => handleSelectAssignment(proj)}
-                        className={`w-full flex items-center justify-between gap-2 p-2 rounded-xl text-left transition-all border ${
+                        className={`w-full flex items-center justify-between gap-2 p-2.5 rounded-xl text-left transition-all border ${
                           isActive
-                            ? 'bg-amber-950/60 border-amber-500/50 text-amber-100 font-semibold'
+                            ? 'bg-amber-950/60 border-amber-500/50 text-amber-100 font-semibold shadow-xs'
                             : 'border-slate-800/60 hover:bg-slate-800/80 text-slate-300'
                         }`}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                            <FolderKanban className="w-3 h-3 text-blue-400 shrink-0" />
-                            <span className="truncate font-medium text-slate-300">
-                              {proj.company_name ? `${proj.company_name} — ` : ''}{proj.name}
-                            </span>
+                          <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <FolderKanban className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                            <span className="truncate">{proj.name}</span>
                             {proj.project_code && (
-                              <span className="font-mono text-blue-300 text-[9px]">({proj.project_code})</span>
+                              <span className="font-mono text-blue-300 text-[10px]">({proj.project_code})</span>
                             )}
                           </div>
-                          <div className="mt-1 flex items-center justify-between gap-2">
+                          <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                            Perusahaan: <span className="text-slate-300 font-medium">{proj.company_name || activeCompany.name}</span>
+                          </div>
+                          <div className="mt-1.5 flex items-center justify-between gap-2">
                             <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                              {proj.role_name || role}
+                              Jabatan: {proj.role_name || role}
                             </span>
                             {['Dept. Manager', 'KTT/Proj. Manager', 'CEO/Direktur', 'Spv.'].includes(role) && (
-                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300">TTE/QR</span>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 font-semibold">TTE/QR</span>
                             )}
                           </div>
                         </div>
