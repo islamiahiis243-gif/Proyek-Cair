@@ -501,7 +501,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         alasan_batal_ganti: t.alasan_batal_ganti || undefined,
         harga_satuan_beli: t.harga_satuan_beli != null ? Number(t.harga_satuan_beli) : undefined,
         status_harga: t.status_harga || undefined,
-        nama_item_aktual: t.nama_item_aktual || undefined
+        nama_item_aktual: t.nama_item_aktual || undefined,
+        nomor_nota: t.reference_no || t.nomor_nota || undefined,
+        tanggal_nota: t.tanggal_nota || undefined,
+        nama_toko: t.nama_toko || t.source_name || undefined,
+        toko_kontak: t.toko_kontak || undefined,
+        total_nota_fisik: t.total_nota_fisik != null ? Number(t.total_nota_fisik) : undefined,
+        lampiran_nota_urls: Array.isArray(t.lampiran_nota_urls) ? t.lampiran_nota_urls : []
       };
     });
 
@@ -660,7 +666,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         alasan_batal_ganti: t.alasan_batal_ganti || undefined,
         harga_satuan_beli: t.harga_satuan_beli != null ? Number(t.harga_satuan_beli) : undefined,
         status_harga: t.status_harga || undefined,
-        nama_item_aktual: t.nama_item_aktual || undefined
+        nama_item_aktual: t.nama_item_aktual || undefined,
+        nomor_nota: t.reference_no || t.nomor_nota || undefined,
+        tanggal_nota: t.tanggal_nota || undefined,
+        nama_toko: t.nama_toko || t.source_name || undefined,
+        toko_kontak: t.toko_kontak || undefined,
+        total_nota_fisik: t.total_nota_fisik != null ? Number(t.total_nota_fisik) : undefined,
+        lampiran_nota_urls: Array.isArray(t.lampiran_nota_urls) ? t.lampiran_nota_urls : []
       };
     });
 

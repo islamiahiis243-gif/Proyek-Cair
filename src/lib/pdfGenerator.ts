@@ -224,7 +224,7 @@ export async function generateStockMutationPDF(params: {
   }> = {
     no: { header: 'No', width: 9, align: 'center', getValue: (_, idx) => String(idx + 1) },
     tanggal: { header: 'Waktu', width: 22, align: 'left', getValue: (m) => formatDateTime(m.tanggal) },
-    nomor_surat_jalan: { header: 'No Surat Jalan', width: 22, align: 'left', getValue: (m) => m.nomor_surat_jalan || '-' },
+    nomor_surat_jalan: { header: 'No Surat Jalan / Nota', width: 24, align: 'left', getValue: (m) => m.nomor_nota || m.nomor_surat_jalan || '-' },
     nama_barang: { header: 'Nama Material / Barang', width: 44, align: 'left', getValue: (m) => m.nama_barang },
     nama_item_aktual: {
       header: 'Item Aktual / Pengganti',
@@ -258,9 +258,10 @@ export async function generateStockMutationPDF(params: {
       width: 42,
       align: 'left',
       getValue: (m, _, disc) => {
+        const storeOrProvider = m.nama_toko ? `Toko: ${m.nama_toko}` : (m.source_name || disc?.actualProviderLabel || '-');
         const providerLine =
           m.jenis === 'MASUK'
-            ? `Asal: ${m.source_name || disc?.actualProviderLabel || '-'}`
+            ? `Asal: ${storeOrProvider}`
             : m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN'
             ? 'Beban: Permintaan Klien'
             : m.beban_biaya === 'BONUS_KLIEN'
@@ -270,9 +271,10 @@ export async function generateStockMutationPDF(params: {
             : 'Beban: Proyek BOQ';
         const purposeRaw = (m.tujuan_keperluan || '-').trim();
         const mismatchLine = disc?.isMismatch ? `\n[!] ${disc.pdfNote}` : '';
+        const attachmentLine = (m.lampiran_nota_urls && m.lampiran_nota_urls.length > 0) ? '\n[✓ Nota Fisik Terlampir]' : '';
         return disc?.isMismatch && purposeRaw.toLowerCase().includes('talangan')
-          ? `${providerLine}${mismatchLine}`
-          : `${providerLine}\n${purposeRaw}${mismatchLine}`;
+          ? `${providerLine}${mismatchLine}${attachmentLine}`
+          : `${providerLine}\n${purposeRaw}${mismatchLine}${attachmentLine}`;
       }
     },
     pic: { header: 'PIC', width: 18, align: 'left', getValue: (m) => m.pic_penerima_penyerah || '-' },

@@ -106,6 +106,22 @@ export interface MutasiBarang {
   harga_satuan_beli?: number;
   status_harga?: 'TERCATAT' | 'BELUM_DIKETAHUI' | 'NOTA_MENYUSUL' | 'JATAH_KLIEN';
   nama_item_aktual?: string;
+  nomor_nota?: string;
+  tanggal_nota?: string;
+  nama_toko?: string;
+  toko_kontak?: string;
+  total_nota_fisik?: number;
+  lampiran_nota_urls?: string[];
+}
+
+export interface SupplierStore {
+  id: string;
+  project_id?: string;
+  nama_toko: string;
+  telepon?: string;
+  alamat?: string;
+  kategori?: string;
+  created_at?: string;
 }
 
 export type JenisMutasiKas = 'MASUK' | 'KELUAR';
@@ -133,6 +149,12 @@ export interface MutasiKas {
   harga_satuan_beli?: number;
   status_harga?: 'TERCATAT' | 'BELUM_DIKETAHUI' | 'NOTA_MENYUSUL' | 'JATAH_KLIEN';
   nama_item_aktual?: string;
+  nomor_nota?: string;
+  tanggal_nota?: string;
+  nama_toko?: string;
+  toko_kontak?: string;
+  total_nota_fisik?: number;
+  lampiran_nota_urls?: string[];
 }
 
 export interface DokumenLaporan {
@@ -182,6 +204,12 @@ export interface DokumenLaporan {
   harga_satuan_beli?: number;
   status_harga?: 'TERCATAT' | 'BELUM_DIKETAHUI' | 'NOTA_MENYUSUL' | 'JATAH_KLIEN';
   nama_item_aktual?: string;
+  nomor_nota?: string;
+  tanggal_nota?: string;
+  nama_toko?: string;
+  toko_kontak?: string;
+  total_nota_fisik?: number;
+  lampiran_nota_urls?: string[];
 }
 
 export interface UserProfile {
