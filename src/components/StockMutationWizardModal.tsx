@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useDeferredValue } from 'react';
 import {
   ArrowDownLeft,
   ArrowLeft,
@@ -126,18 +126,32 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
     [currentStepId, answers.mutationType]
   );
 
-  // Pencarian Cerdas Toleran Typo & Multi-Kata — HANYA muncul saat Clerk mulai mengetik
-  const trimmedQuery = searchQuery.trim();
+  // Pencarian Cerdas Non-Blocking (Deferred Value agar pengetikan 100% responsif & bebas lag)
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const trimmedQuery = deferredSearchQuery.trim();
   const hasTypedSearch = trimmedQuery.length > 0;
 
-  const filteredBoqMatches = useMemo(() => {
-    if (!hasTypedSearch) return [];
-    const scored = physicalMaterials
+  // Pra-indeks teks pencarian material BOQ agar tidak re-map/re-join array pada setiap ketukan tuts
+  const searchableBoqList = useMemo(() => {
+    return physicalMaterials
       .filter((pm) => pm.is_stock_item)
       .map((pm) => {
         const boqInfo = pm.budget_lines.map((bl) => `${bl.kode_boq} ${bl.kategori}`).join(' ');
-        const score = scoreFuzzyMatch(trimmedQuery, pm.nama_barang, pm.satuan, boqInfo);
-        return { pm, score };
+        return {
+          pm,
+          name: pm.nama_barang,
+          uom: pm.satuan || '',
+          boqInfo
+        };
+      });
+  }, [physicalMaterials]);
+
+  const filteredBoqMatches = useMemo(() => {
+    if (!hasTypedSearch) return [];
+    const scored = searchableBoqList
+      .map((item) => {
+        const score = scoreFuzzyMatch(trimmedQuery, item.name, item.uom, item.boqInfo);
+        return { pm: item.pm, score };
       })
       .filter((x) => x.score > 0);
 
@@ -152,7 +166,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
     });
 
     return scored.slice(0, 12).map((x) => x.pm);
-  }, [hasTypedSearch, trimmedQuery, physicalMaterials, answers.mutationType]);
+  }, [hasTypedSearch, trimmedQuery, searchableBoqList, answers.mutationType]);
 
   const filteredCustomMatches = useMemo(() => {
     if (!hasTypedSearch) return [];

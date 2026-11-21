@@ -766,11 +766,13 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     setIsModalOpen(true);
   };
 
-  // Navigasi ke Tab 3 (Jurnal Mutasi) khusus untuk item ini
+  // Navigasi ke Tab 3 (Jurnal Mutasi) khusus untuk item ini (transisi halus)
   const handleViewItemHistory = (itemName: string) => {
-    setActiveTab('MUTATION_HISTORY');
-    setSearchQuery(itemName);
-    setFilterType('ALL');
+    startTransition(() => {
+      setActiveTab('MUTATION_HISTORY');
+      setSearchQuery(itemName);
+      setFilterType('ALL');
+    });
   };
 
   // Badge Status Pos Pekerjaan BOQ (Khusus POV "Bedakan Keluar" per Pos Pekerjaan)
@@ -1409,7 +1411,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
             {!modalOnly && activeTab !== 'MUTATION_HISTORY' && (
               <button
                 type="button"
-                onClick={() => setActiveTab('MUTATION_HISTORY')}
+                onClick={() => startTransition(() => setActiveTab('MUTATION_HISTORY'))}
                 className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition-colors cursor-pointer"
               >
                 Lihat di Jurnal Transaksi →
@@ -1557,7 +1559,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('BOQ_MONITOR')}
+                  onClick={() => startTransition(() => setActiveTab('BOQ_MONITOR'))}
                   className="shrink-0 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors cursor-pointer"
                 >
                   Lihat Pemakaian Pos BOQ →

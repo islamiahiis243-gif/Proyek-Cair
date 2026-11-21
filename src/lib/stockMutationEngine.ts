@@ -1151,10 +1151,11 @@ export const scoreFuzzyMatch = (rawQuery: string, ...fields: string[]): number =
       }
       if (tw.startsWith(qt)) {
         bestTokenScore = Math.max(bestTokenScore, 80);
+        break;
       } else if (tw.includes(qt)) {
         bestTokenScore = Math.max(bestTokenScore, 65);
-      } else if (maxEdit > 0) {
-        // Cek jarak edit terhadap kata penuh maupun awalan kata
+      } else if (maxEdit > 0 && Math.abs(tw.length - qt.length) <= maxEdit + 2) {
+        // Cek jarak edit terhadap kata penuh maupun awalan kata hanya jika panjangnya mirip
         const distFull = levenshteinDistance(qt, tw);
         const prefixCandidate = tw.slice(0, Math.min(tw.length, qt.length + 1));
         const distPrefix = levenshteinDistance(qt, prefixCandidate);
