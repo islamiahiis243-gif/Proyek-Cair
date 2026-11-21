@@ -1266,7 +1266,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         setIsExportingBoq(true);
         const docId = `BOQ-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-        let itemsToExport = groupedBoqData.flatMap((d) => d.subSections.flatMap((s) => s.items));
+        // Gunakan seluruh basis pos BOQ proyek (280 pos), lalu filter sesuai konfigurasi modal ekspor
+        let itemsToExport = [...items];
         if (config.filterScope.providerScope === 'KONTRAKTOR') {
           itemsToExport = itemsToExport.filter(it => !isClientProvidedRemark(it.keterangan, tenantBranding.clientName));
         } else if (config.filterScope.providerScope === 'IMK') {
@@ -1274,7 +1275,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         }
 
         if (config.filterScope.statusScope === 'LENGKAP') {
-          itemsToExport = itemsToExport.filter(it => it.status_pemenuhan === 'Terpenuhi');
+          itemsToExport = itemsToExport.filter(it => it.status_pemenuhan === 'Terpenuhi' || it.status_pemenuhan === 'Melebihi BOQ');
         } else if (config.filterScope.statusScope === 'BELUM_LENGKAP') {
           itemsToExport = itemsToExport.filter(it => it.status_pemenuhan === 'Dalam pemenuhan');
         } else if (config.filterScope.statusScope === 'BELUM_TIBA') {

@@ -511,27 +511,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
 
-    // 3. Petakan Item BOQ Terperinci (Satukan Masuk di Level Gudang, Bedakan Keluar per Pos Pekerjaan)
+    // 3. Petakan Item BOQ Terperinci dengan Alokasi FIFO Kedatangan Gudang (Mencegah Duplikasi Multi-Pos)
+    const remainingReceivedPool = new Map<string, number>();
+    physicalReceived.forEach((qty, key) => remainingReceivedPool.set(key, qty));
+
     const mappedItems: ItemBarang[] = rawBoq.map((b: any) => {
       const baseTarget = Number(b.quantity) || 0;
       const key = itemToKey.get(b.id)!;
       const totalBoqGabungan = totalBoqByKey.get(key) || baseTarget;
       const jumlahPosGabungan = posCountByKey.get(key) || 1;
       const physicalStock = Math.max(0, physicalBalance.get(key) || 0);
-      const masukGudang = physicalReceived.get(key) || 0;
+      const masukGudangTotal = physicalReceived.get(key) || 0;
       const terpakaiDiPosIni = boqItemConsumed.get(b.id) || 0;
-      const sisaTargetPos = Math.max(baseTarget - terpakaiDiPosIni, 0);
-      const sisaBelumTibaGudang = Math.max(totalBoqGabungan - masukGudang, 0);
-      const progress = baseTarget > 0 ? Math.min((terpakaiDiPosIni / baseTarget) * 100, 100) : 0;
+
+      // Alokasi kedatangan material untuk pos ini:
+      // - Untuk item 1 pos: seluruh kedatangan masuk ke pos ini
+      // - Untuk item multi-pos: alokasikan secara berurutan (FIFO) dari pool penerimaan fisik yang ada
+      let masukKePosIni = 0;
+      if (jumlahPosGabungan === 1) {
+        masukKePosIni = masukGudangTotal;
+      } else {
+        const poolAvailable = remainingReceivedPool.get(key) || 0;
+        masukKePosIni = Math.min(baseTarget, poolAvailable);
+        remainingReceivedPool.set(key, Math.max(0, poolAvailable - masukKePosIni));
+      }
+
+      // Sisa Belum Tiba di level pos
+      const sisaBelumTibaPos = Math.max(0, baseTarget - masukKePosIni);
+      const sisaBelumTibaGudang = Math.max(0, totalBoqGabungan - masukGudangTotal);
+      
       const EPS = 0.0001;
-      const statusPemenuhan: ItemBarang['status_pemenuhan'] =
-        terpakaiDiPosIni > baseTarget + EPS && baseTarget > 0
-          ? 'Melebihi BOQ'
-          : terpakaiDiPosIni + EPS >= baseTarget && baseTarget > 0
-          ? 'Terpenuhi'
-          : terpakaiDiPosIni > 0
-          ? 'Dalam pemenuhan'
-          : 'Belum dipenuhi';
+      // Status Pemenuhan Pos yang cerdas & akurat:
+      let statusPemenuhan: ItemBarang['status_pemenuhan'] = 'Belum dipenuhi';
+      if (terpakaiDiPosIni >= baseTarget - EPS && baseTarget > 0) {
+        statusPemenuhan = terpakaiDiPosIni > baseTarget + EPS ? 'Melebihi BOQ' : 'Terpenuhi';
+      } else if (masukKePosIni >= baseTarget - EPS && baseTarget > 0) {
+        statusPemenuhan = masukKePosIni > baseTarget + EPS ? 'Melebihi BOQ' : 'Terpenuhi';
+      } else if (masukKePosIni > 0 || terpakaiDiPosIni > 0) {
+        statusPemenuhan = 'Dalam pemenuhan';
+      }
+
+      const progress = baseTarget > 0 ? Math.min((Math.max(masukKePosIni, terpakaiDiPosIni) / baseTarget) * 100, 100) : 0;
 
       return {
         id: b.id,
@@ -548,10 +568,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         qty_tambahan_disetujui: 0,
         target_kebutuhan_total: baseTarget,
         is_stock_item: Boolean(b.is_stock_item),
-        has_stock_history: stockHistory.has(b.id) || masukGudang > 0 || terpakaiDiPosIni > 0,
-        qty_masuk_total: masukGudang,
+        has_stock_history: stockHistory.has(b.id) || masukGudangTotal > 0 || terpakaiDiPosIni > 0,
+        qty_masuk_total: masukKePosIni,
         qty_keluar_total: terpakaiDiPosIni,
-        qty_pemenuhan_sisa: sisaTargetPos,
+        qty_pemenuhan_sisa: sisaBelumTibaPos,
         total_boq_material_gabungan: totalBoqGabungan,
         jumlah_pos_material_gabungan: jumlahPosGabungan,
         sisa_belum_tiba_gudang: sisaBelumTibaGudang,
@@ -561,7 +581,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         harga_satuan: Number(b.unit_rate || 0),
         stok_saat_ini: physicalStock,
         stok_minimum: 0,
-        status: computeItemStatus(physicalStock, 0, stockHistory.has(b.id) || masukGudang > 0 || terpakaiDiPosIni > 0),
+        status: computeItemStatus(physicalStock, 0, stockHistory.has(b.id) || masukGudangTotal > 0 || terpakaiDiPosIni > 0),
         keterangan: b.remarks || ''
       };
     });

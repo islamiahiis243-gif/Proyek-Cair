@@ -755,7 +755,9 @@ export async function generateCashflowPDF(params: {
   const activeCash = cashMutations.filter(m => !m.is_batal && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI');
   const totalMasuk = activeCash.filter((m) => m.jenis === 'MASUK').reduce((acc, m) => acc + m.jumlah_rp, 0);
   const totalKeluar = activeCash.filter((m) => m.jenis === 'KELUAR').reduce((acc, m) => acc + m.jumlah_rp, 0);
-  const endingBalance = activeCash[0]?.saldo_setelah || 0;
+  // Saldo akhir mutakhir: urutkan transaksi aktif berdasarkan tanggal terbaru secara konsisten
+  const sortedCashDesc = [...activeCash].sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
+  const endingBalance = sortedCashDesc[0]?.saldo_setelah ?? (totalMasuk - totalKeluar);
 
   // KPI Summary Strip
   doc.setFillColor(248, 250, 252);
@@ -1057,25 +1059,26 @@ export async function generateBOQReportPDF(params: {
       return !it.is_stock_item || catUpper.startsWith('IV') || catUpper.includes('JASA') || catUpper.includes('UPAH') || it.satuan === 'ls';
     }).length;
     const clientItemsCount = items.filter(it => isClientProvidedRemark(it.keterangan, b.clientName)).length;
+    const isMixedScope = clientItemsCount > 0 && (items.length - clientItemsCount) > 0;
 
     doc.setFontSize(7);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(30, 41, 59);
-    doc.text(`RINGKASAN FISIK BOQ (${b.contractorName.toUpperCase()}):`, 18, 53);
+    doc.text(isMixedScope ? 'RINGKASAN FISIK RUANG LINGKUP BOQ (GABUNGAN PROYEK):' : `RINGKASAN FISIK BOQ (${b.contractorName.toUpperCase()}):`, 18, 53);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.text('Pos Material:', 18, 58);
+    doc.text('Pos Material Kontraktor:', 18, 58);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(37, 99, 235);
-    doc.text(`${matItemsCount} Pos`, 40, 58);
+    doc.text(`${matItemsCount} Pos`, 52, 58);
 
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(30, 41, 59);
-    doc.text('Pos Upah & Jasa:', 70, 58);
+    doc.text('Pos Upah & Jasa:', 78, 58);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(16, 185, 129);
-    doc.text(`${manItemsCount} Pos`, 100, 58);
+    doc.text(`${manItemsCount} Pos`, 104, 58);
 
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(30, 41, 59);
