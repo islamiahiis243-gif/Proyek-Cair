@@ -1117,39 +1117,80 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
         let materialsToExport = [...filteredWarehouseMaterials];
         if (config.filterScope.providerScope === 'KONTRAKTOR') {
-          materialsToExport = materialsToExport.filter(pm =>
-            (pm.budget_lines || []).some(bl => !isClientProvidedRemark(bl.keterangan, tenantBranding.clientName))
-          );
+          materialsToExport = materialsToExport.filter(pm => {
+            const disc = summarizeMaterialIncomingDiscrepancy(pm, stockMutations, providerLabels);
+            return (disc.kontraktorTargetQty || 0) > 0;
+          });
         } else if (config.filterScope.providerScope === 'IMK') {
-          materialsToExport = materialsToExport.filter(pm =>
-            (pm.budget_lines || []).some(bl => isClientProvidedRemark(bl.keterangan, tenantBranding.clientName))
-          );
+          materialsToExport = materialsToExport.filter(pm => {
+            const disc = summarizeMaterialIncomingDiscrepancy(pm, stockMutations, providerLabels);
+            return (disc.imkTargetQty || 0) > 0;
+          });
         }
 
         if (config.filterScope.onlyRemaining) {
-          materialsToExport = materialsToExport.filter(pm =>
-            Math.max(0, (pm.total_qty_boq || 0) - (pm.total_qty_masuk || 0)) > 0
-          );
+          materialsToExport = materialsToExport.filter(pm => {
+            const disc = summarizeMaterialIncomingDiscrepancy(pm, stockMutations, providerLabels);
+            if (config.filterScope.providerScope === 'KONTRAKTOR') {
+              return (disc.kontraktorSisaQty || 0) > 0;
+            } else if (config.filterScope.providerScope === 'IMK') {
+              return (disc.imkSisaQty || 0) > 0;
+            } else {
+              return Math.max(0, (pm.total_qty_boq || 0) - (pm.total_qty_masuk || 0)) > 0;
+            }
+          });
         }
 
         if (config.filterScope.statusScope === 'HAS_STOCK') {
           materialsToExport = materialsToExport.filter(pm => pm.stok_fisik > 0);
         } else if (config.filterScope.statusScope === 'HAS_ARRIVED') {
-          materialsToExport = materialsToExport.filter(pm => (pm.total_qty_masuk || 0) > 0);
+          materialsToExport = materialsToExport.filter(pm => {
+            if (config.filterScope.providerScope === 'KONTRAKTOR') {
+              const disc = summarizeMaterialIncomingDiscrepancy(pm, stockMutations, providerLabels);
+              return (disc.masukKontraktor || 0) > 0;
+            } else if (config.filterScope.providerScope === 'IMK') {
+              const disc = summarizeMaterialIncomingDiscrepancy(pm, stockMutations, providerLabels);
+              return (disc.masukKlien || 0) > 0;
+            }
+            return (pm.total_qty_masuk || 0) > 0;
+          });
         } else if (config.filterScope.statusScope === 'NOT_ARRIVED') {
-          materialsToExport = materialsToExport.filter(pm => (pm.total_qty_masuk || 0) === 0);
+          materialsToExport = materialsToExport.filter(pm => {
+            if (config.filterScope.providerScope === 'KONTRAKTOR') {
+              const disc = summarizeMaterialIncomingDiscrepancy(pm, stockMutations, providerLabels);
+              return (disc.masukKontraktor || 0) === 0;
+            } else if (config.filterScope.providerScope === 'IMK') {
+              const disc = summarizeMaterialIncomingDiscrepancy(pm, stockMutations, providerLabels);
+              return (disc.masukKlien || 0) === 0;
+            }
+            return (pm.total_qty_masuk || 0) === 0;
+          });
         }
 
         if (config.sortConfig.key !== 'default') {
           const dirMul = config.sortConfig.dir === 'desc' ? -1 : 1;
           materialsToExport.sort((a, b) => {
             if (config.sortConfig.key === 'nama_barang') return a.nama_barang.localeCompare(b.nama_barang) * dirMul;
-            if (config.sortConfig.key === 'target_kebutuhan') return ((a.total_qty_boq || 0) - (b.total_qty_boq || 0)) * dirMul;
-            if (config.sortConfig.key === 'sudah_masuk') return ((a.total_qty_masuk || 0) - (b.total_qty_masuk || 0)) * dirMul;
+            if (config.sortConfig.key === 'target_kebutuhan') {
+              const discA = summarizeMaterialIncomingDiscrepancy(a, stockMutations, providerLabels);
+              const discB = summarizeMaterialIncomingDiscrepancy(b, stockMutations, providerLabels);
+              const qA = config.filterScope.providerScope === 'KONTRAKTOR' ? discA.kontraktorTargetQty : config.filterScope.providerScope === 'IMK' ? discA.imkTargetQty : (a.total_qty_boq || 0);
+              const qB = config.filterScope.providerScope === 'KONTRAKTOR' ? discB.kontraktorTargetQty : config.filterScope.providerScope === 'IMK' ? discB.imkTargetQty : (b.total_qty_boq || 0);
+              return (qA - qB) * dirMul;
+            }
+            if (config.sortConfig.key === 'sudah_masuk') {
+              const discA = summarizeMaterialIncomingDiscrepancy(a, stockMutations, providerLabels);
+              const discB = summarizeMaterialIncomingDiscrepancy(b, stockMutations, providerLabels);
+              const mA = config.filterScope.providerScope === 'KONTRAKTOR' ? discA.masukKontraktor : config.filterScope.providerScope === 'IMK' ? discA.masukKlien : (a.total_qty_masuk || 0);
+              const mB = config.filterScope.providerScope === 'KONTRAKTOR' ? discB.masukKontraktor : config.filterScope.providerScope === 'IMK' ? discB.masukKlien : (b.total_qty_masuk || 0);
+              return (mA - mB) * dirMul;
+            }
             if (config.sortConfig.key === 'saldo_gudang') return (a.stok_fisik - b.stok_fisik) * dirMul;
             if (config.sortConfig.key === 'sisa_belum_tiba') {
-              const sisaA = Math.max(0, (a.total_qty_boq || 0) - (a.total_qty_masuk || 0));
-              const sisaB = Math.max(0, (b.total_qty_boq || 0) - (b.total_qty_masuk || 0));
+              const discA = summarizeMaterialIncomingDiscrepancy(a, stockMutations, providerLabels);
+              const discB = summarizeMaterialIncomingDiscrepancy(b, stockMutations, providerLabels);
+              const sisaA = config.filterScope.providerScope === 'KONTRAKTOR' ? discA.kontraktorSisaQty : config.filterScope.providerScope === 'IMK' ? discA.imkSisaQty : Math.max(0, (a.total_qty_boq || 0) - (a.total_qty_masuk || 0));
+              const sisaB = config.filterScope.providerScope === 'KONTRAKTOR' ? discB.kontraktorSisaQty : config.filterScope.providerScope === 'IMK' ? discB.imkSisaQty : Math.max(0, (b.total_qty_boq || 0) - (b.total_qty_masuk || 0));
               return (sisaA - sisaB) * dirMul;
             }
             return 0;
@@ -1166,7 +1207,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           signer: user || undefined,
           stockMutations,
           branding: tenantBranding,
-          selectedColumns: config.selectedColumns
+          selectedColumns: config.selectedColumns,
+          providerScope: config.filterScope.providerScope
         });
         setNoticeMessage(`PDF Rekap Gudang (${materialsToExport.length} material · ${config.selectedColumns.length} kolom) berhasil diunduh.`);
       } catch (err: any) {

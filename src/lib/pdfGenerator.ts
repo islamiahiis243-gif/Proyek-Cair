@@ -1172,6 +1172,7 @@ export async function generateWarehouseSummaryPDF(params: {
   stockMutations?: MutasiBarang[];
   branding?: TenantBranding;
   selectedColumns?: string[];
+  providerScope?: 'ALL' | 'KONTRAKTOR' | 'IMK';
 }): Promise<DokumenLaporan> {
   const {
     docId,
@@ -1183,7 +1184,8 @@ export async function generateWarehouseSummaryPDF(params: {
     signer,
     stockMutations = [],
     branding: rawBranding,
-    selectedColumns
+    selectedColumns,
+    providerScope = 'ALL'
   } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
   const providerLabels = { contractorName: b.contractorName, clientName: b.clientName };
@@ -1230,22 +1232,52 @@ export async function generateWarehouseSummaryPDF(params: {
       align: 'left',
       getValue: (pm, _, disc) => {
         const extraLines: string[] = [];
-        if (disc?.mixedBreakdownText) extraLines.push(disc.mixedBreakdownText);
-        if (disc?.hasMismatch) extraLines.push(`[!] ${disc.summaryText}`);
+        if (providerScope === 'KONTRAKTOR') {
+          if (disc?.imkTargetQty > 0) {
+            extraLines.push(`Lingkup Kontraktor: ${disc.masukKontraktor}/${disc.kontraktorTargetQty} ${pm.satuan} · [Jatah Klien ${disc.imkTargetQty} ${pm.satuan} Dikecualikan]`);
+          }
+        } else if (providerScope === 'IMK') {
+          if (disc?.kontraktorTargetQty > 0) {
+            extraLines.push(`Jatah Pengadaan Klien: ${disc.masukKlien}/${disc.imkTargetQty} ${pm.satuan} · [Lingkup Kontraktor ${disc.kontraktorTargetQty} ${pm.satuan} Dikecualikan]`);
+          }
+        } else {
+          if (disc?.mixedBreakdownText) extraLines.push(disc.mixedBreakdownText);
+          if (disc?.hasMismatch) extraLines.push(`[!] ${disc.summaryText}`);
+        }
         return extraLines.length > 0
           ? `${pm.nama_barang} (${pm.budget_lines.length} Pos BOQ)\n${extraLines.join('\n')}`
           : `${pm.nama_barang} (${pm.budget_lines.length} Pos BOQ)`;
       }
     },
     satuan: { header: 'Satuan', width: 18, align: 'center', getValue: (pm) => pm.satuan },
-    target_kebutuhan: { header: 'Kebutuhan BOQ', width: 26, align: 'right', getValue: (pm) => (pm.total_qty_boq || 0).toLocaleString('id-ID', { maximumFractionDigits: 3 }) },
+    target_kebutuhan: {
+      header: 'Kebutuhan BOQ',
+      width: 26,
+      align: 'right',
+      getValue: (pm, _, disc) => {
+        let qty = pm.total_qty_boq || 0;
+        if (providerScope === 'KONTRAKTOR') {
+          qty = disc?.kontraktorTargetQty ?? qty;
+        } else if (providerScope === 'IMK') {
+          qty = disc?.imkTargetQty ?? qty;
+        }
+        return qty.toLocaleString('id-ID', { maximumFractionDigits: 3 });
+      }
+    },
     sudah_masuk: {
       header: 'Masuk Gudang',
       width: 32,
       align: 'right',
-      getValue: (pm) => {
-        const totalTarget = pm.total_qty_boq || 0;
-        const totalMasuk = pm.total_qty_masuk || 0;
+      getValue: (pm, _, disc) => {
+        let totalTarget = pm.total_qty_boq || 0;
+        let totalMasuk = pm.total_qty_masuk || 0;
+        if (providerScope === 'KONTRAKTOR') {
+          totalTarget = disc?.kontraktorTargetQty ?? totalTarget;
+          totalMasuk = disc?.masukKontraktor ?? totalMasuk;
+        } else if (providerScope === 'IMK') {
+          totalTarget = disc?.imkTargetQty ?? totalTarget;
+          totalMasuk = disc?.masukKlien ?? totalMasuk;
+        }
         const pctTiba = totalTarget > 0 ? Math.round((totalMasuk / totalTarget) * 100) : 0;
         return `${totalMasuk.toLocaleString('id-ID', { maximumFractionDigits: 3 })} (${pctTiba}%)`;
       }
@@ -1254,7 +1286,15 @@ export async function generateWarehouseSummaryPDF(params: {
       header: 'Sisa Belum Tiba',
       width: 26,
       align: 'right',
-      getValue: (pm) => Math.max(0, (pm.total_qty_boq || 0) - (pm.total_qty_masuk || 0)).toLocaleString('id-ID', { maximumFractionDigits: 3 })
+      getValue: (pm, _, disc) => {
+        let sisa = Math.max(0, (pm.total_qty_boq || 0) - (pm.total_qty_masuk || 0));
+        if (providerScope === 'KONTRAKTOR') {
+          sisa = disc?.kontraktorSisaQty ?? sisa;
+        } else if (providerScope === 'IMK') {
+          sisa = disc?.imkSisaQty ?? sisa;
+        }
+        return sisa.toLocaleString('id-ID', { maximumFractionDigits: 3 });
+      }
     },
     sudah_dipakai: {
       header: 'Sudah Dipakai',

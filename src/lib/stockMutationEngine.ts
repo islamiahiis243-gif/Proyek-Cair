@@ -386,6 +386,12 @@ export interface MaterialDiscrepancySummary {
   actualProviderLabel: string;
   summaryText: string;
   mixedBreakdownText: string;
+  masukKontraktor: number;
+  masukKlien: number;
+  kontraktorTargetQty: number;
+  imkTargetQty: number;
+  kontraktorSisaQty: number;
+  imkSisaQty: number;
 }
 
 /**
@@ -420,12 +426,27 @@ export const summarizeMaterialIncomingDiscrepancy = (
 
   const fmt = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 3 });
 
+  const kontraktorTargetQty = prov.kontraktorQty;
+  const imkTargetQty = prov.imkQty;
+  const kontraktorSisaQty = Math.max(0, prov.kontraktorQty - masukKontraktor);
+  const imkSisaQty = Math.max(0, prov.imkQty - masukKlien);
+
+  const baseMetrics = {
+    masukKontraktor,
+    masukKlien,
+    kontraktorTargetQty,
+    imkTargetQty,
+    kontraktorSisaQty,
+    imkSisaQty
+  };
+
   if (prov.isMixed) {
     const mixedBreakdownText = `Porsi Masuk — ${contractor}: ${fmt(masukKontraktor)}/${fmt(prov.kontraktorQty)} · ${client}: ${fmt(masukKlien)}/${fmt(prov.imkQty)} ${pm.satuan}`;
 
     if (masukKontraktor > prov.kontraktorQty + 0.0001) {
       const excess = masukKontraktor - prov.kontraktorQty;
       return {
+        ...baseMetrics,
         hasMismatch: true,
         kind: 'TALANGAN_KONTRAKTOR',
         mismatchQty: excess,
@@ -439,6 +460,7 @@ export const summarizeMaterialIncomingDiscrepancy = (
     if (masukKlien > prov.imkQty + 0.0001) {
       const excess = masukKlien - prov.imkQty;
       return {
+        ...baseMetrics,
         hasMismatch: true,
         kind: 'DIPASOK_KLIEN',
         mismatchQty: excess,
@@ -450,6 +472,7 @@ export const summarizeMaterialIncomingDiscrepancy = (
     }
 
     return {
+      ...baseMetrics,
       hasMismatch: false,
       kind: 'NONE',
       mismatchQty: 0,
@@ -462,6 +485,7 @@ export const summarizeMaterialIncomingDiscrepancy = (
 
   if (prov.defaultAsal === 'KLIEN' && masukKontraktor > 0) {
     return {
+      ...baseMetrics,
       hasMismatch: true,
       kind: 'TALANGAN_KONTRAKTOR',
       mismatchQty: masukKontraktor,
@@ -474,6 +498,7 @@ export const summarizeMaterialIncomingDiscrepancy = (
 
   if (prov.defaultAsal === 'KONTRAKTOR' && masukKlien > 0) {
     return {
+      ...baseMetrics,
       hasMismatch: true,
       kind: 'DIPASOK_KLIEN',
       mismatchQty: masukKlien,
@@ -485,6 +510,7 @@ export const summarizeMaterialIncomingDiscrepancy = (
   }
 
   return {
+    ...baseMetrics,
     hasMismatch: false,
     kind: 'NONE',
     mismatchQty: 0,
