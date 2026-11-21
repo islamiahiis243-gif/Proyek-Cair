@@ -1029,10 +1029,16 @@ export async function generateBOQReportPDF(params: {
     45
   );
 
-  // Hitung Ringkasan Nilai Kontrak Dinamis dari Item BOQ
+  // Hitung Ringkasan Nilai Kontrak Dinamis & Realisasi Pemenuhan dari Item BOQ
   let contractMaterial = 0;
   let contractManpower = 0;
   let clientFreeIssue = 0;
+  let realizedContractMaterial = 0;
+  let remainingContractMaterial = 0;
+  let fullyFulfilledCount = 0;
+  let partialFulfilledCount = 0;
+  let unfulfilledCount = 0;
+
   items.forEach((it) => {
     const lineTotal = (Number(it.harga_satuan) || 0) * (Number(it.qty_boq) || 0);
     const isClientItem = isClientProvidedRemark(it.keterangan, b.clientName);
@@ -1041,16 +1047,41 @@ export async function generateBOQReportPDF(params: {
     } else {
       const catUpper = (it.kategori || '').toUpperCase();
       const isManpower = !it.is_stock_item || catUpper.startsWith('IV') || catUpper.includes('JASA') || catUpper.includes('UPAH');
-      if (isManpower) contractManpower += lineTotal;
-      else contractMaterial += lineTotal;
+      if (isManpower) {
+        contractManpower += lineTotal;
+      } else {
+        contractMaterial += lineTotal;
+        const unitRate = Number(it.harga_satuan) || 0;
+        const masukQty = Number(it.qty_masuk_total) || 0;
+        const targetQty = Number(it.qty_boq) || 0;
+        const sisaQty = Number(it.qty_pemenuhan_sisa) || Math.max(0, targetQty - masukQty);
+
+        const realizedLine = Math.min(masukQty, targetQty) * unitRate;
+        const remainingLine = sisaQty * unitRate;
+
+        realizedContractMaterial += realizedLine;
+        remainingContractMaterial += remainingLine;
+
+        if (it.status_pemenuhan === 'Terpenuhi' || it.status_pemenuhan === 'Melebihi BOQ') {
+          fullyFulfilledCount += 1;
+        } else if (it.status_pemenuhan === 'Dalam pemenuhan') {
+          partialFulfilledCount += 1;
+        } else {
+          unfulfilledCount += 1;
+        }
+      }
     }
   });
   const contractTotal = contractMaterial + contractManpower;
+  const percentRealized = contractMaterial > 0 ? (realizedContractMaterial / contractMaterial) * 100 : 0;
+  const percentRemaining = Math.max(0, 100 - percentRealized);
 
   // Kotak Ringkasan Dokumen (Finansial vs Fisik Lapangan)
+  const summaryBoxY = 48;
+  const summaryBoxHeight = hideFinancials ? 14 : 18;
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(203, 213, 225);
-  doc.roundedRect(14, 48, pageWidth - 28, 14, 2, 2, 'FD');
+  doc.roundedRect(14, summaryBoxY, pageWidth - 28, summaryBoxHeight, 2, 2, 'FD');
 
   if (hideFinancials) {
     const matItemsCount = items.filter(it => !isClientProvidedRemark(it.keterangan, b.clientName) && it.satuan !== 'ls').length;
@@ -1095,33 +1126,87 @@ export async function generateBOQReportPDF(params: {
     doc.setFontSize(7);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(30, 41, 59);
-    doc.text(`NILAI KONTRAK (${b.contractorName.toUpperCase()}):`, 18, 53);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.text('Material Kontrak:', 18, 58);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(37, 99, 235);
-    doc.text(formatRupiah(contractMaterial), 45, 58);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(30, 41, 59);
-    doc.text('Upah & Jasa (Manpower):', 80, 58);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(16, 185, 129);
-    doc.text(formatRupiah(contractManpower), 120, 58);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(30, 41, 59);
-    doc.text('GRAND TOTAL KONTRAK:', 160, 58);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(15, 23, 42);
-    doc.text(formatRupiah(contractTotal), 205, 58);
+    doc.text(`KONTROL NILAI KONTRAK & REALISASI PEMENUHAN MATERIAL (${b.contractorName.toUpperCase()}):`, 18, 52.5);
 
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(6.5);
     doc.setTextColor(126, 34, 206);
-    doc.text(`* Pengadaan Klien (Free-Issue ${b.clientName}): ${formatRupiah(clientFreeIssue)} (Beban Kontraktor: Rp 0)`, pageWidth - 18, 53, { align: 'right' });
+    doc.text(`* Pengadaan Klien (Free-Issue ${b.clientName}): ${formatRupiah(clientFreeIssue)} (Beban Kontraktor: Rp 0)`, pageWidth - 18, 52.5, { align: 'right' });
+
+    // Garis pemisah tipis antar baris
+    doc.setDrawColor(226, 232, 240);
+    doc.line(18, 54, pageWidth - 18, 54);
+
+    // 5 Pilar Finansial Komprehensif
+    // 1. Pagu Material BOQ
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(100, 116, 139);
+    doc.text('PAGU MATERIAL BOQ', 18, 57.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(37, 99, 235);
+    doc.text(formatRupiah(contractMaterial), 18, 61.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5.8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`${items.filter(it => !isClientProvidedRemark(it.keterangan, b.clientName) && it.satuan !== 'ls').length} Pos Material Kontrak`, 18, 64.5);
+
+    // 2. Realisasi Nilai Tiba
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(5, 150, 105);
+    doc.text('REALISASI NILAI TIBA', 71, 57.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(5, 150, 105);
+    doc.text(formatRupiah(realizedContractMaterial), 71, 61.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(5.8);
+    doc.setTextColor(5, 150, 105);
+    doc.text(`+${percentRealized.toFixed(1)}% Tiba (${fullyFulfilledCount} Pos Lengkap)`, 71, 64.5);
+
+    // 3. Sisa Nilai Belum Tiba
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(217, 119, 6);
+    doc.text('SISA NILAI BELUM TIBA', 126, 57.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(217, 119, 6);
+    doc.text(formatRupiah(remainingContractMaterial), 126, 61.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5.8);
+    doc.setTextColor(180, 83, 9);
+    doc.text(`${percentRemaining.toFixed(1)}% Sisa (${unfulfilledCount + partialFulfilledCount} Pos Pending)`, 126, 64.5);
+
+    // 4. Upah & Jasa (Manpower)
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(100, 116, 139);
+    doc.text('UPAH & JASA (MANPOWER)', 181, 57.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(51, 65, 85);
+    doc.text(formatRupiah(contractManpower), 181, 61.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5.8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`${items.filter(it => { const catUpper = (it.kategori || '').toUpperCase(); return !it.is_stock_item || catUpper.startsWith('IV') || catUpper.includes('JASA') || catUpper.includes('UPAH') || it.satuan === 'ls'; }).length} Pos Upah BOQ`, 181, 64.5);
+
+    // 5. Grand Total Kontrak
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(15, 23, 42);
+    doc.text('GRAND TOTAL KONTRAK', 236, 57.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.2);
+    doc.setTextColor(15, 23, 42);
+    doc.text(formatRupiah(contractTotal), 236, 61.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5.8);
+    doc.setTextColor(71, 85, 105);
+    doc.text('Pagu Material + Upah', 236, 64.5);
   }
 
   // Siapkan Data Tabel Berdasarkan Hierarki
@@ -1208,7 +1293,7 @@ export async function generateBOQReportPDF(params: {
   });
 
   autoTable(doc, {
-    startY: 65,
+    startY: hideFinancials ? 65 : 69,
     head: [activeBOQCols.map(c => boqColumnMap[c].header)],
     body: tableData,
     theme: 'grid',
