@@ -92,6 +92,28 @@ function resolvePdfBranding(branding?: TenantBranding, overrideProjectName?: str
 }
 
 /**
+ * Buat nama file PDF yang bersih, deskriptif, dan relevan dengan judul dokumen & proyek
+ */
+function buildCleanPdfFilename(customTitle: string | undefined, defaultCategory: string, projectName?: string): string {
+  const today = new Date().toISOString().slice(0, 10);
+  const baseTitle = (customTitle && customTitle.trim()) ? customTitle.trim() : defaultCategory;
+  // Bersihkan karakter yang dilarang pada sistem berkas (Windows/Linux/Mac)
+  const safeTitle = baseTitle
+    .replace(/[\\/:*?"<>|()]/g, '')
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/_{2,}/g, '_')
+    .slice(0, 60);
+  const safeProject = (projectName || 'Proyek')
+    .replace(/[\\/:*?"<>|()]/g, '')
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/_{2,}/g, '_')
+    .slice(0, 30);
+  return `${safeTitle}_${safeProject}_${today}.pdf`;
+}
+
+/**
  * Render Kop Surat Resmi Dinamis (Multi-Tenant)
  */
 function drawOfficialHeader(doc: jsPDF, pageWidth: number, branding: ResolvedPdfBranding) {
@@ -209,9 +231,9 @@ export async function generateStockMutationPDF(params: {
   doc.text(customTitle || 'BERITA ACARA & REKAPITULASI MUTASI BARANG', 14, 42);
 
   // Metadata Laporan
-  doc.setFontSize(8);
+  doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(71, 85, 105);
+  doc.setTextColor(30, 41, 59);
 
   doc.text(`Nomor Registrasi : ${docId}`, 14, 48);
   doc.text(`Periode Laporan  : ${formatDateOnly(startDate)} s/d ${formatDateOnly(endDate)}`, 14, 52);
@@ -322,11 +344,16 @@ export async function generateStockMutationPDF(params: {
     return activeStockCols.map(c => stockColumnMap[c].getValue(m, index, disc, isVoid));
   });
 
+  const availableTableWidth = pageWidth - 28;
+  const baseTotalWidth = activeStockCols.reduce((sum, col) => sum + (stockColumnMap[col]?.width || 20), 0);
+  const widthScale = baseTotalWidth > 0 ? availableTableWidth / baseTotalWidth : 1;
+
   const columnStylesConfig: any = {};
   activeStockCols.forEach((c, idx) => {
+    const colDef = stockColumnMap[c];
     columnStylesConfig[idx] = {
-      cellWidth: stockColumnMap[c].width,
-      halign: stockColumnMap[c].align
+      cellWidth: (colDef && colDef.width) ? Math.round(colDef.width * widthScale * 10) / 10 : 'auto',
+      halign: colDef?.align || 'left'
     };
   });
 
@@ -341,11 +368,15 @@ export async function generateStockMutationPDF(params: {
       fillColor: [30, 41, 59],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 7.5,
+      fontSize: 8,
     },
     styles: {
-      fontSize: 6.8,
-      cellPadding: 1.8,
+      font: 'helvetica',
+      fontSize: activeStockCols.length <= 5 ? 8 : 7.2,
+      cellPadding: 2.2,
+      textColor: [15, 23, 42],
+      lineColor: [203, 213, 225],
+      lineWidth: 0.15,
     },
     columnStyles: columnStylesConfig,
     didParseCell: (data) => {
@@ -354,9 +385,11 @@ export async function generateStockMutationPDF(params: {
         if (disc?.isMismatch) {
           data.cell.styles.fillColor = [254, 243, 199];
           if (purposeColIdx !== -1 && data.column.index === purposeColIdx) {
-            data.cell.styles.textColor = [146, 64, 14];
+            data.cell.styles.textColor = [120, 53, 15];
             data.cell.styles.fontStyle = 'bold';
           }
+        } else {
+          data.cell.styles.textColor = [15, 23, 42];
         }
       }
     },
@@ -459,12 +492,13 @@ export async function generateStockMutationPDF(params: {
     { align: 'center' }
   );
 
-  // Simpan PDF
-  doc.save(`${docId}_Mutasi_Barang_${b.contractorSlug}.pdf`);
+  // Simpan PDF dengan nama file yang relevan
+  const fileName = buildCleanPdfFilename(customTitle, 'Jurnal_Mutasi_Barang', b.projectName);
+  doc.save(fileName);
 
   return {
     id: docId,
-    judul: `Rekap Mutasi Material & Barang ${b.contractorName}`,
+    judul: customTitle || `Rekap Mutasi Material & Barang ${b.contractorName}`,
     jenis: 'MUTASI_STOK',
     status: 'TERVERIFIKASI',
     periode_awal: startDate,
@@ -517,9 +551,9 @@ export async function generateCashflowPDF(params: {
   doc.text(customTitle || 'BUKU KAS & LAPORAN ARUS DANA PROYEK', 14, 42);
 
   // Metadata
-  doc.setFontSize(8);
+  doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(71, 85, 105);
+  doc.setTextColor(30, 41, 59);
 
   doc.text(`Nomor Registrasi : ${docId}`, 14, 48);
   doc.text(`Periode Laporan  : ${formatDateOnly(startDate)} s/d ${formatDateOnly(endDate)}`, 14, 52);
@@ -593,11 +627,16 @@ export async function generateCashflowPDF(params: {
     return activeCashCols.map(c => cashColumnMap[c].getValue(m, index, isVoid));
   });
 
+  const availableTableWidth = pageWidth - 28;
+  const baseTotalWidth = activeCashCols.reduce((sum, col) => sum + (cashColumnMap[col]?.width || 20), 0);
+  const widthScale = baseTotalWidth > 0 ? availableTableWidth / baseTotalWidth : 1;
+
   const columnStylesConfig: any = {};
   activeCashCols.forEach((c, idx) => {
+    const colDef = cashColumnMap[c];
     columnStylesConfig[idx] = {
-      cellWidth: cashColumnMap[c].width,
-      halign: cashColumnMap[c].align
+      cellWidth: (colDef && colDef.width) ? Math.round(colDef.width * widthScale * 10) / 10 : 'auto',
+      halign: colDef?.align || 'left'
     };
   });
 
@@ -610,11 +649,15 @@ export async function generateCashflowPDF(params: {
       fillColor: [30, 41, 59],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 7.5,
+      fontSize: 8,
     },
     styles: {
-      fontSize: 7,
-      cellPadding: 2,
+      font: 'helvetica',
+      fontSize: activeCashCols.length <= 5 ? 8 : 7.2,
+      cellPadding: 2.2,
+      textColor: [15, 23, 42],
+      lineColor: [203, 213, 225],
+      lineWidth: 0.15,
     },
     columnStyles: columnStylesConfig,
     margin: { left: 14, right: 14 },
@@ -715,11 +758,12 @@ export async function generateCashflowPDF(params: {
     { align: 'center' }
   );
 
-  doc.save(`${docId}_Buku_Kas_${b.contractorSlug}.pdf`);
+  const fileName = buildCleanPdfFilename(customTitle, 'Buku_Kas_Proyek', b.projectName);
+  doc.save(fileName);
 
   return {
     id: docId,
-    judul: `Laporan Arus Kas & Dana Proyek ${b.contractorName}`,
+    judul: customTitle || `Laporan Arus Kas & Dana Proyek ${b.contractorName}`,
     jenis: 'MUTASI_KAS',
     status: 'TERVERIFIKASI',
     periode_awal: startDate,
@@ -783,9 +827,9 @@ export async function generateBOQReportPDF(params: {
   doc.setFont('helvetica', 'bold');
   doc.text(customTitle || 'BILL OF QUANTITY (BOQ) & KONTROL PEMENUHAN MATERIAL', 14, 40);
 
-  doc.setFontSize(8);
+  doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(71, 85, 105);
+  doc.setTextColor(30, 41, 59);
   doc.text(
     `Klien: ${b.clientName} | Proyek: ${b.projectName} | Tanggal Cetak: ${formatDateOnly(new Date().toISOString())}${filterSummary ? ` | ${filterSummary}` : ''}${customNotes ? ` | Catatan: ${customNotes}` : ''}`,
     14,
@@ -956,11 +1000,16 @@ export async function generateBOQReportPDF(params: {
     );
   });
 
+  const availableTableWidth = pageWidth - 28;
+  const baseTotalWidth = activeBOQCols.reduce((sum, col) => sum + (boqColumnMap[col]?.width || 25), 0);
+  const widthScale = baseTotalWidth > 0 ? availableTableWidth / baseTotalWidth : 1;
+
   const columnStylesConfig: any = {};
   activeBOQCols.forEach((c, idx) => {
+    const colDef = boqColumnMap[c];
     columnStylesConfig[idx] = {
-      cellWidth: boqColumnMap[c].width,
-      halign: boqColumnMap[c].align
+      cellWidth: colDef ? Math.round(colDef.width * widthScale * 10) / 10 : 'auto',
+      halign: colDef?.align || 'left'
     };
   });
 
@@ -973,11 +1022,15 @@ export async function generateBOQReportPDF(params: {
       fillColor: [30, 41, 59],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 7,
+      fontSize: activeBOQCols.length <= 5 ? 8.5 : 7.5,
     },
     styles: {
-      fontSize: 6,
-      cellPadding: 1.5,
+      font: 'helvetica',
+      fontSize: activeBOQCols.length <= 4 ? 8.5 : activeBOQCols.length <= 6 ? 7.8 : 6.8,
+      cellPadding: 2,
+      textColor: [15, 23, 42],
+      lineColor: [203, 213, 225],
+      lineWidth: 0.15,
     },
     columnStyles: columnStylesConfig,
     margin: { left: 14, right: 14 },
@@ -1084,11 +1137,12 @@ export async function generateBOQReportPDF(params: {
     { align: 'center' }
   );
 
-  doc.save(`${docId}_Laporan_BOQ_Pemenuhan_Material_${b.contractorSlug}.pdf`);
+  const fileName = buildCleanPdfFilename(customTitle, 'Laporan_BOQ_Pemenuhan_Material', b.projectName);
+  doc.save(fileName);
 
   return {
     id: docId,
-    judul: 'Laporan Bill of Quantity (BOQ) & Kontrol Pemenuhan Material',
+    judul: customTitle || 'Laporan Bill of Quantity (BOQ) & Kontrol Pemenuhan Material',
     jenis: 'GABUNGAN_PROYEK',
     status: 'TERVERIFIKASI',
     periode_awal: new Date().toISOString(),
@@ -1153,9 +1207,9 @@ export async function generateWarehouseSummaryPDF(params: {
   const discrepancyList = materials.map((pm) => summarizeMaterialIncomingDiscrepancy(pm, stockMutations, providerLabels));
   const mismatchMatCount = discrepancyList.filter((d) => d.hasMismatch).length;
 
-  doc.setFontSize(8);
+  doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(71, 85, 105);
+  doc.setTextColor(30, 41, 59);
   doc.text(
     `Proyek: ${b.projectName} | Tanggal Cetak: ${formatDateOnly(new Date().toISOString())}${filterSummary ? ` | ${filterSummary}` : ''}${customNotes ? ` | Catatan: ${customNotes}` : ''} | Total Baris: ${materials.length} Material${mismatchMatCount > 0 ? ` | Beda Penyedia/Talangan: ${mismatchMatCount} Material` : ''}`,
     14,
@@ -1238,11 +1292,16 @@ export async function generateWarehouseSummaryPDF(params: {
     return activeWarehouseCols.map(c => warehouseColumnMap[c].getValue(pm, idx, disc));
   });
 
+  const availableTableWidth = pageWidth - 28;
+  const baseTotalWidth = activeWarehouseCols.reduce((sum, col) => sum + (warehouseColumnMap[col]?.width || 25), 0);
+  const widthScale = baseTotalWidth > 0 ? availableTableWidth / baseTotalWidth : 1;
+
   const columnStylesConfig: any = {};
   activeWarehouseCols.forEach((c, idx) => {
+    const colDef = warehouseColumnMap[c];
     columnStylesConfig[idx] = {
-      cellWidth: warehouseColumnMap[c].width,
-      halign: warehouseColumnMap[c].align
+      cellWidth: colDef ? Math.round(colDef.width * widthScale * 10) / 10 : 'auto',
+      halign: colDef?.align || 'left'
     };
   });
 
@@ -1255,11 +1314,15 @@ export async function generateWarehouseSummaryPDF(params: {
       fillColor: [15, 118, 110],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 7.5,
+      fontSize: activeWarehouseCols.length <= 4 ? 9 : 8,
     },
     styles: {
-      fontSize: 7,
-      cellPadding: 2,
+      font: 'helvetica',
+      fontSize: activeWarehouseCols.length <= 4 ? 8.5 : activeWarehouseCols.length <= 6 ? 8 : 7.2,
+      cellPadding: 2.5,
+      textColor: [15, 23, 42],
+      lineColor: [203, 213, 225],
+      lineWidth: 0.15,
     },
     columnStyles: columnStylesConfig,
     didParseCell: (data) => {
@@ -1268,9 +1331,11 @@ export async function generateWarehouseSummaryPDF(params: {
         if (disc?.hasMismatch) {
           data.cell.styles.fillColor = [254, 243, 199];
           if (data.column.index === 1) {
-            data.cell.styles.textColor = [146, 64, 14];
+            data.cell.styles.textColor = [120, 53, 15];
             data.cell.styles.fontStyle = 'bold';
           }
+        } else {
+          data.cell.styles.textColor = [15, 23, 42];
         }
       }
     },
@@ -1306,11 +1371,12 @@ export async function generateWarehouseSummaryPDF(params: {
     { align: 'center' }
   );
 
-  doc.save(`${docId}_Rekap_Gudang_Material_${b.contractorSlug}.pdf`);
+  const fileName = buildCleanPdfFilename(customTitle, 'Rekapitulasi_Gudang_Material', b.projectName);
+  doc.save(fileName);
 
   return {
     id: docId,
-    judul: 'Rekapitulasi Gudang Material ("Satukan Masuk")',
+    judul: customTitle || 'Rekapitulasi Gudang Material ("Satukan Masuk")',
     jenis: 'MUTASI_STOK',
     status: 'TERVERIFIKASI',
     periode_awal: new Date().toISOString(),
