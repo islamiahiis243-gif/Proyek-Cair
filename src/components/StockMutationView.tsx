@@ -546,6 +546,11 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     return divisions;
   }, [items, deferredBoqSearchQuery, deferredBoqProviderFilter, deferredBoqStatusFilter, deferredBoqSort, tenantBranding.clientName]);
 
+  // Memoized daftar item BOQ yang lolos filter layar untuk mencegah kalkulasi berat berulang
+  const visibleBoqItems = useMemo(() => {
+    return groupedBoqData.flatMap((d) => d.subSections.flatMap((s) => s.items));
+  }, [groupedBoqData]);
+
   const handleCollapseAll = () => {
     startTransition(() => {
       const allDivs = new Set(groupedBoqData.map((d) => d.name));
@@ -1027,80 +1032,84 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   });
 
   const openExportModal = (targetType: ExportTargetType) => {
-    if (targetType === 'WAREHOUSE') {
-      if (filteredWarehouseMaterials.length === 0) {
-        setErrorMessage('Tidak ada data material di layar untuk diekspor ke PDF.');
-        return;
-      }
-      const filterLabelMap: Record<typeof warehouseFilter, string> = {
-        ALL: 'Semua Material',
-        HAS_ARRIVED: 'Sudah Ada Masuk',
-        IN_STOCK: 'Tersedia di Gudang',
-        NOT_ARRIVED: 'Belum Tiba'
-      };
-      const sortLabel = warehouseSort
-        ? `Urut: ${warehouseSort.key} (${warehouseSort.dir === 'asc' ? 'Naik' : 'Turun'})`
-        : 'Urut: Default';
-      const searchPart = warehouseSearchQuery.trim() ? ` · Cari: "${warehouseSearchQuery.trim()}"` : '';
+    startTransition(() => {
+      if (targetType === 'WAREHOUSE') {
+        if (filteredWarehouseMaterials.length === 0) {
+          setErrorMessage('Tidak ada data material di layar untuk diekspor ke PDF.');
+          return;
+        }
+        const filterLabelMap: Record<typeof warehouseFilter, string> = {
+          ALL: 'Semua Material',
+          HAS_ARRIVED: 'Sudah Ada Masuk',
+          IN_STOCK: 'Tersedia di Gudang',
+          NOT_ARRIVED: 'Belum Tiba'
+        };
+        const sortLabel = warehouseSort
+          ? `Urut: ${warehouseSort.key} (${warehouseSort.dir === 'asc' ? 'Naik' : 'Turun'})`
+          : 'Urut: Default';
+        const searchPart = warehouseSearchQuery.trim() ? ` · Cari: "${warehouseSearchQuery.trim()}"` : '';
 
-      setExportModalState({
-        isOpen: true,
-        targetType: 'WAREHOUSE',
-        title: 'Rekapitulasi Gudang Material ("Satukan Masuk")',
-        itemCount: filteredWarehouseMaterials.length,
-        initialIncludeFinancials: false,
-        currentFilterLabel: `${filterLabelMap[warehouseFilter]}${searchPart}`,
-        currentSortLabel: sortLabel
-      });
-    } else if (targetType === 'BOQ') {
-      const visibleItems = groupedBoqData.flatMap((d) => d.subSections.flatMap((s) => s.items));
-      if (visibleItems.length === 0) {
-        setErrorMessage('Tidak ada pos BOQ di layar untuk diekspor ke PDF.');
-        return;
-      }
-      const providerLabel =
-        boqProviderFilter === 'KONTRAKTOR'
-          ? tenantBranding.contractorName
-          : boqProviderFilter === 'IMK'
-          ? tenantBranding.clientName
-          : 'Semua Penyedia';
-      const statusLabel = boqStatusFilter === 'ALL' ? 'Semua Status' : boqStatusFilter;
-      const sortLabel = boqSort
-        ? `Urut: ${boqSort.key} (${boqSort.dir === 'asc' ? 'Naik' : 'Turun'})`
-        : 'Urut: Default';
-      const searchPart = boqSearchQuery.trim() ? ` · Cari: "${boqSearchQuery.trim()}"` : '';
+        setExportModalState({
+          isOpen: true,
+          targetType: 'WAREHOUSE',
+          title: 'Rekapitulasi Gudang Material ("Satukan Masuk")',
+          itemCount: filteredWarehouseMaterials.length,
+          initialIncludeFinancials: false,
+          currentFilterLabel: `${filterLabelMap[warehouseFilter]}${searchPart}`,
+          currentSortLabel: sortLabel
+        });
+      } else if (targetType === 'BOQ') {
+        if (visibleBoqItems.length === 0) {
+          setErrorMessage('Tidak ada pos BOQ di layar untuk diekspor ke PDF.');
+          return;
+        }
+        const providerLabel =
+          boqProviderFilter === 'KONTRAKTOR'
+            ? tenantBranding.contractorName
+            : boqProviderFilter === 'IMK'
+            ? tenantBranding.clientName
+            : 'Semua Penyedia';
+        const statusLabel = boqStatusFilter === 'ALL' ? 'Semua Status' : boqStatusFilter;
+        const sortLabel = boqSort
+          ? `Urut: ${boqSort.key} (${boqSort.dir === 'asc' ? 'Naik' : 'Turun'})`
+          : 'Urut: Default';
+        const searchPart = boqSearchQuery.trim() ? ` · Cari: "${boqSearchQuery.trim()}"` : '';
 
-      setExportModalState({
-        isOpen: true,
-        targetType: 'BOQ',
-        title: 'Laporan Realisasi & Kontrol Pemenuhan BOQ',
-        itemCount: visibleItems.length,
-        initialIncludeFinancials: activeRole !== 'Viewer/Pengamat',
-        currentFilterLabel: `${providerLabel} · ${statusLabel}${searchPart}`,
-        currentSortLabel: sortLabel
-      });
-    } else if (targetType === 'STOCK_JOURNAL') {
-      if (filteredMutations.length === 0) {
-        setErrorMessage('Tidak ada baris transaksi di layar untuk diekspor ke PDF.');
-        return;
-      }
-      const typeLabel = deferredFilterType === 'ALL' ? 'Semua Jenis' : deferredFilterType;
-      const searchPart = deferredSearchQuery.trim() ? ` · Cari: "${deferredSearchQuery.trim()}"` : '';
-      const sortLabel = `Urut: ${deferredJournalSort.key} (${deferredJournalSort.dir === 'asc' ? 'Naik' : 'Turun'})`;
+        setExportModalState({
+          isOpen: true,
+          targetType: 'BOQ',
+          title: 'Laporan Realisasi & Kontrol Pemenuhan BOQ',
+          itemCount: visibleBoqItems.length,
+          initialIncludeFinancials: activeRole !== 'Viewer/Pengamat',
+          currentFilterLabel: `${providerLabel} · ${statusLabel}${searchPart}`,
+          currentSortLabel: sortLabel
+        });
+      } else if (targetType === 'STOCK_JOURNAL') {
+        if (filteredMutations.length === 0) {
+          setErrorMessage('Tidak ada baris transaksi di layar untuk diekspor ke PDF.');
+          return;
+        }
+        const typeLabel = deferredFilterType === 'ALL' ? 'Semua Jenis' : deferredFilterType;
+        const searchPart = deferredSearchQuery.trim() ? ` · Cari: "${deferredSearchQuery.trim()}"` : '';
+        const sortLabel = `Urut: ${deferredJournalSort.key} (${deferredJournalSort.dir === 'asc' ? 'Naik' : 'Turun'})`;
 
-      setExportModalState({
-        isOpen: true,
-        targetType: 'STOCK_JOURNAL',
-        title: 'Buku Jurnal Mutasi Barang Proyek',
-        itemCount: filteredMutations.length,
-        initialIncludeFinancials: false,
-        currentFilterLabel: `${typeLabel}${searchPart}`,
-        currentSortLabel: sortLabel
-      });
-    }
+        setExportModalState({
+          isOpen: true,
+          targetType: 'STOCK_JOURNAL',
+          title: 'Buku Jurnal Mutasi Barang Proyek',
+          itemCount: filteredMutations.length,
+          initialIncludeFinancials: false,
+          currentFilterLabel: `${typeLabel}${searchPart}`,
+          currentSortLabel: sortLabel
+        });
+      }
+    });
   };
 
   const handleConfirmExport = async (config: ExportSettingsConfig) => {
+    // Jeda sejenak untuk memastikan render UI dan status transisi browser tidak terblokir
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
     if (exportModalState.targetType === 'WAREHOUSE') {
       try {
         setIsExportingWarehouse(true);

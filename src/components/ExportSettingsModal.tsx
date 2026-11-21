@@ -65,7 +65,7 @@ export interface ExportSettingsModalProps {
   onConfirmExport: (config: ExportSettingsConfig) => Promise<void>;
 }
 
-export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = ({
+export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.memo(({
   isOpen,
   onClose,
   targetType,
@@ -239,6 +239,9 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = ({
     if (isSubmitting) return;
 
     setIsSubmitting(true);
+    // Berikan jeda sejenak agar browser sempat merender status tombol "Memproses PDF..."
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     try {
       const safeIncludeFinancials = isViewer ? false : includeFinancials;
       const finalColumns = selectedColumns.filter(c => {
@@ -775,4 +778,4 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = ({
       </div>
     </div>
   );
-};
+});

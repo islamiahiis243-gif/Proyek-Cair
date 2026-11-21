@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, startTransition } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   FileText,
@@ -102,13 +102,16 @@ export const ReportsView: React.FC = () => {
       setGenerationError('Tidak ada baris data yang cocok dengan kriteria filter saat ini.');
       return;
     }
-    setIsExportModalOpen(true);
+    startTransition(() => {
+      setIsExportModalOpen(true);
+    });
   };
 
   const handleConfirmExport = async (config: ExportSettingsConfig) => {
     setIsGenerating(true);
     setGenerationSuccess(null);
     setGenerationError(null);
+    await new Promise((resolve) => setTimeout(resolve, 40));
 
     try {
       const dateTag = new Date().toISOString().slice(0, 10).replace(/-/g, '');

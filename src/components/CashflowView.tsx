@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, startTransition } from 'react';
 import { useApp } from '../context/AppContext';
 import { JenisMutasiKas, MutasiKas, StatusDokumenWorkflow } from '../types';
 import {
@@ -163,6 +163,9 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   const handleConfirmExportCash = async (config: ExportSettingsConfig) => {
+    // Jeda sejenak untuk memastikan render UI dan status transisi browser tidak terblokir
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
     try {
       setIsExportingCash(true);
       const docId = `KAS-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -224,7 +227,9 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
       setErrorMessage('Tidak ada transaksi kas di layar untuk diekspor ke PDF.');
       return;
     }
-    setIsExportModalOpen(true);
+    startTransition(() => {
+      setIsExportModalOpen(true);
+    });
   };
 
   const handleOpenModal = (t: JenisMutasiKas) => {
