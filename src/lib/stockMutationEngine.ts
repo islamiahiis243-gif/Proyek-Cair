@@ -37,6 +37,9 @@ export interface StockWizardAnswers {
   customLastPurposeIn: string;
   qty: number;
   mutationDate: string; // YYYY-MM-DD lokal
+  hargaNotaSatuan?: number | null;
+  isHargaBelumDiketahui: boolean;
+  isNotaMenyusul: boolean;
   asalBarang: AsalBarang;
   tokoBebasName: string;
   customInPurpose: string;
@@ -538,6 +541,9 @@ export const createInitialWizardAnswers = (
     customLastPurposeIn: '',
     qty: 1,
     mutationDate: getTodayLocalDate(),
+    hargaNotaSatuan: null,
+    isHargaBelumDiketahui: false,
+    isNotaMenyusul: false,
     asalBarang: 'KONTRAKTOR',
     tokoBebasName: '',
     customInPurpose: '',
@@ -611,7 +617,8 @@ export const computeWizardSteps = (answers: StockWizardAnswers): WizardStepId[] 
  */
 export const validateWizardStep = (
   stepId: WizardStepId,
-  answers: StockWizardAnswers
+  answers: StockWizardAnswers,
+  labels?: ProviderLabels
 ): string | null => {
   switch (stepId) {
     case 'PICK_ITEM':
@@ -644,6 +651,20 @@ export const validateWizardStep = (
         const stok = answers.physicalMaterial.stok_fisik || 0;
         if (answers.qty > stok) {
           return `Stok fisik di gudang (${stok.toLocaleString('id-ID', { maximumFractionDigits: 3 })} ${answers.physicalMaterial.satuan}) tidak mencukupi untuk pengeluaran ${answers.qty.toLocaleString('id-ID', { maximumFractionDigits: 3 })} ${answers.physicalMaterial.satuan}.`;
+        }
+      }
+      if (answers.mutationType === 'MASUK') {
+        const prov = answers.physicalMaterial ? getProviderMetaForMaterial(answers.physicalMaterial, labels) : null;
+        const isClientFreeIssue = prov && !prov.isMixed && prov.defaultAsal === 'KLIEN';
+        const isClientSource = answers.asalBarang === 'KLIEN';
+
+        // Hanya wajib jika tanggungan Kontraktor dan belum dicentang 'Harga belum diketahui' atau 'Nota menyusul'
+        if (!isClientFreeIssue && !isClientSource) {
+          if (!answers.isHargaBelumDiketahui && !answers.isNotaMenyusul) {
+            if (answers.hargaNotaSatuan == null || answers.hargaNotaSatuan <= 0) {
+              return 'Harga Nota/Satuan wajib diisi untuk tanggungan kontraktor, atau centang salah satu opsi jika harga riil belum tercantum di nota.';
+            }
+          }
         }
       }
       return null;
@@ -690,6 +711,7 @@ export interface ProcessedStockSubmission {
     detailValue: string;
     extraLabel?: string;
     extraValue?: string;
+    hargaDisplay?: string;
   };
 }
 
@@ -768,8 +790,8 @@ export const buildStockMutationPayload = (
         extraValue = `Jatah BOQ: ${contractor} · Realisasi Masuk: Klien (${client})`;
       } else {
         finalPurpose = 'Penyediaan Material Kontrak BOQ';
-        extraLabel = 'Aturan Gudang';
-        extraValue = 'Satukan Masuk ke Stok Gudang Proyek';
+        extraLabel = 'Lokasi';
+        extraValue = 'Stok Fisik Gudang Proyek';
       }
     }
   } else {
@@ -812,14 +834,48 @@ export const buildStockMutationPayload = (
     }
   }
 
+  let calculatedStatusHarga: 'TERCATAT' | 'BELUM_DIKETAHUI' | 'NOTA_MENYUSUL' | 'JATAH_KLIEN' | undefined = undefined;
+  let calculatedHargaSatuan: number | undefined = undefined;
+
+  if (answers.mutationType === 'MASUK') {
+    const prov = !isCustom && pm ? getProviderMetaForMaterial(pm, labels) : null;
+    const isClientFreeIssue = prov && !prov.isMixed && prov.defaultAsal === 'KLIEN';
+    const isClientSource = answers.asalBarang === 'KLIEN';
+
+    if (isClientFreeIssue || isClientSource) {
+      calculatedStatusHarga = 'JATAH_KLIEN';
+      if (answers.hargaNotaSatuan && answers.hargaNotaSatuan > 0) {
+        calculatedHargaSatuan = answers.hargaNotaSatuan;
+      }
+    } else if (answers.isHargaBelumDiketahui) {
+      calculatedStatusHarga = 'BELUM_DIKETAHUI';
+    } else if (answers.isNotaMenyusul) {
+      calculatedStatusHarga = 'NOTA_MENYUSUL';
+    } else if (answers.hargaNotaSatuan && answers.hargaNotaSatuan > 0) {
+      calculatedStatusHarga = 'TERCATAT';
+      calculatedHargaSatuan = answers.hargaNotaSatuan;
+    }
+  }
+
+  const hargaDisplay =
+    calculatedStatusHarga === 'TERCATAT' && calculatedHargaSatuan
+      ? `Rp ${calculatedHargaSatuan.toLocaleString('id-ID')} / ${itemSatuan}`
+      : calculatedStatusHarga === 'NOTA_MENYUSUL'
+      ? 'Nota Menyusul (Pending)'
+      : calculatedStatusHarga === 'BELUM_DIKETAHUI'
+      ? 'Harga Belum Diketahui'
+      : calculatedStatusHarga === 'JATAH_KLIEN'
+      ? `Jatah Pengadaan Klien (${client})`
+      : undefined;
+
   const ruleBadge =
     answers.mutationType === 'MASUK'
       ? isCustom
-        ? '✍️ Barang Kustom · Bedakan Masuk'
-        : '📦 Material BOQ · Satukan Masuk'
+        ? '✍️ Barang Kustom Non-BOQ'
+        : '📦 Material BOQ · Stok Masuk'
       : isCustom
-      ? '✍️ Barang Kustom · Bedakan Keluar'
-      : '📦 Material BOQ · Bedakan Keluar';
+      ? '✍️ Barang Kustom Non-BOQ'
+      : '📦 Alokasi Pos BOQ';
 
   return {
     payload: {
@@ -839,7 +895,9 @@ export const buildStockMutationPayload = (
       owner_type: calculatedOwnerType,
       purpose: finalPurpose,
       beban_biaya: calculatedBeban,
-      is_custom_item: isCustom
+      is_custom_item: isCustom,
+      harga_satuan_beli: calculatedHargaSatuan,
+      status_harga: calculatedStatusHarga
     },
     summary: {
       itemName,
@@ -850,7 +908,8 @@ export const buildStockMutationPayload = (
       detailLabel,
       detailValue,
       extraLabel,
-      extraValue
+      extraValue,
+      hargaDisplay
     }
   };
 };

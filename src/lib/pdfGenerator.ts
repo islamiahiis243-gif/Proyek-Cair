@@ -1204,7 +1204,7 @@ export async function generateWarehouseSummaryPDF(params: {
   doc.setTextColor(15, 23, 42);
   doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
-  doc.text(customTitle || 'REKAPITULASI GUDANG MATERIAL ("SATUKAN MASUK")', 14, 40);
+  doc.text(customTitle || 'REKAPITULASI STOK GUDANG MATERIAL', 14, 40);
 
   const discrepancyList = materials.map((pm) => summarizeMaterialIncomingDiscrepancy(pm, stockMutations, providerLabels));
   const mismatchMatCount = discrepancyList.filter((d) => d.hasMismatch).length;
@@ -1416,7 +1416,7 @@ export async function generateWarehouseSummaryPDF(params: {
 
   return {
     id: docId,
-    judul: customTitle || 'Rekapitulasi Gudang Material ("Satukan Masuk")',
+    judul: customTitle || 'Rekapitulasi Stok Gudang Material',
     jenis: 'MUTASI_STOK',
     status: 'TERVERIFIKASI',
     periode_awal: new Date().toISOString(),

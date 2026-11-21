@@ -1052,7 +1052,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         setExportModalState({
           isOpen: true,
           targetType: 'WAREHOUSE',
-          title: 'Rekapitulasi Gudang Material ("Satukan Masuk")',
+          title: 'Rekapitulasi Stok Gudang Material',
           itemCount: filteredWarehouseMaterials.length,
           initialIncludeFinancials: false,
           currentFilterLabel: `${filterLabelMap[warehouseFilter]}${searchPart}`,
@@ -1443,7 +1443,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
             </div>
           </div>
 
-          {/* Navigasi 4 POV Terpisah (Scroll Horizontal Mulus di Mobile) */}
+          {/* Navigasi Menu Tab (Ringkas, Intuitif & Bebas Ambigu) */}
           <div className="flex overflow-x-auto no-scrollbar touch-scroll whitespace-nowrap items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-1">
             <button
               onClick={() => startTransition(() => setActiveTab('WAREHOUSE_SUMMARY'))}
@@ -1454,7 +1454,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               }`}
             >
               <Boxes className="w-4 h-4" />
-              <span>📦 Rekap Gudang ("Satukan Masuk")</span>
+              <span>📦 Stok Gudang</span>
               <span className="text-[10px] py-0.5 px-2 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 font-bold">
                 {boqMetrics.totalMaterialTypesCount} Material
               </span>
@@ -1469,7 +1469,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               }`}
             >
               <BarChart3 className="w-4 h-4" />
-              <span>🏗️ Realisasi per Pos BOQ ("Bedakan Keluar")</span>
+              <span>🏗️ Realisasi BOQ</span>
               <span className="text-[10px] py-0.5 px-2 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 font-bold">
                 {items.length} Pos
               </span>
@@ -1484,9 +1484,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               }`}
             >
               <History className="w-4 h-4" />
-              <span>📋 Jurnal Transaksi & Barang Kustom</span>
+              <span>📋 Riwayat Mutasi</span>
               <span className="text-[10px] py-0.5 px-2 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-bold">
-                {stockMutations.length} Baris
+                {stockMutations.length} Transaksi
               </span>
             </button>
 
@@ -1499,7 +1499,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               }`}
             >
               <FileCheck2 className="w-4 h-4" />
-              <span>📄 Dokumen & Persetujuan Resmi (TTE/QR)</span>
+              <span>📄 Dokumen Resmi</span>
               <span className="text-[10px] py-0.5 px-2 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 font-bold">
                 {stockDocuments.length} Dokumen
               </span>
@@ -1511,15 +1511,15 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           ===================================================================== */}
           {activeTab === 'WAREHOUSE_SUMMARY' && (
             <div className="space-y-4">
-              {/* Penjelasan Singkat POV "Satukan Masuk" */}
+              {/* Penjelasan Singkat Rekap Stok Gudang */}
               <div className="bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="space-y-1">
                   <div className="text-xs font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
                     <Boxes className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                    <span>POV 1: Rekapitulasi Gudang Material ("Satukan Masuk") — 1 Nama Material = 1 Baris</span>
+                    <span>Rekap Stok Material Gudang — 1 Baris per Jenis Material Fisik</span>
                   </div>
                   <p className="text-[11px] text-slate-700 dark:text-slate-300 font-medium">
-                    Saat barang BOQ tiba di proyek (contoh: <b>Pasir 5 m3</b>), cukup dilihat pada <b>1 baris gabungan</b> di bawah ini tanpa terduplikasi di 13 pos pekerjaan. Untuk memantau pemakaian per pos pekerjaan BOQ, buka tab <b>Realisasi per Pos BOQ ("Bedakan Keluar")</b>.
+                    Menampilkan total penerimaan dan saldo stok fisik di proyek tanpa duplikasi. Untuk melihat rincian pemakaian per pos pekerjaan, buka tab <b>Realisasi BOQ</b>.
                   </p>
                 </div>
                 <button
@@ -1527,7 +1527,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   onClick={() => setActiveTab('BOQ_MONITOR')}
                   className="shrink-0 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors cursor-pointer"
                 >
-                  Lihat Pemakaian per 274 Pos BOQ →
+                  Lihat Pemakaian Pos BOQ →
                 </button>
               </div>
 
@@ -1783,10 +1783,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     </div>
                     <div>
                       <h4 className="text-xs font-bold uppercase tracking-wider text-blue-300">
-                        POV 2: Realisasi Pemakaian per Pos Pekerjaan BOQ ("Bedakan Keluar")
+                        Realisasi Pemakaian per Pos Pekerjaan BOQ
                       </h4>
                       <p className="text-[11px] text-slate-300">
-                        {tenantBranding.contractorName} · {tenantBranding.projectName} (Klien: {tenantBranding.clientName}) — Fokus Pemakaian per Pos Pekerjaan
+                        {tenantBranding.contractorName} · {tenantBranding.projectName} (Klien: {tenantBranding.clientName}) — Kontrol Kebutuhan & Serapan per Pos Kontrak
                       </p>
                     </div>
                   </div>
@@ -2210,18 +2210,18 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px]">
                   <div className="p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-800/60">
                     <div className="font-bold text-emerald-900 dark:text-emerald-300 mb-1">
-                      1. Barang Kontrak BOQ ("Satukan Masuk, Bedakan Keluar")
+                      1. Material Kontrak BOQ
                     </div>
                     <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
-                      Saat <b>Masuk</b>, material dicatat menyatu ke stok gudang umum (Tab 1). Saat <b>Keluar</b>, material wajib dipilih untuk Pos Pekerjaan BOQ spesifik (Tab 2).
+                      Saat <b>Masuk</b>, material dicatat ke stok fisik gudang (Tab Stok Gudang). Saat <b>Keluar</b>, material dialokasikan ke pos pekerjaan tertentu (Tab Realisasi BOQ).
                     </p>
                   </div>
                   <div className="p-3 rounded-xl bg-purple-50/60 dark:bg-purple-950/25 border border-purple-200 dark:border-purple-800/60">
                     <div className="font-bold text-purple-900 dark:text-purple-300 mb-1">
-                      2. Barang Kustom Non-BOQ ("Bedakan Masuk & Keluar")
+                      2. Material Non-BOQ (Kustom)
                     </div>
                     <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
-                      Peruntukan saat <b>Masuk</b> dan saat <b>Keluar</b> dicatat terpisah. Peruntukan keluar boleh berbeda dari rencana awal saat masuk sesuai dinamika lapangan.
+                      Barang di luar daftar kontrak BOQ dicatat fleksibel saat tiba, dan tujuan penggunaannya disesuaikan dengan instruksi lapangan saat keluar.
                     </p>
                   </div>
                   <div className="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-800/60">

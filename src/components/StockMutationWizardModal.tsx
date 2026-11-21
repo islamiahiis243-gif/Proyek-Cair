@@ -11,7 +11,8 @@ import {
   Search,
   Sparkles,
   XCircle,
-  AlertTriangle
+  AlertTriangle,
+  Receipt
 } from 'lucide-react';
 import {
   JenisMutasiBarang,
@@ -60,7 +61,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
   onSubmitPayload,
   onSuccessNotice
 }) => {
-  const { tenantBranding } = useApp();
+  const { tenantBranding, activeRole, items } = useApp();
   const providerLabels = useMemo(
     () => ({
       contractorName: tenantBranding.contractorName,
@@ -68,6 +69,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
     }),
     [tenantBranding.contractorName, tenantBranding.clientName]
   );
+  const isViewer = activeRole === 'Viewer/Pengamat';
 
   const [answers, setAnswers] = useState<StockWizardAnswers>(() =>
     createInitialWizardAnswers(mutationType, defaultPicName, preselectedMaterial, preselectedLineId, {
@@ -269,7 +271,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
   };
 
   const handleNext = () => {
-    const err = validateWizardStep(currentStepId, answers);
+    const err = validateWizardStep(currentStepId, answers, providerLabels);
     if (err) {
       setStepError(err);
       return;
@@ -743,6 +745,111 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                   )}
                 </div>
               )}
+
+              {/* Harga Nota/Satuan (Khusus Transaksi Masuk) */}
+              {answers.mutationType === 'MASUK' && !isViewer && (() => {
+                const provMeta = answers.physicalMaterial
+                  ? getProviderMetaForMaterial(answers.physicalMaterial, providerLabels)
+                  : null;
+                const isClientItem = (provMeta && !provMeta.isMixed && provMeta.defaultAsal === 'KLIEN') || answers.asalBarang === 'KLIEN';
+                const boqItem = items.find((i) => i.id === answers.physicalMaterial?.budget_lines?.[0]?.id);
+                const boqRateReference = boqItem?.harga_satuan;
+
+                return (
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                      <label className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                        <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <span>Harga Nota/Satuan (Beli di Toko)</span>
+                        {!isClientItem && <span className="text-rose-500">*</span>}
+                      </label>
+                      {isClientItem ? (
+                        <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/50 px-2.5 py-0.5 rounded-full border border-sky-200 dark:border-sky-800">
+                          👤 Jatah Klien (Harga Opsional)
+                        </span>
+                      ) : boqRateReference ? (
+                        <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 px-2.5 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
+                          Acuan BOQ: Rp {boqRateReference.toLocaleString('id-ID')} / {activeUom}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 dark:text-slate-500 font-mono">
+                        Rp
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="Contoh: 75000"
+                        disabled={answers.isHargaBelumDiketahui || answers.isNotaMenyusul}
+                        value={
+                          answers.isHargaBelumDiketahui || answers.isNotaMenyusul || answers.hargaNotaSatuan == null || answers.hargaNotaSatuan === 0
+                            ? ''
+                            : answers.hargaNotaSatuan
+                        }
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? null : Number(e.target.value);
+                          setAnswers({
+                            ...answers,
+                            hargaNotaSatuan: val,
+                            isHargaBelumDiketahui: false,
+                            isNotaMenyusul: false
+                          });
+                          setStepError(null);
+                        }}
+                        className={`w-full pl-12 pr-4 py-3 bg-white dark:bg-slate-900 border-2 rounded-xl text-base font-bold font-mono focus:outline-hidden transition-all ${
+                          answers.isHargaBelumDiketahui || answers.isNotaMenyusul
+                            ? 'border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-900/40 text-slate-400 cursor-not-allowed'
+                            : 'border-slate-300 dark:border-slate-600 focus:border-blue-500 text-slate-900 dark:text-white'
+                        }`}
+                      />
+                    </div>
+
+                    {/* 2 Opsi Centang Sesuai Permintaan User */}
+                    <div className="flex flex-wrap items-center gap-4 pt-1">
+                      <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">
+                        <input
+                          type="checkbox"
+                          checked={answers.isHargaBelumDiketahui}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setAnswers({
+                              ...answers,
+                              isHargaBelumDiketahui: checked,
+                              isNotaMenyusul: false,
+                              hargaNotaSatuan: checked ? null : answers.hargaNotaSatuan
+                            });
+                            setStepError(null);
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>Harga belum diketahui</span>
+                      </label>
+
+                      <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">
+                        <input
+                          type="checkbox"
+                          checked={answers.isNotaMenyusul}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setAnswers({
+                              ...answers,
+                              isNotaMenyusul: checked,
+                              isHargaBelumDiketahui: false,
+                              hargaNotaSatuan: checked ? null : answers.hargaNotaSatuan
+                            });
+                            setStepError(null);
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>Nota menyusul</span>
+                      </label>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -1086,6 +1193,16 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                       </div>
                       <div className="font-bold text-slate-900 dark:text-white">
                         {processed.summary.extraValue}
+                      </div>
+                    </div>
+                  )}
+                  {processed.summary.hargaDisplay && !isViewer && (
+                    <div>
+                      <div className="text-[11px] uppercase font-bold text-slate-600 dark:text-slate-300">
+                        Harga Nota / Satuan
+                      </div>
+                      <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                        {processed.summary.hargaDisplay}
                       </div>
                     </div>
                   )}

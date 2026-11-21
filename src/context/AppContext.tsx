@@ -482,7 +482,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         is_batal: Boolean(t.is_batal || isVoid),
         is_ganti: Boolean(t.is_ganti),
         referensi_ganti_id: t.referensi_ganti_id || undefined,
-        alasan_batal_ganti: t.alasan_batal_ganti || undefined
+        alasan_batal_ganti: t.alasan_batal_ganti || undefined,
+        harga_satuan_beli: t.harga_satuan_beli != null ? Number(t.harga_satuan_beli) : undefined,
+        status_harga: t.status_harga || undefined
       };
     });
 
@@ -628,7 +630,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         is_batal: isVoid,
         is_ganti: Boolean(t.is_ganti),
         referensi_ganti_id: t.referensi_ganti_id || undefined,
-        alasan_batal_ganti: t.alasan_batal_ganti || undefined
+        alasan_batal_ganti: t.alasan_batal_ganti || undefined,
+        harga_satuan_beli: t.harga_satuan_beli != null ? Number(t.harga_satuan_beli) : undefined,
+        status_harga: t.status_harga || undefined
       };
     });
 
@@ -743,7 +747,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         recipient_name: data.recipient_name || data.pic_penerima_penyerah,
         owner_type: data.owner_type || 'KONTRAKTOR',
         status_dokumen: 'DITERBITKAN',
-        created_by_name: `${user.name} (${activeRole})`
+        created_by_name: `${user.name} (${activeRole})`,
+        harga_satuan_beli: data.harga_satuan_beli != null ? data.harga_satuan_beli : null,
+        status_harga: data.status_harga || null
       });
 
       if (error) throw error;
