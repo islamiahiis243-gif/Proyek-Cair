@@ -199,19 +199,23 @@ export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
                   </p>
                 </div>
               ) : isPdf ? (
-                <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
-                  <FileText className="w-14 h-14 text-rose-500 mb-3" />
-                  <p className="text-sm font-bold text-white">Dokumen PDF Terlampir</p>
-                  <p className="text-xs text-slate-400 mb-4">Format PDF dapat dibuka di jendela baru peramban.</p>
-                  <a
-                    href={currentUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    <span>Buka Berkas PDF Nota</span>
-                  </a>
+                <div className="w-full h-full flex flex-col items-center justify-center relative p-2">
+                  <iframe
+                    src={currentUrl}
+                    className="w-full h-full rounded-xl bg-white border border-slate-700/60 shadow-2xl"
+                    title={`Pratinjau Berkas PDF Nota ${receiptNo}`}
+                  />
+                  <div className="absolute top-4 right-4 z-20">
+                    <a
+                      href={currentUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-white text-xs font-semibold backdrop-blur-md border border-slate-700 shadow-lg transition-colors cursor-pointer"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Buka di Tab Baru</span>
+                    </a>
+                  </div>
                 </div>
               ) : (
                 <div

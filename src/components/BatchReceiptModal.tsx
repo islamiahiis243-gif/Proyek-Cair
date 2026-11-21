@@ -478,26 +478,39 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
                   />
                 </label>
 
-                {/* Thumbnail Pratinjau Foto Terpilih */}
-                {filePreviews.map((previewUrl, idx) => (
-                  <div key={idx} className="relative group w-14 h-14 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-100 dark:bg-slate-800">
-                    <img
-                      src={previewUrl}
-                      alt={`Lembar ${idx + 1}`}
-                      className="w-full h-full object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveFile(idx)}
-                      className="absolute inset-0 bg-rose-950/70 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                    <span className="absolute bottom-0 right-0 px-1 text-[8px] bg-slate-900/80 text-white font-bold rounded-tl">
-                      #{idx + 1}
-                    </span>
-                  </div>
-                ))}
+                {/* Thumbnail Pratinjau Foto / Dokumen PDF Terpilih */}
+                {filePreviews.map((previewUrl, idx) => {
+                  const file = selectedFiles[idx];
+                  const isPdf = file?.type === 'application/pdf' || file?.name?.toLowerCase().endsWith('.pdf');
+
+                  return (
+                    <div key={idx} className="relative group w-14 h-14 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0">
+                      {isPdf ? (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 p-1">
+                          <FileText className="w-5 h-5 mb-0.5" />
+                          <span className="text-[8px] font-bold uppercase tracking-tight">PDF</span>
+                        </div>
+                      ) : (
+                        <img
+                          src={previewUrl}
+                          alt={`Lembar ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFile(idx)}
+                        className="absolute inset-0 bg-rose-950/80 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer"
+                        title="Hapus berkas ini"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <span className="absolute bottom-0 right-0 px-1 text-[8px] bg-slate-900/80 text-white font-bold rounded-tl">
+                        #{idx + 1}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
