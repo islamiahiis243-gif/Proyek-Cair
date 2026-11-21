@@ -62,7 +62,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
   onSubmitPayload,
   onSuccessNotice
 }) => {
-  const { tenantBranding, activeRole, items } = useApp();
+  const { tenantBranding, activeRole, items, stockMutations } = useApp();
   const providerLabels = useMemo(
     () => ({
       contractorName: tenantBranding.contractorName,
@@ -177,6 +177,34 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
   }, [hasTypedSearch, trimmedQuery, existingCustomItems, answers.mutationType]);
 
   const processed = useMemo(() => buildStockMutationPayload(answers, providerLabels), [answers, providerLabels]);
+
+  // Deteksi Cerdas Harga Pembelian Terakhir untuk Membantu Clerk Lapangan
+  const lastPurchaseInfo = useMemo(() => {
+    if (answers.mutationType !== 'MASUK') return null;
+    if (answers.physicalMaterial?.harga_beli_terakhir && answers.physicalMaterial.harga_beli_terakhir > 0) {
+      return {
+        price: answers.physicalMaterial.harga_beli_terakhir,
+        date: answers.physicalMaterial.tanggal_beli_terakhir
+      };
+    }
+    const targetName = (answers.physicalMaterial?.nama_barang || answers.customItemName || '').toLowerCase().trim();
+    if (!targetName) return null;
+    const match = (stockMutations || []).find((m) =>
+      !m.is_batal &&
+      !m.is_ganti &&
+      m.jenis === 'MASUK' &&
+      m.nama_barang.toLowerCase().trim() === targetName &&
+      m.harga_satuan_beli != null &&
+      m.harga_satuan_beli > 0
+    );
+    if (match && match.harga_satuan_beli) {
+      return {
+        price: match.harga_satuan_beli,
+        date: match.tanggal
+      };
+    }
+    return null;
+  }, [answers.mutationType, answers.physicalMaterial, answers.customItemName, stockMutations]);
 
   if (!isOpen) return null;
 
@@ -337,6 +365,8 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
         ? `Asal: Klien (${tenantBranding.clientName})`
         : answers.asalBarang === 'TOKO_BEBAS'
         ? `Asal: ${answers.tokoBebasName.trim() || 'Toko Bebas'}`
+        : answers.asalBarang === 'BELUM_DIPASTIKAN'
+        ? 'Asal: Belum Pasti (Menyusul)'
         : `Asal: ${tenantBranding.contractorName}`
     );
   }
@@ -749,6 +779,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                   ? getProviderMetaForMaterial(answers.physicalMaterial, providerLabels)
                   : null;
                 const isClientItem = (provMeta && !provMeta.isMixed && provMeta.defaultAsal === 'KLIEN') || answers.asalBarang === 'KLIEN';
+                const isPendingItem = answers.asalBarang === 'BELUM_DIPASTIKAN';
                 const boqItem = items.find((i) => i.id === answers.physicalMaterial?.budget_lines?.[0]?.id);
                 const boqRateReference = boqItem?.harga_satuan;
 
@@ -758,11 +789,15 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                       <label className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                         <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                         <span>Harga Nota/Satuan (Beli di Toko)</span>
-                        {!isClientItem && <span className="text-rose-500">*</span>}
+                        {!isClientItem && !isPendingItem && <span className="text-rose-500">*</span>}
                       </label>
                       {isClientItem ? (
                         <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/50 px-2.5 py-0.5 rounded-full border border-sky-200 dark:border-sky-800">
                           👤 Jatah Klien (Harga Opsional)
+                        </span>
+                      ) : isPendingItem ? (
+                        <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-800">
+                          ❓ Belum Pasti (Harga Opsional / Boleh Menyusul)
                         </span>
                       ) : boqRateReference ? (
                         <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 px-2.5 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
@@ -803,6 +838,34 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                         }`}
                       />
                     </div>
+
+                    {/* Bantuan Cerdas: Pembelian Terakhir */}
+                    {lastPurchaseInfo && !answers.isHargaBelumDiketahui && !answers.isNotaMenyusul && (
+                      <div className="flex items-center justify-between flex-wrap gap-2 pt-0.5 text-xs">
+                        <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <span>
+                            Pembelian terakhir: <strong className="text-slate-800 dark:text-slate-200">Rp {lastPurchaseInfo.price.toLocaleString('id-ID')}</strong>
+                            {lastPurchaseInfo.date ? ` (${formatIndonesianDate(lastPurchaseInfo.date)})` : ''}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAnswers({
+                              ...answers,
+                              hargaNotaSatuan: lastPurchaseInfo.price,
+                              isHargaBelumDiketahui: false,
+                              isNotaMenyusul: false
+                            });
+                            setStepError(null);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-bold hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-colors cursor-pointer"
+                        >
+                          <span>Gunakan Harga Ini</span>
+                        </button>
+                      </div>
+                    )}
 
                     {/* 2 Opsi Centang Sesuai Permintaan User */}
                     <div className="flex flex-wrap items-center gap-4 pt-1">
@@ -900,11 +963,12 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                 )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
                   { id: 'KONTRAKTOR' as const, icon: '🏢', title: 'Kontraktor', sub: tenantBranding.contractorName },
                   { id: 'KLIEN' as const, icon: '👤', title: 'Klien', sub: tenantBranding.clientName },
-                  { id: 'TOKO_BEBAS' as const, icon: '🏪', title: 'Lainnya', sub: 'Toko / Pihak Ketiga' }
+                  { id: 'TOKO_BEBAS' as const, icon: '🏪', title: 'Toko Bebas', sub: 'Pihak Ketiga' },
+                  { id: 'BELUM_DIPASTIKAN' as const, icon: '❓', title: 'Belum Pasti', sub: 'Tanggungan Menyusul' }
                 ].map((opt) => {
                   const selected = answers.asalBarang === opt.id;
                   return (

@@ -57,11 +57,17 @@ export interface PhysicalMaterialItem {
   total_qty_keluar: number;
   is_stock_item: boolean;
   budget_lines: PhysicalBudgetLine[];
+  // Finansial & Kalkulasi Rata-rata Tertimbang (Moving Weighted Average)
+  total_nilai_belanja_riil?: number;
+  harga_beli_rata_rata?: number;
+  harga_beli_terakhir?: number;
+  tanggal_beli_terakhir?: string;
+  count_nota_menyusul?: number;
 }
 
 export type JenisMutasiBarang = 'MASUK' | 'KELUAR';
 export type BebanBiaya = 'PROYEK_BOQ' | 'OPERASIONAL' | 'KLIEN' | 'BONUS_KLIEN' | 'KONTRAKTOR';
-export type AsalBarang = 'KONTRAKTOR' | 'KLIEN' | 'TOKO_BEBAS';
+export type AsalBarang = 'KONTRAKTOR' | 'KLIEN' | 'TOKO_BEBAS' | 'BELUM_DIPASTIKAN';
 export type TujuanPengeluaran = 'PROYEK_BOQ' | 'OPERASIONAL' | 'PERMINTAAN_KLIEN' | 'BONUS_KLIEN';
 
 export interface MutasiBarang {

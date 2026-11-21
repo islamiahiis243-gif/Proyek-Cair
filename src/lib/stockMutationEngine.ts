@@ -661,9 +661,10 @@ export const validateWizardStep = (
         const prov = answers.physicalMaterial ? getProviderMetaForMaterial(answers.physicalMaterial, labels) : null;
         const isClientFreeIssue = prov && !prov.isMixed && prov.defaultAsal === 'KLIEN';
         const isClientSource = answers.asalBarang === 'KLIEN';
+        const isPendingSource = answers.asalBarang === 'BELUM_DIPASTIKAN';
 
         // Hanya wajib jika tanggungan Kontraktor dan belum dicentang 'Harga belum diketahui' atau 'Nota menyusul'
-        if (!isClientFreeIssue && !isClientSource) {
+        if (!isClientFreeIssue && !isClientSource && !isPendingSource) {
           if (!answers.isHargaBelumDiketahui && !answers.isNotaMenyusul) {
             if (answers.hargaNotaSatuan == null || answers.hargaNotaSatuan <= 0) {
               return 'Harga Nota/Satuan wajib diisi untuk tanggungan kontraktor, atau centang salah satu opsi jika harga riil belum tercantum di nota.';
@@ -773,6 +774,10 @@ export const buildStockMutationPayload = (
       detailValue = answers.tokoBebasName.trim()
         ? `Lainnya (${answers.tokoBebasName.trim()})`
         : 'Lainnya / Toko Bebas';
+    } else if (answers.asalBarang === 'BELUM_DIPASTIKAN') {
+      calculatedSourceName = 'Belum Dipastikan (Menyusul)';
+      calculatedOwnerType = 'KONTRAKTOR';
+      detailValue = 'Belum Dipastikan (Menyusul / Verifikasi)';
     }
 
     if (isCustom) {

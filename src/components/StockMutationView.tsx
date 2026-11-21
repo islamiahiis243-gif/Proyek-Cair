@@ -691,6 +691,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           return ((a.total_qty_keluar || 0) - (b.total_qty_keluar || 0)) * mult;
         case 'stok_fisik':
           return ((a.stok_fisik || 0) - (b.stok_fisik || 0)) * mult;
+        case 'harga_beli_rata_rata':
+          return ((a.harga_beli_rata_rata || 0) - (b.harga_beli_rata_rata || 0)) * mult;
+        case 'total_nilai_belanja_riil':
+          return ((a.total_nilai_belanja_riil || 0) - (b.total_nilai_belanja_riil || 0)) * mult;
         case 'status':
           return (whStatusRank(a) - whStatusRank(b)) * mult;
         default:
@@ -1656,6 +1660,22 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                             'right'
                           )}
                         </th>
+                        {canViewFinancials && (
+                          <>
+                            <th className="py-3 px-3 text-right">
+                              {renderSortBtn('Harga Rata-Rata', 'harga_beli_rata_rata', warehouseSort, () =>
+                                startTransition(() => setWarehouseSort((prev) => toggleSort(prev, 'harga_beli_rata_rata', 'desc'))),
+                                'right'
+                              )}
+                            </th>
+                            <th className="py-3 px-3 text-right">
+                              {renderSortBtn('Total Belanja Riil', 'total_nilai_belanja_riil', warehouseSort, () =>
+                                startTransition(() => setWarehouseSort((prev) => toggleSort(prev, 'total_nilai_belanja_riil', 'desc'))),
+                                'right'
+                              )}
+                            </th>
+                          </>
+                        )}
                         <th className="py-3 px-3 text-center">
                           {renderSortBtn('Status Gudang', 'status', warehouseSort, () =>
                             startTransition(() => setWarehouseSort((prev) => toggleSort(prev, 'status', 'desc'))),
@@ -1668,7 +1688,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {filteredWarehouseMaterials.length === 0 ? (
                         <tr>
-                          <td colSpan={10} className="py-12 text-center text-slate-600 dark:text-slate-300 font-medium">
+                          <td colSpan={canViewFinancials ? 12 : 10} className="py-12 text-center text-slate-600 dark:text-slate-300 font-medium">
                             Tidak ada material fisik yang cocok dengan filter pencarian.
                           </td>
                         </tr>
@@ -1751,6 +1771,37 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                   {pm.stok_fisik.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
                                 </span>
                               </td>
+                              {canViewFinancials && (
+                                <>
+                                  <td className="py-3 px-3 text-right font-mono text-slate-800 dark:text-slate-200">
+                                    {pm.harga_beli_rata_rata != null && pm.harga_beli_rata_rata > 0 ? (
+                                      <div>
+                                        <div className="font-bold text-slate-900 dark:text-white">
+                                          Rp {pm.harga_beli_rata_rata.toLocaleString('id-ID')}
+                                        </div>
+                                        {pm.count_nota_menyusul != null && pm.count_nota_menyusul > 0 && (
+                                          <div className="text-[9px] font-semibold text-amber-600 dark:text-amber-400">
+                                            {pm.count_nota_menyusul} nota menyusul
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : pm.count_nota_menyusul != null && pm.count_nota_menyusul > 0 ? (
+                                      <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                                        {pm.count_nota_menyusul} nota menyusul
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400">-</span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-3 text-right font-mono font-bold text-emerald-700 dark:text-emerald-300">
+                                    {pm.total_nilai_belanja_riil != null && pm.total_nilai_belanja_riil > 0 ? (
+                                      `Rp ${pm.total_nilai_belanja_riil.toLocaleString('id-ID')}`
+                                    ) : (
+                                      <span className="text-slate-400 font-normal">-</span>
+                                    )}
+                                  </td>
+                                </>
+                              )}
                               <td className="py-3 px-3 text-center">
                                 {pm.stok_fisik > 0 ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
@@ -2398,7 +2449,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                               }`}
                             >
                               <td className="py-3 px-3.5 text-center text-slate-600 dark:text-slate-300 font-mono text-[11px] font-medium">
-                                {idx + 1}
+                                <div>{idx + 1}</div>
+                                <div className="text-[9px] text-slate-400 dark:text-slate-500 font-bold" title={`ID Transaksi: ${mut.id}`}>
+                                  #{mut.jenis === 'MASUK' ? 'MSK' : 'KLR'}-{mut.id.slice(0, 6).toUpperCase()}
+                                </div>
                               </td>
                               <td className="py-3 px-3.5 text-slate-700 dark:text-slate-200 font-mono text-[11px] whitespace-nowrap">
                                 {formatDateTime(mut.tanggal)}
@@ -2426,6 +2480,14 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                   {isReplaced && (
                                     <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-950/70 dark:text-amber-200 border border-amber-200 dark:border-amber-900" title={mut.alasan_batal_ganti || 'Baris ini digantikan oleh data revisi baru'}>
                                       🔄 DIGANTI · Dinolkan
+                                    </span>
+                                  )}
+                                  {mut.referensi_ganti_id && (
+                                    <span
+                                      className="inline-flex items-center gap-0.5 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
+                                      title={mut.alasan_batal_ganti ? `Revisi dari #${mut.referensi_ganti_id.slice(0, 6).toUpperCase()}: ${mut.alasan_batal_ganti}` : `Revisi dari #${mut.referensi_ganti_id.slice(0, 6).toUpperCase()}`}
+                                    >
+                                      ↳ Ganti #{mut.referensi_ganti_id.slice(0, 6).toUpperCase()}
                                     </span>
                                   )}
                                   {mut.is_custom_item ? (

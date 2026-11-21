@@ -110,6 +110,8 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
           { key: 'sisa_belum_tiba', label: 'Sisa Belum Tiba (Kekurangan)', defaultSelected: true },
           { key: 'sudah_dipakai', label: 'Sudah Dipakai / Terpasang', defaultSelected: true },
           { key: 'saldo_gudang', label: 'Sisa Stok di Gudang (Saat Ini)', defaultSelected: true },
+          { key: 'harga_beli_rata_rata', label: 'Harga Beli Rata-Rata Riil (Rp)', isFinancial: true, defaultSelected: canViewFinancials },
+          { key: 'total_nilai_belanja_riil', label: 'Total Nilai Belanja Riil (Rp)', isFinancial: true, defaultSelected: canViewFinancials },
           { key: 'status_gudang', label: 'Label Status Stok (Tersedia/Habis)', defaultSelected: false }
         ];
       case 'STOCK_JOURNAL':
@@ -165,7 +167,11 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
           { key: 'target_kebutuhan', label: 'Target Kebutuhan (BOQ)' },
           { key: 'sudah_masuk', label: 'Total Pernah Diterima (Masuk)' },
           { key: 'saldo_gudang', label: 'Sisa Stok di Gudang (Saat Ini)' },
-          { key: 'sisa_belum_tiba', label: 'Sisa Belum Tiba (Kekurangan)' }
+          { key: 'sisa_belum_tiba', label: 'Sisa Belum Tiba (Kekurangan)' },
+          ...(!isViewer ? [
+            { key: 'harga_beli_rata_rata', label: 'Harga Beli Rata-Rata (Rp)' },
+            { key: 'total_nilai_belanja_riil', label: 'Total Nilai Belanja Riil (Rp)' }
+          ] : [])
         ];
       case 'STOCK_JOURNAL':
         return [

@@ -1339,6 +1339,33 @@ export async function generateWarehouseSummaryPDF(params: {
       align: 'right',
       getValue: (pm) => pm.stok_fisik.toLocaleString('id-ID', { maximumFractionDigits: 3 })
     },
+    harga_beli_rata_rata: {
+      header: 'Harga Rata-Rata',
+      width: 28,
+      align: 'right',
+      getValue: (pm) => {
+        if (pm.harga_beli_rata_rata != null && pm.harga_beli_rata_rata > 0) {
+          const base = `Rp ${pm.harga_beli_rata_rata.toLocaleString('id-ID')}`;
+          return (pm.count_nota_menyusul && pm.count_nota_menyusul > 0)
+            ? `${base}\n(! ${pm.count_nota_menyusul} nota menyusul)`
+            : base;
+        }
+        return (pm.count_nota_menyusul && pm.count_nota_menyusul > 0)
+          ? `(! ${pm.count_nota_menyusul} nota menyusul)`
+          : '-';
+      }
+    },
+    total_nilai_belanja_riil: {
+      header: 'Total Belanja Riil',
+      width: 32,
+      align: 'right',
+      getValue: (pm) => {
+        if (pm.total_nilai_belanja_riil != null && pm.total_nilai_belanja_riil > 0) {
+          return `Rp ${pm.total_nilai_belanja_riil.toLocaleString('id-ID')}`;
+        }
+        return '-';
+      }
+    },
     status_gudang: {
       header: 'Status Stok',
       width: 26,

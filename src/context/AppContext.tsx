@@ -422,6 +422,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const physicalConsumed = new Map<string, number>();
     const boqItemConsumed = new Map<string, number>();
     const stockHistory = new Set<string>();
+    // Finansial Belanja Riil & Weighted Average per Jenis Material
+    const physicalFinancialTotal = new Map<string, number>();
+    const physicalFinancialQty = new Map<string, number>();
+    const physicalLastPrice = new Map<string, { price: number; date: string }>();
+    const physicalPendingInvoiceCount = new Map<string, number>();
 
     const stockRows: MutasiBarang[] = (stockRes.data || []).map((t: any) => {
       const targetItem = itemById.get(t.item_id);
@@ -446,6 +451,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         physicalBalance.set(key, afterPhysical);
         if (incoming) {
           physicalReceived.set(key, (physicalReceived.get(key) || 0) + qtyNum);
+
+          const unitPrice = t.harga_satuan_beli != null ? Number(t.harga_satuan_beli) : null;
+          if (unitPrice != null && unitPrice > 0) {
+            const lineTotal = unitPrice * qtyNum;
+            physicalFinancialTotal.set(key, (physicalFinancialTotal.get(key) || 0) + lineTotal);
+            physicalFinancialQty.set(key, (physicalFinancialQty.get(key) || 0) + qtyNum);
+            physicalLastPrice.set(key, { price: unitPrice, date: t.occurred_at || t.created_at });
+          } else if (t.status_harga === 'NOTA_MENYUSUL' || t.status_harga === 'BELUM_DIKETAHUI') {
+            physicalPendingInvoiceCount.set(key, (physicalPendingInvoiceCount.get(key) || 0) + 1);
+          }
         } else {
           physicalConsumed.set(key, (physicalConsumed.get(key) || 0) + qtyNum);
           boqItemConsumed.set(t.item_id, (boqItemConsumed.get(t.item_id) || 0) + qtyNum);
@@ -582,6 +597,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const calculatedPhysicalMaterials: PhysicalMaterialItem[] = Array.from(physicalGroupMap.entries()).map(([key, g]) => {
+      const totalBelanja = physicalFinancialTotal.get(key) || 0;
+      const totalQtyFin = physicalFinancialQty.get(key) || 0;
+      const avgPrice = totalQtyFin > 0 ? Math.round(totalBelanja / totalQtyFin) : undefined;
+      const lastPriceInfo = physicalLastPrice.get(key);
+
       return {
         id: g.id,
         nama_barang: g.nama_barang,
@@ -591,7 +611,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         total_qty_masuk: physicalReceived.get(key) || 0,
         total_qty_keluar: physicalConsumed.get(key) || 0,
         is_stock_item: g.is_stock_item,
-        budget_lines: g.budget_lines
+        budget_lines: g.budget_lines,
+        total_nilai_belanja_riil: totalBelanja,
+        harga_beli_rata_rata: avgPrice,
+        harga_beli_terakhir: lastPriceInfo?.price,
+        tanggal_beli_terakhir: lastPriceInfo?.date,
+        count_nota_menyusul: physicalPendingInvoiceCount.get(key) || 0
       };
     });
 
