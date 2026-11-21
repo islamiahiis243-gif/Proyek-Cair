@@ -103,12 +103,12 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
           { key: 'no', label: 'Nomor Urut (No)', defaultSelected: true },
           { key: 'nama_barang', label: 'Nama Material & Cakupan Pos BOQ', defaultSelected: true },
           { key: 'satuan', label: 'Satuan (UoM)', defaultSelected: true },
-          { key: 'target_kebutuhan', label: 'Kebutuhan Proyek (BOQ)', defaultSelected: true },
-          { key: 'sudah_masuk', label: 'Realisasi Masuk Gudang', defaultSelected: true },
+          { key: 'target_kebutuhan', label: 'Target Kebutuhan (BOQ)', defaultSelected: true },
+          { key: 'sudah_masuk', label: 'Total Pernah Diterima (Masuk)', defaultSelected: true },
           { key: 'sisa_belum_tiba', label: 'Sisa Belum Tiba (Kekurangan)', defaultSelected: true },
-          { key: 'sudah_dipakai', label: 'Sudah Dipakai / Keluar', defaultSelected: true },
-          { key: 'saldo_gudang', label: 'Saldo Fisik di Gudang', defaultSelected: true },
-          { key: 'status_gudang', label: 'Status Ketersediaan Gudang', defaultSelected: true }
+          { key: 'sudah_dipakai', label: 'Sudah Dipakai / Terpasang', defaultSelected: true },
+          { key: 'saldo_gudang', label: 'Sisa Stok di Gudang (Saat Ini)', defaultSelected: true },
+          { key: 'status_gudang', label: 'Label Status Stok (Tersedia/Habis)', defaultSelected: false }
         ];
       case 'STOCK_JOURNAL':
         return [
@@ -156,9 +156,9 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
         return [
           { key: 'default', label: 'Sesuai Sortir Layar Saat Ini' },
           { key: 'nama_barang', label: 'Nama Material' },
-          { key: 'target_kebutuhan', label: 'Kebutuhan Proyek (BOQ)' },
-          { key: 'sudah_masuk', label: 'Realisasi Masuk Gudang' },
-          { key: 'saldo_gudang', label: 'Saldo Tersedia di Gudang' },
+          { key: 'target_kebutuhan', label: 'Target Kebutuhan (BOQ)' },
+          { key: 'sudah_masuk', label: 'Total Pernah Diterima (Masuk)' },
+          { key: 'saldo_gudang', label: 'Sisa Stok di Gudang (Saat Ini)' },
           { key: 'sisa_belum_tiba', label: 'Sisa Belum Tiba (Kekurangan)' }
         ];
       case 'STOCK_JOURNAL':

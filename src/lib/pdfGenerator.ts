@@ -1251,7 +1251,7 @@ export async function generateWarehouseSummaryPDF(params: {
     },
     satuan: { header: 'Satuan', width: 18, align: 'center', getValue: (pm) => pm.satuan },
     target_kebutuhan: {
-      header: 'Kebutuhan BOQ',
+      header: 'Target BOQ',
       width: 26,
       align: 'right',
       getValue: (pm, _, disc) => {
@@ -1265,7 +1265,7 @@ export async function generateWarehouseSummaryPDF(params: {
       }
     },
     sudah_masuk: {
-      header: 'Masuk Gudang',
+      header: 'Total Masuk',
       width: 32,
       align: 'right',
       getValue: (pm, _, disc) => {
@@ -1297,19 +1297,19 @@ export async function generateWarehouseSummaryPDF(params: {
       }
     },
     sudah_dipakai: {
-      header: 'Sudah Dipakai',
+      header: 'Sudah Terpakai',
       width: 26,
       align: 'right',
       getValue: (pm) => (pm.total_qty_keluar || 0).toLocaleString('id-ID', { maximumFractionDigits: 3 })
     },
     saldo_gudang: {
-      header: 'Saldo Gudang',
+      header: 'Stok Gudang (Riil)',
       width: 26,
       align: 'right',
       getValue: (pm) => pm.stok_fisik.toLocaleString('id-ID', { maximumFractionDigits: 3 })
     },
     status_gudang: {
-      header: 'Status Gudang',
+      header: 'Status Stok',
       width: 26,
       align: 'center',
       getValue: (pm) => {
