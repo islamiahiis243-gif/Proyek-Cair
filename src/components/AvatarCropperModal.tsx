@@ -10,7 +10,8 @@ import {
   RefreshCw,
   Sliders,
   Image as ImageIcon,
-  AlertCircle
+  AlertCircle,
+  Maximize2
 } from 'lucide-react';
 
 interface AvatarCropperModalProps {
@@ -170,6 +171,15 @@ export const AvatarCropperModal: React.FC<AvatarCropperModalProps> = ({
     const size = canvas.width; // 360x360 internal canvas
     ctx.clearRect(0, 0, size, size);
 
+    // Crop boundary dimensions
+    const cropRadius = (size * 0.86) / 2;
+    const centerX = size / 2;
+    const centerY = size / 2;
+    const x0 = centerX - cropRadius;
+    const y0 = centerY - cropRadius;
+    const d = cropRadius * 2;
+    const r = 16;
+
     // Save context
     ctx.save();
 
@@ -178,31 +188,35 @@ export const AvatarCropperModal: React.FC<AvatarCropperModalProps> = ({
     ctx.rotate((rotation * Math.PI) / 180);
     ctx.scale(zoom, zoom);
 
-    // Compute aspect-fit dimensions
+    // Compute shrink-to-fit dimensions
     let drawWidth = size;
     let drawHeight = size;
     const imgAspect = img.width / img.height;
 
-    if (imgAspect > 1) {
-      drawWidth = size * imgAspect;
-      drawHeight = size;
+    if (cropShape === 'rect') {
+      // Shrink to fit: seluruh gambar muat 100% pas di dalam bingkai 1:1 tanpa terpotong
+      const boxSize = d * 0.94;
+      if (imgAspect >= 1) {
+        drawWidth = boxSize;
+        drawHeight = boxSize / imgAspect;
+      } else {
+        drawHeight = boxSize;
+        drawWidth = boxSize * imgAspect;
+      }
     } else {
-      drawWidth = size;
-      drawHeight = size / imgAspect;
+      // Foto profil bundar (cover mode)
+      if (imgAspect > 1) {
+        drawWidth = size * imgAspect;
+        drawHeight = size;
+      } else {
+        drawWidth = size;
+        drawHeight = size / imgAspect;
+      }
     }
 
     ctx.drawImage(img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
 
     ctx.restore();
-
-    // Draw circular or rounded rectangular overlay mask
-    const cropRadius = (size * 0.86) / 2;
-    const centerX = size / 2;
-    const centerY = size / 2;
-    const x0 = centerX - cropRadius;
-    const y0 = centerY - cropRadius;
-    const d = cropRadius * 2;
-    const r = 16;
 
     // Dark semi-transparent vignette outside crop boundary
     ctx.save();
@@ -352,23 +366,37 @@ export const AvatarCropperModal: React.FC<AvatarCropperModalProps> = ({
       // Translate pan proportional to scaling
       ctx.translate(pan.x / (previewCropDiameter / outSize), pan.y / (previewCropDiameter / outSize));
 
-      let drawWidth = previewSize;
-      let drawHeight = previewSize;
+      let drawWidth = previewCropDiameter;
+      let drawHeight = previewCropDiameter;
       const imgAspect = img.width / img.height;
 
-      if (imgAspect > 1) {
-        drawWidth = previewSize * imgAspect;
-        drawHeight = previewSize;
+      if (cropShape === 'rect') {
+        // Shrink to fit 1:1 frame: seluruh gambar utuh pas di dalam kanvas 1:1
+        const boxSize = previewCropDiameter * 0.94;
+        if (imgAspect >= 1) {
+          drawWidth = boxSize;
+          drawHeight = boxSize / imgAspect;
+        } else {
+          drawHeight = boxSize;
+          drawWidth = boxSize * imgAspect;
+        }
       } else {
-        drawWidth = previewSize;
-        drawHeight = previewSize / imgAspect;
+        if (imgAspect > 1) {
+          drawWidth = previewSize * imgAspect;
+          drawHeight = previewSize;
+        } else {
+          drawWidth = previewSize;
+          drawHeight = previewSize / imgAspect;
+        }
       }
 
       ctx.drawImage(img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
       ctx.restore();
 
-      // Export as optimized JPEG
-      const finalDataUrl = outputCanvas.toDataURL('image/jpeg', 0.9);
+      // Untuk logo resmi tenant (rect), gunakan PNG agar kualitas teks tajam & transparansi terjaga
+      const finalDataUrl = cropShape === 'rect'
+        ? outputCanvas.toDataURL('image/png')
+        : outputCanvas.toDataURL('image/jpeg', 0.92);
       await onSave(finalDataUrl);
       onClose();
     } catch (err) {
@@ -578,7 +606,7 @@ export const AvatarCropperModal: React.FC<AvatarCropperModalProps> = ({
                   <ZoomOut className="w-4 h-4 text-slate-400 shrink-0" />
                   <input
                     type="range"
-                    min="1"
+                    min={cropShape === 'rect' ? '0.4' : '1'}
                     max="3"
                     step="0.05"
                     value={zoom}
@@ -594,10 +622,21 @@ export const AvatarCropperModal: React.FC<AvatarCropperModalProps> = ({
                 {/* Tombol Rotasi & Reset */}
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
+                    {cropShape === 'rect' && (
+                      <button
+                        type="button"
+                        onClick={handleReset}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-950/40 text-xs font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-colors cursor-pointer"
+                        title="Pas Bingkai 1:1 (Shrink to fit)"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        <span>Pas Bingkai (1:1)</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={handleRotate}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
                       title="Putar 90 Derajat"
                     >
                       <RotateCw className="w-3.5 h-3.5" />
@@ -606,7 +645,7 @@ export const AvatarCropperModal: React.FC<AvatarCropperModalProps> = ({
                     <button
                       type="button"
                       onClick={handleReset}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
                       title="Reset Posisi"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />

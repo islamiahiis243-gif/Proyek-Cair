@@ -455,16 +455,16 @@ export const CompanyConsole: React.FC = () => {
             onClick={() => setIsLogoModalOpen(true)}
             onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setIsLogoModalOpen(true); }}
             title="Klik untuk mengunggah atau mengganti logo perusahaan resmi (1:1)"
-            className="relative group p-1.5 rounded-2xl bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-900 cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 hover:shadow-md transition-all shrink-0 w-14 h-14 flex items-center justify-center overflow-hidden"
+            className="relative group p-1.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 hover:shadow-md transition-all shrink-0 w-14 h-14 aspect-square flex items-center justify-center overflow-hidden"
           >
             {activeCompany.logoUrl ? (
               <img
                 src={activeCompany.logoUrl}
                 alt={activeCompany.name}
-                className="w-full h-full object-contain rounded-xl p-0.5 bg-white dark:bg-slate-900"
+                className="max-w-full max-h-full w-auto h-auto object-contain rounded-xl p-0.5"
               />
             ) : (
-              <Building2 className="h-7 w-7 group-hover:scale-105 transition-transform" />
+              <Building2 className="h-7 w-7 text-blue-600 dark:text-blue-400 group-hover:scale-105 transition-transform" />
             )}
             <div className="absolute -bottom-0.5 -right-0.5 p-1 rounded-full bg-blue-600 text-white shadow-xs group-hover:scale-110 transition-transform">
               <Camera className="w-3 h-3" />
@@ -1025,11 +1025,11 @@ export const CompanyConsole: React.FC = () => {
                 {/* Kartu Kelola Logo Perusahaan */}
                 <div className="rounded-xl border border-blue-200/80 dark:border-blue-900/50 bg-blue-50/40 dark:bg-blue-950/20 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-1 shrink-0 flex items-center justify-center shadow-xs">
+                    <div className="w-14 h-14 aspect-square rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-1 shrink-0 flex items-center justify-center shadow-xs overflow-hidden">
                       {activeCompany.logoUrl ? (
-                        <img src={activeCompany.logoUrl} alt="Logo Perusahaan" className="w-full h-full object-contain rounded-lg" />
+                        <img src={activeCompany.logoUrl} alt="Logo Perusahaan" className="max-w-full max-h-full w-auto h-auto object-contain rounded-xl" />
                       ) : (
-                        <Building2 className="w-6 h-6 text-slate-400" />
+                        <Building2 className="w-7 h-7 text-slate-400" />
                       )}
                     </div>
                     <div>
