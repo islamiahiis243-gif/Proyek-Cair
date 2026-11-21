@@ -1296,7 +1296,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           hideFinancials: activeRole === 'Viewer/Pengamat' ? true : !config.includeFinancials,
           customTitle: config.customTitle,
           customNotes: config.customNotes,
-          selectedColumns: config.selectedColumns
+          selectedColumns: config.selectedColumns,
+          orientation: config.orientation || 'landscape'
         });
         setNoticeMessage(`PDF Realisasi BOQ (${itemsToExport.length} pos · ${config.selectedColumns.length} kolom) berhasil diunduh.`);
       } catch (err: any) {
@@ -1363,7 +1364,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           filterSummary: `${exportModalState.currentFilterLabel} · ${exportModalState.currentSortLabel}`,
           customTitle: config.customTitle,
           customNotes: config.customNotes,
-          selectedColumns: config.selectedColumns
+          selectedColumns: config.selectedColumns,
+          orientation: config.orientation || 'landscape'
         });
         setNoticeMessage(`PDF Jurnal Mutasi (${mutationsToExport.length} baris · ${config.selectedColumns.length} kolom) berhasil diunduh.`);
       } catch (err: any) {
@@ -1387,7 +1389,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         signer: user,
         projectName: tenantBranding.projectName,
         physicalMaterials,
-        branding: tenantBranding
+        branding: tenantBranding,
+        orientation: 'landscape'
       });
       setNoticeMessage(`Dokumen PDF Resmi (${docCode}) dengan QR Code Verifikasi berhasil diunduh.`);
     } catch (err: any) {

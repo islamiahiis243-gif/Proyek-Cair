@@ -162,7 +162,8 @@ export const ReportsView: React.FC = () => {
           filterSummary: `${typeLabel}${searchPart} · Urut: ${sortLabel}`,
           customTitle: config.customTitle,
           customNotes: config.customNotes,
-          selectedColumns: config.selectedColumns
+          selectedColumns: config.selectedColumns,
+          orientation: config.orientation || 'landscape'
         });
 
         setGenerationSuccess(`Ekspor PDF internal ${docId} (${filtered.length} transaksi sesuai filter & konfigurasi) berhasil diunduh.`);
@@ -205,7 +206,8 @@ export const ReportsView: React.FC = () => {
           filterSummary: `${typeLabel}${searchPart} · Urut: ${sortLabel}`,
           customTitle: config.customTitle,
           customNotes: config.customNotes,
-          selectedColumns: config.selectedColumns
+          selectedColumns: config.selectedColumns,
+          orientation: config.orientation || 'landscape'
         });
 
         setGenerationSuccess(`Ekspor PDF internal ${docId} (${filtered.length} transaksi sesuai filter & konfigurasi) berhasil diunduh.`);

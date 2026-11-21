@@ -195,6 +195,7 @@ export async function generateStockMutationPDF(params: {
   customTitle?: string;
   customNotes?: string;
   selectedColumns?: string[];
+  orientation?: 'portrait' | 'landscape';
 }): Promise<DokumenLaporan> {
   const {
     docId,
@@ -208,12 +209,98 @@ export async function generateStockMutationPDF(params: {
     filterSummary,
     customTitle,
     customNotes,
-    selectedColumns
+    selectedColumns,
+    orientation: requestedOrientation
   } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
   const providerLabels = { contractorName: b.contractorName, clientName: b.clientName };
+
+  // Definisi Pemetaan Kolom Fleksibel
+  const stockColumnMap: Record<string, {
+    header: string;
+    width?: number;
+    align?: 'left' | 'center' | 'right';
+    getValue: (m: MutasiBarang, idx: number, disc: any, isVoid: boolean) => string;
+  }> = {
+    no: { header: 'No', width: 9, align: 'center', getValue: (_, idx) => String(idx + 1) },
+    tanggal: { header: 'Waktu', width: 22, align: 'left', getValue: (m) => formatDateTime(m.tanggal) },
+    nomor_surat_jalan: { header: 'No Surat Jalan', width: 22, align: 'left', getValue: (m) => m.nomor_surat_jalan || '-' },
+    nama_barang: { header: 'Nama Material / Barang', width: 44, align: 'left', getValue: (m) => m.nama_barang },
+    nama_item_aktual: {
+      header: 'Item Aktual / Pengganti',
+      width: 34,
+      align: 'left',
+      getValue: (m) => m.nama_item_aktual || '-'
+    },
+    jenis: { header: 'Jenis', width: 13, align: 'center', getValue: (m) => m.jenis },
+    jumlah: { header: 'Volume', width: 18, align: 'right', getValue: (m, _, __, isVoid) => isVoid ? '0 (Batal)' : `${m.jumlah} ${m.satuan}` },
+    satuan: { header: 'Satuan', width: 13, align: 'center', getValue: (m) => m.satuan },
+    harga_satuan_beli: {
+      header: 'Harga Satuan',
+      width: 24,
+      align: 'right',
+      getValue: (m, _, __, isVoid) => isVoid ? '-' : m.harga_satuan_beli != null ? `Rp ${m.harga_satuan_beli.toLocaleString('id-ID')}` : '-'
+    },
+    total_harga_nota: {
+      header: 'Total Belanja',
+      width: 26,
+      align: 'right',
+      getValue: (m, _, __, isVoid) => isVoid ? 'Rp 0' : m.harga_satuan_beli != null ? `Rp ${(m.harga_satuan_beli * m.jumlah).toLocaleString('id-ID')}` : '-'
+    },
+    status_harga: {
+      header: 'Status Nota',
+      width: 22,
+      align: 'center',
+      getValue: (m) => m.status_harga === 'NOTA_MENYUSUL' ? 'Nota Menyusul' : m.status_harga === 'BELUM_DIKETAHUI' ? 'Belum Tahu' : m.harga_satuan_beli != null ? 'Tercatat' : '-'
+    },
+    tujuan_keperluan: {
+      header: 'Asal / Peruntukan',
+      width: 42,
+      align: 'left',
+      getValue: (m, _, disc) => {
+        const providerLine =
+          m.jenis === 'MASUK'
+            ? `Asal: ${m.source_name || disc?.actualProviderLabel || '-'}`
+            : m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN'
+            ? 'Beban: Permintaan Klien'
+            : m.beban_biaya === 'BONUS_KLIEN'
+            ? 'Beban: Bonus Klien'
+            : m.beban_biaya === 'OPERASIONAL'
+            ? 'Beban: Operasional'
+            : 'Beban: Proyek BOQ';
+        const purposeRaw = (m.tujuan_keperluan || '-').trim();
+        const mismatchLine = disc?.isMismatch ? `\n[!] ${disc.pdfNote}` : '';
+        return disc?.isMismatch && purposeRaw.toLowerCase().includes('talangan')
+          ? `${providerLine}${mismatchLine}`
+          : `${providerLine}\n${purposeRaw}${mismatchLine}`;
+      }
+    },
+    pic: { header: 'PIC', width: 18, align: 'left', getValue: (m) => m.pic_penerima_penyerah || '-' },
+    status_dokumen: {
+      header: 'Status',
+      width: 17,
+      align: 'center',
+      getValue: (m, _, __, isVoid) => {
+        const isReplaced = m.is_ganti || m.status_dokumen === 'DIGANTI';
+        return isVoid ? 'BATAL' : isReplaced ? 'DIGANTI' : (m.status_dokumen || 'DITERBITKAN');
+      }
+    }
+  };
+
+  const defaultStockCols = ['no', 'tanggal', 'nama_barang', 'jenis', 'jumlah', 'tujuan_keperluan', 'pic', 'status_dokumen'];
+  const activeStockCols = (selectedColumns && selectedColumns.length > 0)
+    ? selectedColumns.filter(c => stockColumnMap[c])
+    : defaultStockCols;
+
+  const hasFinancialCols = activeStockCols.includes('harga_satuan_beli') || activeStockCols.includes('total_harga_nota') || activeStockCols.includes('status_harga');
+
+  // Deteksi Cerdas Orientasi: Default Lanskap untuk dokumen jurnal multi-kolom agar lega & bebas terpotong
+  const isLandscape = requestedOrientation
+    ? requestedOrientation === 'landscape'
+    : (activeStockCols.length > 6 || hasFinancialCols || true);
+
   const doc = new jsPDF({
-    orientation: 'portrait',
+    orientation: isLandscape ? 'landscape' : 'portrait',
     unit: 'mm',
     format: 'a4',
   });
@@ -248,119 +335,141 @@ export async function generateStockMutationPDF(params: {
   const totalMasuk = activeMutations.filter((m) => m.jenis === 'MASUK').reduce((acc, m) => acc + m.jumlah, 0);
   const totalKeluar = activeMutations.filter((m) => m.jenis === 'KELUAR').reduce((acc, m) => acc + m.jumlah, 0);
 
+  // Analisis Belanja Riil Finansial (transaksi MASUK dengan harga satuan valid)
+  const activeMasukWithPrice = activeMutations.filter(
+    (m) => m.jenis === 'MASUK' && m.harga_satuan_beli != null && m.harga_satuan_beli > 0
+  );
+  const totalBelanjaRiil = activeMasukWithPrice.reduce(
+    (acc, m) => acc + (m.harga_satuan_beli! * m.jumlah), 0
+  );
+
+  const notaLengkapCount = activeMutations.filter(
+    (m) => m.jenis === 'MASUK' && m.harga_satuan_beli != null && m.harga_satuan_beli > 0
+  ).length;
+  const notaPendingCount = activeMutations.filter(
+    (m) => m.jenis === 'MASUK' && (m.status_harga === 'NOTA_MENYUSUL' || m.status_harga === 'BELUM_DIKETAHUI' || m.harga_satuan_beli == null)
+  ).length;
+
   // Analisis selisih penyedia (mis. Jatah Klien tapi ditalangi Kontraktor)
   const discrepancyByRow = mutations.map((m) => analyzeIncomingProviderDiscrepancy(m, physicalMaterials, mutations, providerLabels));
   const mismatchCount = mutations.filter(
     (m, i) => !m.is_batal && !m.is_ganti && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI' && discrepancyByRow[i].isMismatch
   ).length;
 
-  // KPI Summary Box
+  // KPI Summary Box Dinamis & Adaptif
+  const summaryBoxY = 60;
+  const summaryBoxHeight = 14;
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(14, 60, pageWidth - 28, 14, 2, 2, 'FD');
+  doc.roundedRect(14, summaryBoxY, pageWidth - 28, summaryBoxHeight, 2, 2, 'FD');
 
-  doc.setFontSize(7);
-  doc.setTextColor(100, 116, 139);
-  doc.text('TOTAL TRANSAKSI', 18, 65);
-  doc.text('TOTAL VOLUME MASUK', 62, 65);
-  doc.text('TOTAL VOLUME KELUAR', 108, 65);
-  doc.text('BEDA PENYEDIA / TALANGAN', 152, 65);
+  if (hasFinancialCols && isLandscape) {
+    // 6 KARTU KPI LENGKAP PADA MODE LANSKAP (Finansial + Kuantitas + Nota)
+    const colStep = (pageWidth - 28) / 6;
 
-  doc.setFontSize(9.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text(`${mutations.length} Transaksi`, 18, 71);
-
-  doc.setTextColor(22, 101, 52);
-  doc.text(`+ ${totalMasuk.toLocaleString('id-ID')} unit`, 62, 71);
-
-  doc.setTextColor(159, 18, 57);
-  doc.text(`- ${totalKeluar.toLocaleString('id-ID')} unit`, 108, 71);
-
-  if (mismatchCount > 0) {
-    doc.setTextColor(180, 83, 9);
-    doc.text(`${mismatchCount} Transaksi`, 152, 71);
-  } else {
+    // 1. Total Transaksi
+    doc.setFontSize(6.8);
+    doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
-    doc.text('0 Transaksi', 152, 71);
-  }
+    doc.text('TOTAL TRANSAKSI', 18, summaryBoxY + 5);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${mutations.length} Transaksi`, 18, summaryBoxY + 11);
 
-  // Definisi Pemetaan Kolom Fleksibel
-  const stockColumnMap: Record<string, {
-    header: string;
-    width?: number;
-    align?: 'left' | 'center' | 'right';
-    getValue: (m: MutasiBarang, idx: number, disc: any, isVoid: boolean) => string;
-  }> = {
-    no: { header: 'No', width: 9, align: 'center', getValue: (_, idx) => String(idx + 1) },
-    tanggal: { header: 'Waktu', width: 24, align: 'left', getValue: (m) => formatDateTime(m.tanggal) },
-    nomor_surat_jalan: { header: 'No Surat Jalan', width: 24, align: 'left', getValue: (m) => m.nomor_surat_jalan || '-' },
-    nama_barang: { header: 'Nama Material / Barang', width: 40, align: 'left', getValue: (m) => m.nama_barang },
-    nama_item_aktual: {
-      header: 'Item Aktual / Pengganti',
-      width: 32,
-      align: 'left',
-      getValue: (m) => m.nama_item_aktual || '-'
-    },
-    jenis: { header: 'Jenis', width: 14, align: 'center', getValue: (m) => m.jenis },
-    jumlah: { header: 'Volume', width: 20, align: 'right', getValue: (m, _, __, isVoid) => isVoid ? '0 (Batal)' : `${m.jumlah} ${m.satuan}` },
-    satuan: { header: 'Satuan', width: 14, align: 'center', getValue: (m) => m.satuan },
-    harga_satuan_beli: {
-      header: 'Harga Satuan',
-      width: 22,
-      align: 'right',
-      getValue: (m, _, __, isVoid) => isVoid ? '-' : m.harga_satuan_beli != null ? `Rp ${m.harga_satuan_beli.toLocaleString('id-ID')}` : '-'
-    },
-    total_harga_nota: {
-      header: 'Total Belanja',
-      width: 24,
-      align: 'right',
-      getValue: (m, _, __, isVoid) => isVoid ? 'Rp 0' : m.harga_satuan_beli != null ? `Rp ${(m.harga_satuan_beli * m.jumlah).toLocaleString('id-ID')}` : '-'
-    },
-    status_harga: {
-      header: 'Status Nota',
-      width: 20,
-      align: 'center',
-      getValue: (m) => m.status_harga === 'NOTA_MENYUSUL' ? 'Nota Menyusul' : m.status_harga === 'BELUM_DIKETAHUI' ? 'Belum Tahu' : m.harga_satuan_beli != null ? 'Tercatat' : '-'
-    },
-    tujuan_keperluan: {
-      header: 'Asal / Peruntukan',
-      width: 45,
-      align: 'left',
-      getValue: (m, _, disc) => {
-        const providerLine =
-          m.jenis === 'MASUK'
-            ? `Asal: ${m.source_name || disc?.actualProviderLabel || '-'}`
-            : m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN'
-            ? 'Beban: Permintaan Klien'
-            : m.beban_biaya === 'BONUS_KLIEN'
-            ? 'Beban: Bonus Klien'
-            : m.beban_biaya === 'OPERASIONAL'
-            ? 'Beban: Operasional'
-            : 'Beban: Proyek BOQ';
-        const purposeRaw = (m.tujuan_keperluan || '-').trim();
-        const mismatchLine = disc?.isMismatch ? `\n[!] ${disc.pdfNote}` : '';
-        return disc?.isMismatch && purposeRaw.toLowerCase().includes('talangan')
-          ? `${providerLine}${mismatchLine}`
-          : `${providerLine}\n${purposeRaw}${mismatchLine}`;
-      }
-    },
-    pic: { header: 'PIC', width: 18, align: 'left', getValue: (m) => m.pic_penerima_penyerah || '-' },
-    status_dokumen: {
-      header: 'Status',
-      width: 16,
-      align: 'center',
-      getValue: (m, _, __, isVoid) => {
-        const isReplaced = m.is_ganti || m.status_dokumen === 'DIGANTI';
-        return isVoid ? 'BATAL' : isReplaced ? 'DIGANTI' : (m.status_dokumen || 'DITERBITKAN');
-      }
+    // 2. Total Volume Masuk
+    doc.setFontSize(6.8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text('TOTAL VOLUME MASUK', 14 + colStep * 1 + 3, summaryBoxY + 5);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(22, 101, 52);
+    doc.text(`+ ${totalMasuk.toLocaleString('id-ID')} unit`, 14 + colStep * 1 + 3, summaryBoxY + 11);
+
+    // 3. Total Volume Keluar
+    doc.setFontSize(6.8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text('TOTAL VOLUME KELUAR', 14 + colStep * 2 + 3, summaryBoxY + 5);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(159, 18, 57);
+    doc.text(`- ${totalKeluar.toLocaleString('id-ID')} unit`, 14 + colStep * 2 + 3, summaryBoxY + 11);
+
+    // 4. Total Belanja Riil Masuk (Finansial Utama)
+    doc.setFontSize(6.8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text('TOTAL BELANJA RIIL (MASUK)', 14 + colStep * 3 + 3, summaryBoxY + 5);
+    doc.setFontSize(9.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(totalBelanjaRiil > 0 ? `Rp ${totalBelanjaRiil.toLocaleString('id-ID')}` : 'Rp 0', 14 + colStep * 3 + 3, summaryBoxY + 11);
+
+    // 5. Status Kelengkapan Nota
+    doc.setFontSize(6.8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text('STATUS NOTA FISIK', 14 + colStep * 4 + 3, summaryBoxY + 5);
+    doc.setFontSize(8.8);
+    doc.setFont('helvetica', 'bold');
+    if (notaPendingCount > 0) {
+      doc.setTextColor(180, 83, 9);
+      doc.text(`${notaLengkapCount} Nota · ${notaPendingCount} Pending`, 14 + colStep * 4 + 3, summaryBoxY + 11);
+    } else {
+      doc.setTextColor(22, 101, 52);
+      doc.text(`${notaLengkapCount} Nota Lengkap`, 14 + colStep * 4 + 3, summaryBoxY + 11);
     }
-  };
 
-  const defaultStockCols = ['no', 'tanggal', 'nama_barang', 'jenis', 'jumlah', 'tujuan_keperluan', 'pic', 'status_dokumen'];
-  const activeStockCols = (selectedColumns && selectedColumns.length > 0)
-    ? selectedColumns.filter(c => stockColumnMap[c])
-    : defaultStockCols;
+    // 6. Beda Penyedia / Talangan
+    doc.setFontSize(6.8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text('BEDA PENYEDIA / TALANGAN', 14 + colStep * 5 + 3, summaryBoxY + 5);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    if (mismatchCount > 0) {
+      doc.setTextColor(180, 83, 9);
+      doc.text(`${mismatchCount} Transaksi`, 14 + colStep * 5 + 3, summaryBoxY + 11);
+    } else {
+      doc.setTextColor(100, 116, 139);
+      doc.text('0 Transaksi', 14 + colStep * 5 + 3, summaryBoxY + 11);
+    }
+  } else {
+    // 4 KARTU FORMAT STANDAR ATAU MURNI FISIK KUANTITAS
+    const colStep = (pageWidth - 28) / 4;
+
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text('TOTAL TRANSAKSI', 18, summaryBoxY + 5);
+    doc.text('TOTAL VOLUME MASUK', 14 + colStep * 1 + 4, summaryBoxY + 5);
+    doc.text('TOTAL VOLUME KELUAR', 14 + colStep * 2 + 4, summaryBoxY + 5);
+    doc.text(hasFinancialCols ? 'TOTAL BELANJA RIIL' : 'BEDA PENYEDIA / TALANGAN', 14 + colStep * 3 + 4, summaryBoxY + 5);
+
+    doc.setFontSize(9.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${mutations.length} Transaksi`, 18, summaryBoxY + 11);
+
+    doc.setTextColor(22, 101, 52);
+    doc.text(`+ ${totalMasuk.toLocaleString('id-ID')} unit`, 14 + colStep * 1 + 4, summaryBoxY + 11);
+
+    doc.setTextColor(159, 18, 57);
+    doc.text(`- ${totalKeluar.toLocaleString('id-ID')} unit`, 14 + colStep * 2 + 4, summaryBoxY + 11);
+
+    if (hasFinancialCols) {
+      doc.setTextColor(15, 23, 42);
+      doc.text(totalBelanjaRiil > 0 ? `Rp ${totalBelanjaRiil.toLocaleString('id-ID')}` : 'Rp 0', 14 + colStep * 3 + 4, summaryBoxY + 11);
+    } else if (mismatchCount > 0) {
+      doc.setTextColor(180, 83, 9);
+      doc.text(`${mismatchCount} Transaksi`, 14 + colStep * 3 + 4, summaryBoxY + 11);
+    } else {
+      doc.setTextColor(100, 116, 139);
+      doc.text('0 Transaksi', 14 + colStep * 3 + 4, summaryBoxY + 11);
+    }
+  }
 
   const tableData = mutations.map((m, index) => {
     const isVoid = m.is_batal || m.status_dokumen === 'BATAL';
@@ -383,10 +492,21 @@ export async function generateStockMutationPDF(params: {
 
   const purposeColIdx = activeStockCols.indexOf('tujuan_keperluan');
 
+  // Baris Total Keseluruhan (Footer Tabel)
+  const footRow = activeStockCols.map((c) => {
+    if (c === 'no') return '';
+    if (c === 'nama_barang') return 'TOTAL KESELURUHAN (RIIL)';
+    if (c === 'jumlah') return `+${totalMasuk.toLocaleString('id-ID')}`;
+    if (c === 'total_harga_nota') return totalBelanjaRiil > 0 ? `Rp ${totalBelanjaRiil.toLocaleString('id-ID')}` : '-';
+    if (c === 'status_harga') return `${notaLengkapCount} Nota · ${notaPendingCount} Pending`;
+    return '';
+  });
+
   autoTable(doc, {
     startY: 78,
     head: [activeStockCols.map(c => stockColumnMap[c].header)],
     body: tableData,
+    foot: [footRow],
     theme: 'grid',
     headStyles: {
       fillColor: [30, 41, 59],
@@ -394,9 +514,18 @@ export async function generateStockMutationPDF(params: {
       fontStyle: 'bold',
       fontSize: 8,
     },
+    footStyles: {
+      fillColor: [30, 41, 59],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: isLandscape ? 7.8 : 7.2,
+      cellPadding: 2.4,
+      lineColor: [51, 65, 85],
+      lineWidth: 0.2,
+    },
     styles: {
       font: 'helvetica',
-      fontSize: activeStockCols.length <= 5 ? 8 : 7.2,
+      fontSize: isLandscape ? 7.6 : (activeStockCols.length <= 5 ? 8 : 7.2),
       cellPadding: 2.2,
       textColor: [15, 23, 42],
       lineColor: [203, 213, 225],
@@ -422,6 +551,16 @@ export async function generateStockMutationPDF(params: {
         } else {
           data.cell.styles.textColor = [15, 23, 42];
         }
+      } else if (data.section === 'foot') {
+        const colKey = activeStockCols[data.column.index];
+        if (colKey === 'jumlah' || colKey === 'total_harga_nota' || colKey === 'harga_satuan_beli') {
+          data.cell.styles.halign = 'right';
+        } else if (colKey === 'nama_barang') {
+          data.cell.styles.halign = 'left';
+          data.cell.styles.fontStyle = 'bold';
+        } else {
+          data.cell.styles.halign = 'center';
+        }
       }
     },
     margin: { left: 14, right: 14 },
@@ -429,7 +568,23 @@ export async function generateStockMutationPDF(params: {
 
   // Bagian Tanda Tangan Berjenjang (Serial 4 Tingkat Sesuai Dokumen)
   const finalY = (doc as any).lastAutoTable?.finalY || 160;
-  let signY = finalY + 10;
+  let currentY = finalY;
+
+  // Catatan Kaki Akuntabilitas Finansial (jika ada transaksi nota pending & kolom finansial aktif)
+  if (hasFinancialCols && notaPendingCount > 0) {
+    currentY += 4;
+    doc.setFontSize(6.8);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(100, 116, 139);
+    doc.text(
+      `* Catatan: Total Belanja Riil mengakumulasikan transaksi dengan nota fisik tercatat (${notaLengkapCount} item). Sebanyak ${notaPendingCount} item berstatus Nota Menyusul / Belum Ada Harga belum terakumulasi ke dalam total nominal.`,
+      14,
+      currentY
+    );
+    currentY += 2;
+  }
+
+  let signY = currentY + 8;
 
   if (signY + 50 > pageHeight) {
     doc.addPage();
@@ -560,11 +715,12 @@ export async function generateCashflowPDF(params: {
   customTitle?: string;
   customNotes?: string;
   selectedColumns?: string[];
+  orientation?: 'portrait' | 'landscape';
 }): Promise<DokumenLaporan> {
-  const { docId, startDate, endDate, cashMutations, signer, projectName, branding: rawBranding, filterSummary, customTitle, customNotes, selectedColumns } = params;
+  const { docId, startDate, endDate, cashMutations, signer, projectName, branding: rawBranding, filterSummary, customTitle, customNotes, selectedColumns, orientation: requestedOrientation } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
   const doc = new jsPDF({
-    orientation: 'portrait',
+    orientation: requestedOrientation || 'portrait',
     unit: 'mm',
     format: 'a4',
   });
@@ -825,6 +981,7 @@ export async function generateBOQReportPDF(params: {
   customTitle?: string;
   customNotes?: string;
   selectedColumns?: string[];
+  orientation?: 'portrait' | 'landscape';
 }): Promise<DokumenLaporan> {
   const {
     docId,
@@ -837,11 +994,12 @@ export async function generateBOQReportPDF(params: {
     hideFinancials = false,
     customTitle,
     customNotes,
-    selectedColumns
+    selectedColumns,
+    orientation: requestedOrientation
   } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
   const doc = new jsPDF({
-    orientation: 'landscape',
+    orientation: requestedOrientation || 'landscape',
     unit: 'mm',
     format: 'a4',
   });
@@ -1204,6 +1362,7 @@ export async function generateWarehouseSummaryPDF(params: {
   branding?: TenantBranding;
   selectedColumns?: string[];
   providerScope?: 'ALL' | 'KONTRAKTOR' | 'IMK';
+  orientation?: 'portrait' | 'landscape';
 }): Promise<DokumenLaporan> {
   const {
     docId,
@@ -1216,13 +1375,14 @@ export async function generateWarehouseSummaryPDF(params: {
     stockMutations = [],
     branding: rawBranding,
     selectedColumns,
-    providerScope = 'ALL'
+    providerScope = 'ALL',
+    orientation: requestedOrientation
   } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
   const providerLabels = { contractorName: b.contractorName, clientName: b.clientName };
 
   const doc = new jsPDF({
-    orientation: 'landscape',
+    orientation: requestedOrientation || 'landscape',
     unit: 'mm',
     format: 'a4',
   });

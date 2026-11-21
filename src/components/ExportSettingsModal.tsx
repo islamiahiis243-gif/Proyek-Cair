@@ -56,6 +56,7 @@ export interface ExportSettingsConfig {
   sortConfig: ExportSortConfig;
   customTitle?: string;
   customNotes?: string;
+  orientation?: 'portrait' | 'landscape';
 }
 
 export interface ExportSettingsModalProps {
@@ -215,7 +216,8 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
   const [sortKey, setSortKey] = useState<string>('default');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
-  // State 5: Kop Dokumen & Catatan Kaki
+  // State 5: Kop Dokumen, Orientasi & Catatan Kaki
+  const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
   const [customTitle, setCustomTitle] = useState<string>('');
   const [customNotes, setCustomNotes] = useState<string>('');
   const [activeProfile, setActiveProfile] = useState<string>('MANAJEMEN_FULL');
@@ -344,7 +346,8 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
           dir: sortDir
         },
         customTitle: customTitle.trim() || undefined,
-        customNotes: customNotes.trim() || undefined
+        customNotes: customNotes.trim() || undefined,
+        orientation
       });
       onClose();
     } catch (err) {
@@ -754,6 +757,46 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
                   </div>
                 );
               })}
+            </div>
+
+            {/* Pilihan Orientasi Kertas PDF */}
+            <div className="rounded-xl p-3 border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-2">
+              <div>
+                <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <Columns3 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  <span>Orientasi Halaman PDF:</span>
+                </span>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  {orientation === 'landscape'
+                    ? 'Lanskap (Mendatar · 297mm) — Tabel sangat lega, bebas terpotong, dan rapi untuk multi-kolom.'
+                    : 'Potret (Tegak · 210mm) — Format standar dokumen vertikal.'}
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setOrientation('landscape')}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    orientation === 'landscape'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 ring-1 ring-blue-500 shadow-xs'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <span>⬌ Lanskap</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 font-bold">Rekomendasi</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrientation('portrait')}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    orientation === 'portrait'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 ring-1 ring-blue-500 shadow-xs'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <span>⬍ Potret</span>
+                </button>
+              </div>
             </div>
           </div>
 
