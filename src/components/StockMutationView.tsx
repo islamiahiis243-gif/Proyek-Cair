@@ -1076,7 +1076,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         signer: user || undefined,
         preserveOrder: true,
         filterSummary: `${providerLabel} · ${statusLabel}${searchPart} · ${sortLabel}`,
-        branding: tenantBranding
+        branding: tenantBranding,
+        hideFinancials: activeRole === 'Viewer/Pengamat'
       });
       setNoticeMessage(`PDF Realisasi BOQ (${visibleItems.length} pos sesuai sortir layar) berhasil diunduh.`);
     } catch (err: any) {
@@ -1585,29 +1586,65 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 </div>
 
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-3.5">
-                  <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
-                    <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider">1. Material Kontrak</span>
-                    <div className="mt-1 text-base sm:text-lg font-black text-blue-400 font-mono">{formatRupiah(boqMetrics.contractMaterialTotal)}</div>
-                    <span className="text-[10px] text-slate-300">Tanggungan {tenantBranding.contractorName}</span>
-                  </div>
+                  {activeRole === 'Viewer/Pengamat' ? (
+                    <>
+                      <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
+                        <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider">1. Pos Material Kontrak</span>
+                        <div className="mt-1 text-base sm:text-lg font-black text-blue-400 font-mono">
+                          {items.filter(it => !isClientProvidedRemark(it.keterangan, tenantBranding.clientName) && it.satuan !== 'ls').length} Pos
+                        </div>
+                        <span className="text-[10px] text-slate-300">Tanggungan {tenantBranding.contractorName}</span>
+                      </div>
 
-                  <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
-                    <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider">2. Upah & Jasa (Manpower)</span>
-                    <div className="mt-1 text-base sm:text-lg font-black text-emerald-400 font-mono">{formatRupiah(boqMetrics.contractManpowerTotal)}</div>
-                    <span className="text-[10px] text-slate-300">Jasa & Tenaga Kerja</span>
-                  </div>
+                      <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
+                        <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider">2. Pos Upah & Jasa</span>
+                        <div className="mt-1 text-base sm:text-lg font-black text-emerald-400 font-mono">
+                          {items.filter(it => (it.kategori || '').toLowerCase().includes('manpower') || (it.kategori || '').toLowerCase().includes('upah') || it.satuan === 'ls').length} Pos
+                        </div>
+                        <span className="text-[10px] text-slate-300">Jasa & Tenaga Kerja</span>
+                      </div>
 
-                  <div className="bg-amber-500/10 dark:bg-amber-500/[0.08] p-3 rounded-xl border border-amber-500/30">
-                    <span className="text-[10px] uppercase font-bold text-amber-300 tracking-wider">3. Grand Total Kontrak</span>
-                    <div className="mt-1 text-base sm:text-lg font-black text-amber-300 font-mono">{formatRupiah(boqMetrics.contractGrandTotal)}</div>
-                    <span className="text-[10px] text-amber-200/90 font-medium">Total Nilai BOQ Kontraktor</span>
-                  </div>
+                      <div className="bg-amber-500/10 dark:bg-amber-500/[0.08] p-3 rounded-xl border border-amber-500/30">
+                        <span className="text-[10px] uppercase font-bold text-amber-300 tracking-wider">3. Total Ruang Lingkup</span>
+                        <div className="mt-1 text-base sm:text-lg font-black text-amber-300 font-mono">{items.length} Pos BOQ</div>
+                        <span className="text-[10px] text-amber-200/90 font-medium">Seluruh Pos Pelaksanaan</span>
+                      </div>
 
-                  <div className="bg-purple-950/50 p-3 rounded-xl border border-purple-800/40">
-                    <span className="text-[10px] uppercase font-bold text-purple-300 tracking-wider">Free-Issue Klien ({tenantBranding.clientName})</span>
-                    <div className="mt-1 text-base sm:text-lg font-black text-purple-300 font-mono">{formatRupiah(boqMetrics.clientFreeIssueTotal)}</div>
-                    <span className="text-[10px] text-purple-200">Disediakan Klien (Beban Kontraktor: Rp 0)</span>
-                  </div>
+                      <div className="bg-purple-950/50 p-3 rounded-xl border border-purple-800/40">
+                        <span className="text-[10px] uppercase font-bold text-purple-300 tracking-wider">Free-Issue Klien ({tenantBranding.clientName})</span>
+                        <div className="mt-1 text-base sm:text-lg font-black text-purple-300 font-mono">
+                          {items.filter(it => isClientProvidedRemark(it.keterangan, tenantBranding.clientName)).length} Pos
+                        </div>
+                        <span className="text-[10px] text-purple-200">Material Disediakan Klien</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
+                        <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider">1. Material Kontrak</span>
+                        <div className="mt-1 text-base sm:text-lg font-black text-blue-400 font-mono">{formatRupiah(boqMetrics.contractMaterialTotal)}</div>
+                        <span className="text-[10px] text-slate-300">Tanggungan {tenantBranding.contractorName}</span>
+                      </div>
+
+                      <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
+                        <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider">2. Upah & Jasa (Manpower)</span>
+                        <div className="mt-1 text-base sm:text-lg font-black text-emerald-400 font-mono">{formatRupiah(boqMetrics.contractManpowerTotal)}</div>
+                        <span className="text-[10px] text-slate-300">Jasa & Tenaga Kerja</span>
+                      </div>
+
+                      <div className="bg-amber-500/10 dark:bg-amber-500/[0.08] p-3 rounded-xl border border-amber-500/30">
+                        <span className="text-[10px] uppercase font-bold text-amber-300 tracking-wider">3. Grand Total Kontrak</span>
+                        <div className="mt-1 text-base sm:text-lg font-black text-amber-300 font-mono">{formatRupiah(boqMetrics.contractGrandTotal)}</div>
+                        <span className="text-[10px] text-amber-200/90 font-medium">Total Nilai BOQ Kontraktor</span>
+                      </div>
+
+                      <div className="bg-purple-950/50 p-3 rounded-xl border border-purple-800/40">
+                        <span className="text-[10px] uppercase font-bold text-purple-300 tracking-wider">Free-Issue Klien ({tenantBranding.clientName})</span>
+                        <div className="mt-1 text-base sm:text-lg font-black text-purple-300 font-mono">{formatRupiah(boqMetrics.clientFreeIssueTotal)}</div>
+                        <span className="text-[10px] text-purple-200">Disediakan Klien (Beban Kontraktor: Rp 0)</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1838,9 +1875,11 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                                 </div>
                                                 {isImk ? (
                                                   <div className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">
-                                                    Beban Kontraktor: Rp 0 (Disediakan Klien {tenantBranding.clientName})
+                                                    {activeRole === 'Viewer/Pengamat'
+                                                      ? `Material Disediakan Klien (${tenantBranding.clientName})`
+                                                      : `Beban Kontraktor: Rp 0 (Disediakan Klien ${tenantBranding.clientName})`}
                                                   </div>
-                                                ) : (
+                                                ) : activeRole === 'Viewer/Pengamat' ? null : (
                                                   <div className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">
                                                     {formatRupiah(item.harga_satuan)} / {item.satuan}
                                                     <span className="ml-1 font-semibold text-slate-700 dark:text-slate-200">

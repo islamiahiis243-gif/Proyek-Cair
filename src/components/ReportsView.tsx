@@ -22,9 +22,10 @@ import {
 } from '../lib/pdfGenerator';
 
 export const ReportsView: React.FC = () => {
-  const { stockMutations, physicalMaterials, cashMutations, documents, activeProject, activeWorkspaceId, user, setVerifyingDocId, setCurrentView, dataReady, dataError, refreshData, tenantBranding } = useApp();
-  const canReadStock=Boolean(activeProject?.permissions.includes('inventory.read'));
-  const canReadCash=Boolean(activeProject?.permissions.includes('cash.read'));
+  const { stockMutations, physicalMaterials, cashMutations, documents, activeProject, activeWorkspaceId, user, setVerifyingDocId, setCurrentView, dataReady, dataError, refreshData, tenantBranding, activeRole } = useApp();
+  const isViewer = activeRole === 'Viewer/Pengamat';
+  const canReadStock = Boolean(activeProject?.permissions.includes('inventory.read'));
+  const canReadCash = !isViewer && Boolean(activeProject?.permissions.includes('cash.read'));
   const canReadDocuments=Boolean(activeProject?.permissions.includes('document.read'));
   const canVerifyPrivateDocument=Boolean(activeProject?.permissions.includes('document.qr.scan')&&activeProject?.permissions.includes('document.qr.verify'));
 
@@ -202,35 +203,37 @@ export const ReportsView: React.FC = () => {
                 </div>
               </button>
 
-              <button
-                type="button"
-                disabled={!canReadCash}
-                title={!canReadCash?'Permission cash.read diperlukan':''}
-                onClick={() => setReportType('cash')}
-                className={`p-4 rounded-xl border text-left transition-all flex items-start gap-3 ${
-                  reportType === 'cash'
-                    ? 'border-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/40 dark:border-emerald-500 ring-2 ring-emerald-500/20'
-                    : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-                }`}
-              >
-                <div
-                  className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+              {!isViewer && (
+                <button
+                  type="button"
+                  disabled={!canReadCash}
+                  title={!canReadCash?'Permission cash.read diperlukan':''}
+                  onClick={() => setReportType('cash')}
+                  className={`p-4 rounded-xl border text-left transition-all flex items-start gap-3 ${
                     reportType === 'cash'
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
+                      ? 'border-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/40 dark:border-emerald-500 ring-2 ring-emerald-500/20'
+                      : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60'
                   }`}
                 >
-                  <WalletCards className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-900 dark:text-white">
-                    Laporan Mutasi Kas Keuangan Proyek
+                  <div
+                    className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                      reportType === 'cash'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
+                    }`}
+                  >
+                    <WalletCards className="w-5 h-5" />
                   </div>
-                  <div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium mt-1">
-                    Buku kas mutasi: Kas masuk (IN), Kas keluar (OUT), peruntukan belanja ("Untuk Apa"), dan saldo kas berjalan.
+                  <div>
+                    <div className="text-xs font-bold text-slate-900 dark:text-white">
+                      Laporan Mutasi Kas Keuangan Proyek
+                    </div>
+                    <div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium mt-1">
+                      Buku kas mutasi: Kas masuk (IN), Kas keluar (OUT), peruntukan belanja ("Untuk Apa"), dan saldo kas berjalan.
+                    </div>
                   </div>
-                </div>
-              </button>
+                </button>
+              )}
             </div>
           </div>
 

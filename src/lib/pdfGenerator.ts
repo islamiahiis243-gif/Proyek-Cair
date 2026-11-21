@@ -692,6 +692,7 @@ export async function generateBOQReportPDF(params: {
   preserveOrder?: boolean;
   filterSummary?: string;
   branding?: TenantBranding;
+  hideFinancials?: boolean;
 }): Promise<DokumenLaporan> {
   const {
     docId,
@@ -700,7 +701,8 @@ export async function generateBOQReportPDF(params: {
     signer,
     preserveOrder = false,
     filterSummary,
-    branding: rawBranding
+    branding: rawBranding,
+    hideFinancials = false
   } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
   const doc = new jsPDF({
@@ -748,41 +750,81 @@ export async function generateBOQReportPDF(params: {
   });
   const contractTotal = contractMaterial + contractManpower;
 
-  // Kotak Ringkasan Nilai Kontrak Dinamis
+  // Kotak Ringkasan Dokumen (Finansial vs Fisik Lapangan)
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(203, 213, 225);
   doc.roundedRect(14, 48, pageWidth - 28, 14, 2, 2, 'FD');
 
-  doc.setFontSize(7);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(30, 41, 59);
-  doc.text(`NILAI KONTRAK (${b.contractorName.toUpperCase()}):`, 18, 53);
+  if (hideFinancials) {
+    const matItemsCount = items.filter(it => !isClientProvidedRemark(it.keterangan, b.clientName) && it.satuan !== 'ls').length;
+    const manItemsCount = items.filter(it => {
+      const catUpper = (it.kategori || '').toUpperCase();
+      return !it.is_stock_item || catUpper.startsWith('IV') || catUpper.includes('JASA') || catUpper.includes('UPAH') || it.satuan === 'ls';
+    }).length;
+    const clientItemsCount = items.filter(it => isClientProvidedRemark(it.keterangan, b.clientName)).length;
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.text('Material Kontrak:', 18, 58);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(37, 99, 235);
-  doc.text(formatRupiah(contractMaterial), 45, 58);
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text(`RINGKASAN FISIK BOQ (${b.contractorName.toUpperCase()}):`, 18, 53);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(30, 41, 59);
-  doc.text('Upah & Jasa (Manpower):', 80, 58);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(16, 185, 129);
-  doc.text(formatRupiah(contractManpower), 120, 58);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text('Pos Material:', 18, 58);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(37, 99, 235);
+    doc.text(`${matItemsCount} Pos`, 40, 58);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(30, 41, 59);
-  doc.text('GRAND TOTAL KONTRAK:', 160, 58);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text(formatRupiah(contractTotal), 205, 58);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(30, 41, 59);
+    doc.text('Pos Upah & Jasa:', 70, 58);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(16, 185, 129);
+    doc.text(`${manItemsCount} Pos`, 100, 58);
 
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(6.5);
-  doc.setTextColor(126, 34, 206);
-  doc.text(`* Pengadaan Klien (Free-Issue ${b.clientName}): ${formatRupiah(clientFreeIssue)} (Beban Kontraktor: Rp 0)`, pageWidth - 18, 53, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(30, 41, 59);
+    doc.text('TOTAL RUANG LINGKUP:', 135, 58);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${items.length} Pos Pekerjaan`, 175, 58);
+
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(6.5);
+    doc.setTextColor(126, 34, 206);
+    doc.text(`* Material Klien (Free-Issue ${b.clientName}): ${clientItemsCount} Pos`, pageWidth - 18, 53, { align: 'right' });
+  } else {
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text(`NILAI KONTRAK (${b.contractorName.toUpperCase()}):`, 18, 53);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text('Material Kontrak:', 18, 58);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(37, 99, 235);
+    doc.text(formatRupiah(contractMaterial), 45, 58);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(30, 41, 59);
+    doc.text('Upah & Jasa (Manpower):', 80, 58);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(16, 185, 129);
+    doc.text(formatRupiah(contractManpower), 120, 58);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(30, 41, 59);
+    doc.text('GRAND TOTAL KONTRAK:', 160, 58);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(formatRupiah(contractTotal), 205, 58);
+
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(6.5);
+    doc.setTextColor(126, 34, 206);
+    doc.text(`* Pengadaan Klien (Free-Issue ${b.clientName}): ${formatRupiah(clientFreeIssue)} (Beban Kontraktor: Rp 0)`, pageWidth - 18, 53, { align: 'right' });
+  }
 
   // Siapkan Data Tabel Berdasarkan Hierarki (pertahankan urutan layar bila preserveOrder = true)
   const sortedItems = preserveOrder
@@ -792,6 +834,7 @@ export async function generateBOQReportPDF(params: {
   const tableData: any[] = [];
   let currentDivision = '';
   let currentSubSection = '';
+  const totalColSpan = hideFinancials ? 7 : 9;
 
   sortedItems.forEach((it) => {
     const isClientItem = isClientProvidedRemark(it.keterangan, b.clientName);
@@ -804,7 +847,7 @@ export async function generateBOQReportPDF(params: {
       tableData.push([
         {
           content: currentDivision,
-          colSpan: 9,
+          colSpan: totalColSpan,
           styles: { fillColor: [254, 240, 138], fontStyle: 'bold', textColor: [113, 63, 18], fontSize: 7.5 }
         }
       ]);
@@ -815,34 +858,71 @@ export async function generateBOQReportPDF(params: {
       tableData.push([
         {
           content: `  ${currentSubSection}`,
-          colSpan: 9,
+          colSpan: totalColSpan,
           styles: { fillColor: [220, 252, 231], fontStyle: 'bold', textColor: [20, 83, 45], fontSize: 7 }
         }
       ]);
     }
 
-    const hargaSatuanText = isClientItem ? '0 (By Klien)' : formatRupiah(it.harga_satuan);
-    const totalHargaText = isClientItem ? '0 (By Klien)' : formatRupiah(it.harga_satuan * it.qty_boq);
     const providerText = isClientItem ? b.clientName : b.contractorName;
 
-    tableData.push([
-      it.kode_boq || '-',
-      it.nama_barang,
-      providerText,
-      `${it.qty_boq.toLocaleString('id-ID')} ${it.satuan}`,
-      hargaSatuanText,
-      totalHargaText,
-      `${it.qty_masuk_total.toLocaleString('id-ID')} ${it.satuan}`,
-      `${it.qty_pemenuhan_sisa.toLocaleString('id-ID')} ${it.satuan}`,
-      it.status_pemenuhan
-    ]);
+    if (hideFinancials) {
+      tableData.push([
+        it.kode_boq || '-',
+        it.nama_barang,
+        providerText,
+        `${it.qty_boq.toLocaleString('id-ID')} ${it.satuan}`,
+        `${it.qty_masuk_total.toLocaleString('id-ID')} ${it.satuan}`,
+        `${it.qty_pemenuhan_sisa.toLocaleString('id-ID')} ${it.satuan}`,
+        it.status_pemenuhan
+      ]);
+    } else {
+      const hargaSatuanText = isClientItem ? '0 (By Klien)' : formatRupiah(it.harga_satuan);
+      const totalHargaText = isClientItem ? '0 (By Klien)' : formatRupiah(it.harga_satuan * it.qty_boq);
+
+      tableData.push([
+        it.kode_boq || '-',
+        it.nama_barang,
+        providerText,
+        `${it.qty_boq.toLocaleString('id-ID')} ${it.satuan}`,
+        hargaSatuanText,
+        totalHargaText,
+        `${it.qty_masuk_total.toLocaleString('id-ID')} ${it.satuan}`,
+        `${it.qty_pemenuhan_sisa.toLocaleString('id-ID')} ${it.satuan}`,
+        it.status_pemenuhan
+      ]);
+    }
   });
+
+  const tableHeaders = hideFinancials
+    ? [['Kode BOQ', 'Uraian Material / Pekerjaan', 'Penyedia', 'Target BOQ', 'Realisasi Masuk', 'Sisa Belum Tiba', 'Status']]
+    : [['Kode BOQ', 'Uraian Material / Pekerjaan', 'Penyedia', 'Target BOQ', 'Harga Satuan (Rp)', 'Total Kontrak (Rp)', 'Realisasi Masuk', 'Sisa Belum Tiba', 'Status']];
+
+  const columnStylesConfig: any = hideFinancials
+    ? {
+        0: { cellWidth: 24 },
+        1: { cellWidth: 105 },
+        2: { cellWidth: 32, halign: 'center' },
+        3: { cellWidth: 28, halign: 'right' },
+        4: { cellWidth: 28, halign: 'right' },
+        5: { cellWidth: 28, halign: 'right' },
+        6: { cellWidth: 25, halign: 'center' },
+      }
+    : {
+        0: { cellWidth: 20 },
+        1: { cellWidth: 70 },
+        2: { cellWidth: 24, halign: 'center' },
+        3: { cellWidth: 24, halign: 'right' },
+        4: { cellWidth: 28, halign: 'right' },
+        5: { cellWidth: 32, halign: 'right' },
+        6: { cellWidth: 24, halign: 'right' },
+        7: { cellWidth: 24, halign: 'right' },
+        8: { cellWidth: 23, halign: 'center' },
+      };
 
   autoTable(doc, {
     startY: 65,
-    head: [
-      ['Kode BOQ', 'Uraian Material / Pekerjaan', 'Penyedia', 'Target BOQ', 'Harga Satuan (Rp)', 'Total Kontrak (Rp)', 'Realisasi Masuk', 'Sisa Belum Tiba', 'Status']
-    ],
+    head: tableHeaders,
     body: tableData,
     theme: 'grid',
     headStyles: {
@@ -855,17 +935,7 @@ export async function generateBOQReportPDF(params: {
       fontSize: 6,
       cellPadding: 1.5,
     },
-    columnStyles: {
-      0: { cellWidth: 20 },
-      1: { cellWidth: 70 },
-      2: { cellWidth: 24, halign: 'center' },
-      3: { cellWidth: 24, halign: 'right' },
-      4: { cellWidth: 28, halign: 'right' },
-      5: { cellWidth: 32, halign: 'right' },
-      6: { cellWidth: 24, halign: 'right' },
-      7: { cellWidth: 24, halign: 'right' },
-      8: { cellWidth: 23, halign: 'center' },
-    },
+    columnStyles: columnStylesConfig,
     margin: { left: 14, right: 14 },
   });
 

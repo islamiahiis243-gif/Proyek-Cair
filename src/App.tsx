@@ -17,7 +17,7 @@ import { AuthGate } from './components/AuthGate';
 import { ItemBarang, JenisMutasiBarang, JenisMutasiKas } from './types';
 
 const MainApp: React.FC = () => {
-  const { currentView, appMode } = useApp();
+  const { currentView, appMode, activeRole } = useApp();
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
   const [preselectedStockItem, setPreselectedStockItem] = useState<ItemBarang | null>(null);
   const [preselectedStockType, setPreselectedStockType] = useState<JenisMutasiBarang>('MASUK');
@@ -76,11 +76,19 @@ const MainApp: React.FC = () => {
                   preselectedType={preselectedStockType}
                 />
               )}
-              {currentView === 'cashflow' && (
+              {currentView === 'cashflow' && activeRole !== 'Viewer/Pengamat' && (
                 <CashflowView
                   isModalOpen={isCashModalOpen}
                   setIsModalOpen={setIsCashModalOpen}
                   defaultType={preselectedCashType}
+                />
+              )}
+              {currentView === 'cashflow' && activeRole === 'Viewer/Pengamat' && (
+                <StockMutationView
+                  isModalOpen={isStockModalOpen}
+                  setIsModalOpen={setIsStockModalOpen}
+                  preselectedItem={preselectedStockItem}
+                  preselectedType={preselectedStockType}
                 />
               )}
               {/* Di Mode Impersonate tidak ada Settings; jika diarahkan ke settings, tampilkan dashboard */}

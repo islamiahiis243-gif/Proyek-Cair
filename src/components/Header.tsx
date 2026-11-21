@@ -500,8 +500,8 @@ export const Header: React.FC = () => {
 
       {/* Bagian Kanan: Saldo Kas, Tema & Akun */}
       <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-        {/* Saldo Kas (Hanya relevan di mode operasional) */}
-        {appMode === 'IMPERSONATE' && (
+        {/* Saldo Kas (Hanya relevan di mode operasional dan bukan untuk jabatan Pengamat) */}
+        {appMode === 'IMPERSONATE' && activeRole !== 'Viewer/Pengamat' && (
           <div className="hidden lg:flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs min-w-[135px] justify-between">
             <div className="flex items-center gap-1.5">
               <Wallet className="w-3.5 h-3.5 text-emerald-400 shrink-0" />

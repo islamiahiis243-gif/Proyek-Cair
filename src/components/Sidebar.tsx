@@ -109,7 +109,9 @@ export const Sidebar: React.FC = () => {
         icon: Boxes,
         badge: outOfStockCount > 0 ? `${outOfStockCount} Kosong` : null
       },
-      { id: 'cashflow', label: 'Modul Mutasi Dana', icon: WalletCards }
+      ...(activeRole !== 'Viewer/Pengamat'
+        ? [{ id: 'cashflow' as const, label: 'Modul Mutasi Dana', icon: WalletCards }]
+        : [])
     ];
   }
 

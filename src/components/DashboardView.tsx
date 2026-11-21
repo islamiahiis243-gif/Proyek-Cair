@@ -41,7 +41,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     availableStockCount,
     setCurrentView,
     tenantBranding,
+    activeRole,
   } = useApp();
+
+  const isViewer = activeRole === 'Viewer/Pengamat';
 
   // Cash stats
   const totalCashIn = cashMutations
@@ -186,50 +189,80 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       )}
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Saldo Kas */}
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
-          <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
-            <span className="text-xs font-semibold uppercase tracking-wider">Saldo Kas Proyek</span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <WalletCards className="w-4 h-4" />
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isViewer ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-4`}>
+        {/* Card 1: Saldo Kas (Disembunyikan sepenuhnya untuk Viewer/Pengamat) */}
+        {!isViewer && (
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+            <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
+              <span className="text-xs font-semibold uppercase tracking-wider">Saldo Kas Proyek</span>
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                <WalletCards className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2 text-2xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
+              {cashAccess?formatRupiah(currentCashBalance):'Akses terbatas'}
+            </div>
+            <div className="mt-2 flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300 font-medium border-t border-slate-100 dark:border-slate-800 pt-2">
+              <span>Masuk: {cashAccess?formatRupiah(totalCashIn):'—'}</span>
+              <span>Keluar: {cashAccess?formatRupiah(totalCashOut):'—'}</span>
             </div>
           </div>
-          <div className="mt-2 text-2xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
-            {cashAccess?formatRupiah(currentCashBalance):'Akses terbatas'}
-          </div>
-          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300 font-medium border-t border-slate-100 dark:border-slate-800 pt-2">
-            <span>Masuk: {cashAccess?formatRupiah(totalCashIn):'—'}</span>
-            <span>Keluar: {cashAccess?formatRupiah(totalCashOut):'—'}</span>
-          </div>
-        </div>
+        )}
 
-        {/* Card 2: Nilai Kontrak Pelaksanaan (Dinamis sesuai proyek aktif) */}
-        <div
-          onClick={() => setCurrentView('stock-mutations')}
-          className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:border-blue-400 dark:hover:border-blue-600 cursor-pointer group"
-          title="Klik untuk membuka Modul Mutasi Barang & Pemantauan BOQ"
-        >
-          <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
-            <span className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1">
-              <span>Nilai Kontrak Pelaksanaan</span>
-              <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-              <Boxes className="w-4 h-4" />
+        {/* Card 2: Ruang Lingkup BOQ (Fisik untuk Viewer, Finansial Kontrak untuk Non-Viewer) */}
+        {isViewer ? (
+          <div
+            onClick={() => setCurrentView('stock-mutations')}
+            className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:border-cyan-400 dark:hover:border-cyan-600 cursor-pointer group"
+            title="Klik untuk membuka Modul Mutasi Barang & Pemantauan BOQ"
+          >
+            <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
+              <span className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 flex items-center gap-1">
+                <span>Ruang Lingkup Fisik BOQ</span>
+                <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-cyan-50 dark:bg-cyan-950/50 text-cyan-600 dark:text-cyan-400 flex items-center justify-center">
+                <Boxes className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2 text-2xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
+              {items.length} Pos
+            </div>
+            <div className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+              Material: <span className="font-semibold text-slate-800 dark:text-slate-200">{items.filter(it => !isClientProvidedRemark(it.keterangan, tenantBranding.clientName) && it.satuan !== 'ls').length} Pos</span> · Upah: <span className="font-semibold text-slate-800 dark:text-slate-200">{items.filter(it => (it.kategori || '').toLowerCase().includes('manpower') || (it.kategori || '').toLowerCase().includes('upah') || it.satuan === 'ls').length} Pos</span>
+            </div>
+            <div className="mt-2 flex items-center justify-between text-[10px] text-purple-600 dark:text-purple-400 border-t border-slate-100 dark:border-slate-800 pt-2 font-medium">
+              <span>+ Aset Klien ({tenantBranding.clientName}): {imkItemCount} Pos Material</span>
+              <span className="text-slate-600 dark:text-slate-300 font-normal">Fokus Fisik Lapangan</span>
             </div>
           </div>
-          <div className="mt-2 text-2xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
-            {formatRupiah(contractStats.total)}
+        ) : (
+          <div
+            onClick={() => setCurrentView('stock-mutations')}
+            className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:border-blue-400 dark:hover:border-blue-600 cursor-pointer group"
+            title="Klik untuk membuka Modul Mutasi Barang & Pemantauan BOQ"
+          >
+            <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
+              <span className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                <span>Nilai Kontrak Pelaksanaan</span>
+                <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                <Boxes className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2 text-2xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
+              {formatRupiah(contractStats.total)}
+            </div>
+            <div className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+              Material: <span className="font-semibold text-slate-800 dark:text-slate-200">{formatRupiah(contractStats.material)}</span> · Upah: <span className="font-semibold text-slate-800 dark:text-slate-200">{formatRupiah(contractStats.manpower)}</span>
+            </div>
+            <div className="mt-2 flex items-center justify-between text-[10px] text-purple-600 dark:text-purple-400 border-t border-slate-100 dark:border-slate-800 pt-2 font-medium">
+              <span>+ Aset Klien ({tenantBranding.clientName}): {formatRupiah(contractStats.clientFreeIssue)}</span>
+              <span className="text-slate-600 dark:text-slate-300 font-normal">Bruto: {formatRupiah(contractStats.bruto)}</span>
+            </div>
           </div>
-          <div className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
-            Material: <span className="font-semibold text-slate-800 dark:text-slate-200">{formatRupiah(contractStats.material)}</span> · Upah: <span className="font-semibold text-slate-800 dark:text-slate-200">{formatRupiah(contractStats.manpower)}</span>
-          </div>
-          <div className="mt-2 flex items-center justify-between text-[10px] text-purple-600 dark:text-purple-400 border-t border-slate-100 dark:border-slate-800 pt-2 font-medium">
-            <span>+ Aset Klien ({tenantBranding.clientName}): {formatRupiah(contractStats.clientFreeIssue)}</span>
-            <span className="text-slate-600 dark:text-slate-300 font-normal">Bruto: {formatRupiah(contractStats.bruto)}</span>
-          </div>
-        </div>
+        )}
 
         {/* Card 3: Pos Pemenuhan BOQ */}
         <div
@@ -270,17 +303,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
           <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
-            {stockMutations.length + cashMutations.length}
+            {isViewer ? stockMutations.length : stockMutations.length + cashMutations.length}
           </div>
           <div className="mt-2 flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300 font-medium border-t border-slate-100 dark:border-slate-800 pt-2">
             <span>Stok: {stockMutations.length} trx</span>
-            <span>Kas: {cashMutations.length} trx</span>
+            {!isViewer && <span>Kas: {cashMutations.length} trx</span>}
           </div>
         </div>
       </div>
 
       {/* Two-Column Analytics: Recent Stock vs Recent Cash Mutations */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className={`grid grid-cols-1 ${isViewer ? 'lg:grid-cols-1' : 'lg:grid-cols-2'} gap-6`}>
         {/* Left: Recent Stock Mutations */}
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col transition-colors">
           <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
@@ -348,72 +381,74 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Right: Recent Cash Mutations (Kas Masuk/Keluar/Untuk Apa/Saldo) */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col transition-colors">
-          <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <WalletCards className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white">Buku Mutasi Kas Terkini</h2>
-            </div>
-            <button
-              onClick={() => setCurrentView('cashflow')}
-              className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 flex items-center gap-1"
-            >
-              <span>Lihat Semua</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          <div className="divide-y divide-slate-100 dark:divide-slate-800 flex-1">
-            {cashMutations.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-600 dark:text-slate-300 font-medium">
-                {cashAccess?'Belum ada transaksi kas.':'Data kas tidak tersedia untuk role akun ini.'}
+        {/* Right: Recent Cash Mutations (Kas Masuk/Keluar/Untuk Apa/Saldo) - Disembunyikan untuk Viewer */}
+        {!isViewer && (
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col transition-colors">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <WalletCards className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">Buku Mutasi Kas Terkini</h2>
               </div>
-            ) : (
-              cashMutations.slice(0, 5).map((c) => (
-                <div key={c.id} className="p-3.5 hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-between gap-3">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${
-                        c.jenis === 'MASUK'
-                          ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                          : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
-                      }`}
-                    >
-                      {c.jenis === 'MASUK' ? 'IN' : 'OUT'}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
-                        {c.untuk_apa}
-                      </div>
-                      <div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium mt-0.5 flex items-center gap-2">
-                        <span>{c.kategori_keperluan}</span>
-                        <span>·</span>
-                        <span>PIC: {c.pic}</span>
-                      </div>
-                      <div className="text-[10px] text-slate-600 dark:text-slate-300 mt-0.5">
-                        {formatDateTime(c.tanggal)}
-                      </div>
-                    </div>
-                  </div>
+              <button
+                onClick={() => setCurrentView('cashflow')}
+                className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 flex items-center gap-1"
+              >
+                <span>Lihat Semua</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
 
-                  <div className="text-right shrink-0">
-                    <div
-                      className={`text-xs font-bold font-mono tabular-nums ${
-                        c.jenis === 'MASUK' ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'
-                      }`}
-                    >
-                      {c.jenis === 'MASUK' ? '+' : '-'} {formatRupiah(c.jumlah_rp)}
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 flex-1">
+              {cashMutations.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-600 dark:text-slate-300 font-medium">
+                  {cashAccess?'Belum ada transaksi kas.':'Data kas tidak tersedia untuk role akun ini.'}
+                </div>
+              ) : (
+                cashMutations.slice(0, 5).map((c) => (
+                  <div key={c.id} className="p-3.5 hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${
+                          c.jenis === 'MASUK'
+                            ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                            : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
+                        }`}
+                      >
+                        {c.jenis === 'MASUK' ? 'IN' : 'OUT'}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
+                          {c.untuk_apa}
+                        </div>
+                        <div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium mt-0.5 flex items-center gap-2">
+                          <span>{c.kategori_keperluan}</span>
+                          <span>·</span>
+                          <span>PIC: {c.pic}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-600 dark:text-slate-300 mt-0.5">
+                          {formatDateTime(c.tanggal)}
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5 font-mono">
-                      Saldo: {formatRupiah(c.saldo_setelah)}
+
+                    <div className="text-right shrink-0">
+                      <div
+                        className={`text-xs font-bold font-mono tabular-nums ${
+                          c.jenis === 'MASUK' ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'
+                        }`}
+                      >
+                        {c.jenis === 'MASUK' ? '+' : '-'} {formatRupiah(c.jumlah_rp)}
+                      </div>
+                      <div className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5 font-mono">
+                        Saldo: {formatRupiah(c.saldo_setelah)}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
-            )}
+                ))
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Quick Export PDF Banner */}
