@@ -495,8 +495,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         disetujui_oleh: t.disetujui_oleh || undefined,
         mengetahui_oleh: t.mengetahui_oleh || undefined,
         tte_qr_code: t.tte_qr_code || undefined,
-        is_batal: Boolean(t.is_batal || isVoid),
-        is_ganti: Boolean(t.is_ganti),
+        is_batal: Boolean(t.is_batal || t.status_dokumen === 'BATAL' || reversedIds.has(t.id)),
+        is_ganti: Boolean(t.is_ganti || t.status_dokumen === 'DIGANTI'),
         referensi_ganti_id: t.referensi_ganti_id || undefined,
         alasan_batal_ganti: t.alasan_batal_ganti || undefined,
         harga_satuan_beli: t.harga_satuan_beli != null ? Number(t.harga_satuan_beli) : undefined,
@@ -1289,6 +1289,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const tenantBranding: TenantBranding = {
+    projectId: activeProjectId || activeProject?.id || '2506245e-ff3f-4313-b821-920ab368a5df',
     contractorName:
       activeProject?.company_name ||
       (activeCompany.id ? activeCompany.name : '') ||

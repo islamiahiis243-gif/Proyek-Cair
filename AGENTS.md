@@ -1,2 +1,3 @@
 Lanjutkan yang sudah ada, UI harus user friendly & intuitif, bernabasa 100% native indonesia yang tidak ambigu namun ringkas, ada ligth/dark, notificatin dan badget user.
 Sederhanakan/mudahkan bagi user bukan rumitkan karena kerumitan biarlah urusan sistem app di latar belakang. baik, snmart, canggih, multi POV, multi kepentingan pihak bukan berarti rumit bagi user karena kerumitan ditangani app.
+Guna mengurangi bolak-baik prompt ke AI builder/anda maka setiap  implementasi pastikan juga integrasinya dengan hal2 lainnya yang relevan/terimbas/terdampak/terkait/terkonsekuensi/ter-efek-domino di aplikasi ini

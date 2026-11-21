@@ -235,6 +235,7 @@ export interface BoqSection {
 }
 
 export interface TenantBranding {
+  projectId?: string;
   contractorName: string;
   contractorNpwp: string;
   contractorAddress?: string;

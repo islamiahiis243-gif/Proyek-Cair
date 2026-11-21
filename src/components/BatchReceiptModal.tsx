@@ -238,31 +238,33 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
       const nowIso = new Date().toISOString();
       const allSourceMutations = [...targetMutations, ...availablePendingMutations];
       const client = getSupabaseClient();
+      const isValidUuid = (val?: string) =>
+        typeof val === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
-      // 2. Proses tiap item: Nonaktifkan Baris Lama (is_ganti = true) dan Terbitkan Baris Baru
+      // 2. Proses tiap item: Terbitkan Baris Baru DULU, lalu Nonaktifkan Baris Lama (is_ganti = true)
       for (const row of itemRows) {
         const oldMutation = allSourceMutations.find((m) => m.id === row.mutationId);
         if (!oldMutation) continue;
 
         // A. Generate UUID untuk Baris Baru
         const newRowId = crypto.randomUUID();
+        const targetProjectId = isValidUuid(projectId)
+          ? projectId
+          : isValidUuid((oldMutation as any)?.project_id)
+          ? (oldMutation as any).project_id
+          : '2506245e-ff3f-4313-b821-920ab368a5df';
 
-        // B. Tandai Baris Lama sebagai DIGANTI
+        const targetWorkspaceId = isValidUuid((oldMutation as any)?.workspace_id)
+          ? (oldMutation as any).workspace_id
+          : '50e273d9-735a-4f75-8204-badab2929f3a';
+
         if (client) {
-          await client
-            .from('inventory_transactions')
-            .update({
-              is_ganti: true,
-              status_dokumen: 'DIGANTI',
-              referensi_ganti_id: newRowId,
-              alasan_batal_ganti: `Penyelarasan nota resmi ${cleanStoreName} No. ${cleanReceiptNo}`
-            })
-            .eq('id', oldMutation.id);
-
-          // C. Insert Baris Baru yang Sah
-          await client.from('inventory_transactions').insert({
+          // B. Insert Baris Baru yang Sah Terlebih Dahulu
+          const { error: insertError } = await client.from('inventory_transactions').insert({
             id: newRowId,
-            project_id: projectId || oldMutation.barang_id, // Gunakan project ID jika ada
+            project_id: targetProjectId,
+            workspace_id: targetWorkspaceId,
             item_id: oldMutation.barang_id,
             transaction_type: 'MASUK',
             quantity: row.qty,
@@ -289,6 +291,26 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
             is_ganti: false,
             referensi_ganti_id: oldMutation.id
           });
+
+          if (insertError) {
+            console.error('Gagal insert transaksi baru:', insertError);
+            throw new Error(`Gagal menyimpan baris transaksi pengganti (${oldMutation.nama_barang}): ${insertError.message}`);
+          }
+
+          // C. Tandai Baris Lama sebagai DIGANTI HANYA SETELAH baris baru berhasil
+          const { error: updateError } = await client
+            .from('inventory_transactions')
+            .update({
+              is_ganti: true,
+              status_dokumen: 'DIGANTI',
+              referensi_ganti_id: newRowId,
+              alasan_batal_ganti: `Penyelarasan nota resmi ${cleanStoreName} No. ${cleanReceiptNo}`
+            })
+            .eq('id', oldMutation.id);
+
+          if (updateError) {
+            console.error('Gagal update baris lama:', updateError);
+          }
         }
       }
 
@@ -296,7 +318,7 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
       await saveSupplierStore({
         nama_toko: cleanStoreName,
         telepon: storeContact.trim() || undefined,
-        project_id: projectId
+        project_id: isValidUuid(projectId) ? projectId : '2506245e-ff3f-4313-b821-920ab368a5df'
       });
 
       setSubmitProgress('Selesai!');

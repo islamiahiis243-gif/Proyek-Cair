@@ -37,7 +37,8 @@ import {
   Receipt,
   Paperclip,
   CheckSquare,
-  Square
+  Square,
+  ExternalLink
 } from 'lucide-react';
 import { formatDateTime, formatRupiah, generateBOQReportPDF, generateStockMutationPDF, generateWarehouseSummaryPDF } from '../lib/pdfGenerator';
 import {
@@ -96,6 +97,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   const [isReceiptViewerOpen, setIsReceiptViewerOpen] = useState<boolean>(false);
   const [viewerPrimaryMutation, setViewerPrimaryMutation] = useState<MutasiBarang | null>(null);
   const [viewerRelatedMutations, setViewerRelatedMutations] = useState<MutasiBarang[]>([]);
+
+  // State Navigasi Audit Trail & Sorot Baris
+  const [highlightedMutationId, setHighlightedMutationId] = useState<string | null>(null);
+  const [auditDetailMutation, setAuditDetailMutation] = useState<MutasiBarang | null>(null);
 
   const providerLabels = useMemo(
     () => ({
@@ -301,10 +306,15 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     const list = stockMutations.filter((m) => {
       const matchSearch =
         (m.nama_barang || '').toLowerCase().includes(q) ||
+        (m.nama_item_aktual || '').toLowerCase().includes(q) ||
         (m.tujuan_keperluan || '').toLowerCase().includes(q) ||
         (m.pic_penerima_penyerah || '').toLowerCase().includes(q) ||
         (m.source_name || '').toLowerCase().includes(q) ||
-        (m.nomor_surat_jalan && m.nomor_surat_jalan.toLowerCase().includes(q));
+        (m.nama_toko || '').toLowerCase().includes(q) ||
+        (m.nomor_nota || '').toLowerCase().includes(q) ||
+        (m.nomor_surat_jalan && m.nomor_surat_jalan.toLowerCase().includes(q)) ||
+        (m.id || '').toLowerCase().includes(q) ||
+        (m.referensi_ganti_id || '').toLowerCase().includes(q);
 
       let matchFilter = true;
       if (deferredFilterType === 'MASUK') matchFilter = m.jenis === 'MASUK';
@@ -788,6 +798,81 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       setSearchQuery(itemName);
       setFilterType('ALL');
     });
+  };
+
+  // Navigasi Interaktif Jejak Audit: Melompat langsung ke Baris Pengganti atau Baris Asal
+  const handleNavigateToMutation = (targetId: string) => {
+    const target = stockMutations.find((m) => m.id === targetId);
+    if (!target) {
+      setErrorMessage(`Transaksi mutasi dengan ID #${targetId.slice(0, 8)} tidak ditemukan.`);
+      return;
+    }
+
+    startTransition(() => {
+      setActiveTab('MUTATION_HISTORY');
+      if (filterType !== 'ALL' && filterType !== target.jenis) {
+        setFilterType('ALL');
+      }
+      // Jika kata kunci pencarian menyembunyikan target, bersihkan agar baris target terlihat
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesTarget =
+          (target.nama_barang || '').toLowerCase().includes(q) ||
+          (target.nama_item_aktual || '').toLowerCase().includes(q) ||
+          (target.nomor_nota || '').toLowerCase().includes(q) ||
+          target.id.toLowerCase().includes(q);
+        if (!matchesTarget) {
+          setSearchQuery('');
+        }
+      }
+    });
+
+    setHighlightedMutationId(targetId);
+
+    const isTargetActive = !target.is_batal && !target.is_ganti;
+    if (isTargetActive) {
+      setNoticeMessage(
+        `Menyorot baris transaksi sah pengganti #${target.id.slice(0, 6).toUpperCase()} (${target.nama_barang}) · Jumlah: ${target.jumlah} ${target.satuan}`
+      );
+    } else {
+      setNoticeMessage(
+        `Menyorot riwayat data asal #${target.id.slice(0, 6).toUpperCase()} (${target.nama_barang}) yang telah dinolkan/digantikan.`
+      );
+    }
+
+    setTimeout(() => {
+      const el = document.getElementById(`mutation-row-${targetId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 120);
+
+    setTimeout(() => {
+      setHighlightedMutationId((curr) => (curr === targetId ? null : curr));
+    }, 4500);
+  };
+
+  // Navigasi dari Badge BOQ ke Tab Realisasi BOQ
+  const handleNavigateToBoq = (barangId?: string, namaBarang?: string) => {
+    startTransition(() => {
+      setActiveTab('BOQ_MONITOR');
+      if (namaBarang) {
+        setBoqSearchQuery(namaBarang);
+      }
+      setBoqStatusFilter('ALL');
+      setBoqProviderFilter('ALL');
+    });
+
+    setNoticeMessage(`Beralih ke tab Realisasi BOQ untuk memantau pos: ${namaBarang || 'Material Terpilih'}`);
+
+    if (barangId) {
+      setTimeout(() => {
+        const el = document.getElementById(`boq-item-${barangId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 200);
+    }
   };
 
   // Badge Status Pos Pekerjaan BOQ (Khusus POV "Bedakan Keluar" per Pos Pekerjaan)
@@ -2181,6 +2266,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                           return (
                                             <tr
                                               key={item.id}
+                                              id={`boq-item-${item.id}`}
                                               className="hover:bg-slate-50/90 dark:hover:bg-slate-800/60 transition-colors bg-white dark:bg-slate-900"
                                             >
                                               <td className="py-2.5 px-3.5 font-mono text-[11px] font-bold text-slate-700 dark:text-slate-300">
@@ -2513,22 +2599,29 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                           const canCorrectRow = rolePermissions.canInitiateBatalGanti || rolePermissions.canInstructBatalGanti;
                           const rowDiscrepancy = analyzeIncomingProviderDiscrepancy(mut, physicalMaterials, stockMutations, providerLabels);
                           const isSelected = selectedMutationIds.includes(mut.id);
+                          const isHighlighted = highlightedMutationId === mut.id;
                           const canSelectForReceipt = mut.jenis === 'MASUK' && !isVoid && !isReplaced;
                           const hasReceiptAttachment = mut.lampiran_nota_urls && mut.lampiran_nota_urls.length > 0;
+                          const replacementMutation = mut.referensi_ganti_id
+                            ? stockMutations.find((m) => m.id === mut.referensi_ganti_id)
+                            : undefined;
 
                           return (
                             <tr
                               key={mut.id}
-                              className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors ${
-                                isSelected
+                              id={`mutation-row-${mut.id}`}
+                              className={`transition-all duration-300 ${
+                                isHighlighted
+                                  ? 'bg-amber-100/90 dark:bg-amber-950/80 ring-2 ring-amber-500 shadow-md animate-pulse'
+                                  : isSelected
                                   ? 'bg-blue-50/70 dark:bg-blue-950/40 ring-1 ring-blue-500/50'
                                   : isVoid
                                   ? 'opacity-65 bg-rose-50/30 dark:bg-rose-950/20'
                                   : isReplaced
-                                  ? 'opacity-70 bg-amber-50/30 dark:bg-amber-950/20'
+                                  ? 'opacity-75 bg-amber-50/30 dark:bg-amber-950/20'
                                   : rowDiscrepancy.isMismatch
                                   ? 'bg-amber-50/50 dark:bg-amber-950/20'
-                                  : ''
+                                  : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/50'
                               }`}
                             >
                               <td className="py-3 px-3 text-center">
@@ -2572,32 +2665,80 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                               <td className="py-3 px-3.5">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="font-semibold text-slate-900 dark:text-white">{mut.nama_barang}</span>
+
+                                  {/* Badge 1: Pembatalan (Interaktif: Klik untuk buka detail audit pembatalan) */}
                                   {isVoid && (
-                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
-                                      ❌ BATAL · Dinolkan
-                                    </span>
-                                  )}
-                                  {isReplaced && (
-                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-950/70 dark:text-amber-200 border border-amber-200 dark:border-amber-900" title={mut.alasan_batal_ganti || 'Baris ini digantikan oleh data revisi baru'}>
-                                      🔄 DIGANTI · Dinolkan
-                                    </span>
-                                  )}
-                                  {mut.referensi_ganti_id && (
-                                    <span
-                                      className="inline-flex items-center gap-0.5 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
-                                      title={mut.alasan_batal_ganti ? `Revisi dari #${mut.referensi_ganti_id.slice(0, 6).toUpperCase()}: ${mut.alasan_batal_ganti}` : `Revisi dari #${mut.referensi_ganti_id.slice(0, 6).toUpperCase()}`}
+                                    <button
+                                      type="button"
+                                      onClick={() => setAuditDetailMutation(mut)}
+                                      className="inline-flex items-center gap-0.5 text-[9px] font-bold px-2 py-0.5 rounded-full bg-rose-100 hover:bg-rose-200 text-rose-800 dark:bg-rose-950/70 dark:hover:bg-rose-900/80 dark:text-rose-300 border border-rose-200 dark:border-rose-900 cursor-pointer transition-all shadow-2xs active:scale-95"
+                                      title="Klik untuk melihat detail & alasan pembatalan dokumen ini"
                                     >
-                                      ↳ Ganti #{mut.referensi_ganti_id.slice(0, 6).toUpperCase()}
-                                    </span>
+                                      ❌ BATAL · Dinolkan
+                                    </button>
                                   )}
+
+                                  {/* Badge 2: Penggantian (Interaktif: Klik untuk melompat ke baris baru) */}
+                                  {isReplaced && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (mut.referensi_ganti_id) {
+                                          handleNavigateToMutation(mut.referensi_ganti_id);
+                                        } else {
+                                          setAuditDetailMutation(mut);
+                                        }
+                                      }}
+                                      className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-900 dark:bg-amber-950/70 dark:hover:bg-amber-900/80 dark:text-amber-200 border border-amber-200 dark:border-amber-900 cursor-pointer transition-all shadow-2xs active:scale-95"
+                                      title={mut.referensi_ganti_id ? `Klik untuk melompat & melihat baris transaksi pengganti (#${mut.referensi_ganti_id.slice(0, 6).toUpperCase()})` : (mut.alasan_batal_ganti || 'Baris ini digantikan')}
+                                    >
+                                      <span>🔄 DIGANTI · Dinolkan</span>
+                                      {mut.referensi_ganti_id && <ArrowUpRight className="w-2.5 h-2.5 ml-0.5" />}
+                                    </button>
+                                  )}
+
+                                  {/* Badge 3: Tautan Baris Pengganti vs Baris Asal (Interaktif: Navigasi Dua Arah) */}
+                                  {mut.referensi_ganti_id && isReplaced && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleNavigateToMutation(mut.referensi_ganti_id!)}
+                                      className="inline-flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 cursor-pointer transition-all shadow-2xs hover:scale-105 active:scale-95"
+                                      title={`Klik untuk melompat & menyorot baris transaksi pengganti #${mut.referensi_ganti_id.slice(0, 6).toUpperCase()}`}
+                                    >
+                                      <span>↳ Diganti ke #{mut.referensi_ganti_id.slice(0, 6).toUpperCase()}</span>
+                                      <ArrowUpRight className="w-2.5 h-2.5" />
+                                    </button>
+                                  )}
+                                  {mut.referensi_ganti_id && !isReplaced && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleNavigateToMutation(mut.referensi_ganti_id!)}
+                                      className="inline-flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 cursor-pointer transition-all shadow-2xs hover:scale-105 active:scale-95"
+                                      title={`Klik untuk melihat riwayat baris asal #${mut.referensi_ganti_id.slice(0, 6).toUpperCase()} yang digantikan oleh data ini`}
+                                    >
+                                      <span>↩️ Menggantikan #{mut.referensi_ganti_id.slice(0, 6).toUpperCase()}</span>
+                                      <ArrowDownLeft className="w-2.5 h-2.5" />
+                                    </button>
+                                  )}
+
+                                  {/* Badge 4: Pos BOQ vs Kustom (Interaktif: Klik BOQ langsung beralih ke tab Realisasi BOQ) */}
                                   {mut.is_custom_item ? (
-                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">
+                                    <span
+                                      className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300"
+                                      title="Belanja barang kustom non-BOQ di luar pos kontrak proyek"
+                                    >
                                       ✍️ Kustom Non-BOQ
                                     </span>
                                   ) : (
-                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300">
-                                      📦 BOQ
-                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleNavigateToBoq(mut.barang_id, mut.nama_barang)}
+                                      className="inline-flex items-center gap-1 text-[9px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/70 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 cursor-pointer transition-all shadow-2xs active:scale-95"
+                                      title={`Klik untuk melompat ke tab Realisasi BOQ dan memantau pemenuhan pos "${mut.nama_barang}"`}
+                                    >
+                                      <span>📦 BOQ</span>
+                                      <ExternalLink className="w-2.5 h-2.5" />
+                                    </button>
                                   )}
                                 </div>
                                 {mut.nama_item_aktual && (
@@ -2606,6 +2747,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                     <span>Aktual tiba: <b>{mut.nama_item_aktual}</b></span>
                                   </div>
                                 )}
+
+                                {/* Akses Cepat Bukti Nota Fisik */}
                                 {hasReceiptAttachment && (
                                   <div className="mt-1">
                                     <button
@@ -2630,6 +2773,40 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                         </span>
                                       )}
                                     </button>
+                                  </div>
+                                )}
+
+                                {/* Navigasi Cepat dari Baris Diganti ke Baris Baru & Notanya */}
+                                {isReplaced && replacementMutation && (
+                                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleNavigateToMutation(replacementMutation.id)}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 text-[10px] font-bold transition-colors cursor-pointer shadow-2xs"
+                                      title="Buka dan sorot data transaksi pengganti sah"
+                                    >
+                                      <ArrowUpRight className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                                      <span>Lihat Baris Pengganti #{replacementMutation.id.slice(0, 6).toUpperCase()}</span>
+                                    </button>
+                                    {((replacementMutation.lampiran_nota_urls?.length || 0) > 0 || replacementMutation.nomor_nota) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setViewerPrimaryMutation(replacementMutation);
+                                          const rNo = replacementMutation.nomor_nota || replacementMutation.nomor_surat_jalan;
+                                          const related = rNo
+                                            ? stockMutations.filter((m) => (m.nomor_nota === rNo || m.nomor_surat_jalan === rNo) && !m.is_batal && !m.is_ganti)
+                                            : [replacementMutation];
+                                          setViewerRelatedMutations(related.length > 0 ? related : [replacementMutation]);
+                                          setIsReceiptViewerOpen(true);
+                                        }}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/90 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold transition-colors cursor-pointer shadow-2xs"
+                                        title="Buka berkas nota resmi toko dari transaksi pengganti"
+                                      >
+                                        <Paperclip className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                                        <span>Buka Nota: {replacementMutation.nomor_nota || 'Toko'}</span>
+                                      </button>
+                                    )}
                                   </div>
                                 )}
                                 {mut.catatan && <div className="text-[11px] text-slate-600 dark:text-slate-300 italic mt-0.5">{mut.catatan}</div>}
@@ -2703,7 +2880,20 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                 </div>
                                 <div className="text-[10px] text-slate-600 dark:text-slate-300 font-mono mt-0.5">
                                   PIC: {mut.pic_penerima_penyerah}
-                                  {mut.referensi_ganti_id ? ` · Revisi dari #${mut.referensi_ganti_id.slice(0, 8)}` : ''}
+                                  {mut.referensi_ganti_id && (
+                                    <span>
+                                      {' · '}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleNavigateToMutation(mut.referensi_ganti_id!)}
+                                        className="text-indigo-600 dark:text-indigo-400 hover:underline font-bold cursor-pointer inline-flex items-center gap-0.5"
+                                        title="Klik untuk melompat ke baris transaksi terkait"
+                                      >
+                                        <span>{isReplaced ? 'Revisi ke #' : 'Revisi dari #'}{mut.referensi_ganti_id.slice(0, 8).toUpperCase()}</span>
+                                        <ArrowUpRight className="w-2.5 h-2.5" />
+                                      </button>
+                                    </span>
+                                  )}
                                 </div>
                                 {mut.alasan_batal_ganti && (
                                   <div className="mt-1 text-[10px] font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 rounded-md">
@@ -2713,14 +2903,30 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                               </td>
 
                               <td className="py-3 px-3.5 text-center whitespace-nowrap">
-                                {isVoid ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[10px] font-bold text-rose-800 dark:bg-rose-950 dark:text-rose-300">
+                                {isReplaced ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (mut.referensi_ganti_id) {
+                                        handleNavigateToMutation(mut.referensi_ganti_id);
+                                      } else {
+                                        setAuditDetailMutation(mut);
+                                      }
+                                    }}
+                                    className="inline-flex items-center gap-1 rounded-full bg-amber-100 hover:bg-amber-200 px-2.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:hover:bg-amber-900 dark:text-amber-300 cursor-pointer transition-all shadow-2xs active:scale-95"
+                                    title="Klik untuk melompat ke baris transaksi pengganti"
+                                  >
+                                    <FileEdit className="h-3 w-3" /> DIGANTI (Dinolkan) ↗
+                                  </button>
+                                ) : isVoid ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setAuditDetailMutation(mut)}
+                                    className="inline-flex items-center gap-1 rounded-full bg-rose-100 hover:bg-rose-200 px-2.5 py-0.5 text-[10px] font-bold text-rose-800 dark:bg-rose-950 dark:hover:bg-rose-900 dark:text-rose-300 cursor-pointer transition-all shadow-2xs active:scale-95"
+                                    title="Klik untuk melihat alasan & rincian pembatalan"
+                                  >
                                     <Ban className="h-3 w-3" /> BATAL (Dinolkan)
-                                  </span>
-                                ) : isReplaced ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                                    <FileEdit className="h-3 w-3" /> DIGANTI (Dinolkan)
-                                  </span>
+                                  </button>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
                                     <CheckCircle2 className="h-3 w-3" /> TERCATAT AKTIF
@@ -3180,7 +3386,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         targetMutations={batchReceiptTargets}
         availablePendingMutations={stockMutations.filter((m) => m.jenis === 'MASUK' && !m.is_batal && !m.is_ganti)}
         currentUser={user}
-        projectId={tenantBranding.projectCode || 'UDU-PROJ'}
+        projectId={tenantBranding.projectId || '2506245e-ff3f-4313-b821-920ab368a5df'}
         onSuccess={async (count, receiptNo) => {
           await refreshData();
           setSelectedMutationIds([]);
@@ -3195,6 +3401,109 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         primaryMutation={viewerPrimaryMutation}
         allMutationsInReceipt={viewerRelatedMutations}
       />
+
+      {/* Modal Pop-up Rincian Jejak Audit (Pembatalan / Penggantian) */}
+      {auditDetailMutation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                {auditDetailMutation.is_batal ? (
+                  <span className="flex items-center gap-1.5 text-rose-600 dark:text-rose-400">
+                    <Ban className="w-4 h-4" /> Informasi Pembatalan Mutasi
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                    <FileEdit className="w-4 h-4" /> Informasi Penggantian Mutasi
+                  </span>
+                )}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setAuditDetailMutation(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs px-2 py-1 rounded-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">ID Mutasi:</span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                    #{auditDetailMutation.jenis === 'MASUK' ? 'MSK' : 'KLR'}-{auditDetailMutation.id.slice(0, 8).toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Nama Material:</span>
+                  <span className="font-semibold text-slate-900 dark:text-white text-right max-w-[220px] truncate">
+                    {auditDetailMutation.nama_barang}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Kuantitas:</span>
+                  <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
+                    {auditDetailMutation.jumlah.toLocaleString('id-ID')} {auditDetailMutation.satuan}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Waktu Tercatat:</span>
+                  <span className="font-mono text-slate-700 dark:text-slate-300">
+                    {formatDateTime(auditDetailMutation.tanggal)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Pencatat / PIC:</span>
+                  <span className="text-slate-700 dark:text-slate-300 font-medium">
+                    {auditDetailMutation.pic_penerima_penyerah || auditDetailMutation.created_by_name || '-'}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-300 mb-1 block">
+                  Catatan / Alasan {auditDetailMutation.is_batal ? 'Pembatalan' : 'Penggantian'}:
+                </label>
+                <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200/70 dark:border-amber-800/70 text-amber-900 dark:text-amber-200 font-medium leading-relaxed">
+                  {auditDetailMutation.alasan_batal_ganti || 'Tidak ada catatan alasan khusus yang dicantumkan.'}
+                </div>
+              </div>
+
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl border border-slate-200/50 dark:border-slate-800">
+                💡 <b>Integritas Jejak Audit:</b> Nilai kuantitas baris ini telah dinolkan aman dari total stok gudang & neraca pagu material. Data lama tidak dihapus demi kepatuhan hukum proyek.
+              </div>
+
+              {auditDetailMutation.referensi_ganti_id && (
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const targetId = auditDetailMutation.referensi_ganti_id!;
+                      setAuditDetailMutation(null);
+                      handleNavigateToMutation(targetId);
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors cursor-pointer shadow-xs"
+                  >
+                    <span>Buka Baris Transaksi Terkait #{auditDetailMutation.referensi_ganti_id.slice(0, 6).toUpperCase()}</span>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setAuditDetailMutation(null)}
+                className="px-4 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Konfirmasi BATAL */}
       {batalTarget && (
