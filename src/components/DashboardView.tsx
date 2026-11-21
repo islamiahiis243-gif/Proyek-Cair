@@ -14,6 +14,11 @@ import {
   Clock,
   ChevronRight,
   Building,
+  Receipt,
+  ShoppingBag,
+  Coins,
+  Warehouse,
+  Layers,
 } from 'lucide-react';
 import { formatRupiah, formatDateTime } from '../lib/pdfGenerator';
 import { isClientProvidedRemark } from '../lib/stockMutationEngine';
@@ -103,6 +108,60 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const availablePercent = totalItemCount > 0 ? Math.round((availableStockCount / totalItemCount) * 100) : 0;
   const lowPercent = totalItemCount > 0 ? Math.round((lowStockCount / totalItemCount) * 100) : 0;
   const outPercent = totalItemCount > 0 ? Math.round((outOfStockCount / totalItemCount) * 100) : 0;
+
+  // Realisasi Finansial Belanja Material dari Riwayat Mutasi Aktif
+  const materialFinancialStats = useMemo(() => {
+    let totalInValue = 0;
+    let totalOutValue = 0;
+    let itemsWithPriceCount = 0;
+    let itemsPendingInvoiceCount = 0;
+    let mainStoreName = '';
+    const storeCountMap = new Map<string, number>();
+
+    stockMutations.forEach((m) => {
+      if (m.is_batal || m.is_ganti || m.status_dokumen === 'BATAL' || m.status_dokumen === 'DIGANTI') return;
+
+      const lineTotal = Number(m.jumlah || 0) * Number(m.harga_satuan_beli || 0);
+      if (m.jenis === 'MASUK') {
+        totalInValue += lineTotal;
+        if (m.harga_satuan_beli && m.harga_satuan_beli > 0) {
+          itemsWithPriceCount += 1;
+        } else {
+          itemsPendingInvoiceCount += 1;
+        }
+        if (m.nama_toko) {
+          storeCountMap.set(m.nama_toko, (storeCountMap.get(m.nama_toko) || 0) + 1);
+        }
+      } else if (m.jenis === 'KELUAR') {
+        totalOutValue += lineTotal;
+      }
+    });
+
+    let maxCount = 0;
+    storeCountMap.forEach((count, name) => {
+      if (count > maxCount) {
+        maxCount = count;
+        mainStoreName = name;
+      }
+    });
+
+    const boqMaterialBudget = contractStats.material || 0;
+    const sisaPaguMaterial = Math.max(0, boqMaterialBudget - totalInValue);
+    const penyerapanPercent = boqMaterialBudget > 0 ? (totalInValue / boqMaterialBudget) * 100 : 0;
+    const warehouseStockValue = Math.max(0, totalInValue - totalOutValue);
+
+    return {
+      totalInValue,
+      totalOutValue,
+      warehouseStockValue,
+      boqMaterialBudget,
+      sisaPaguMaterial,
+      penyerapanPercent,
+      itemsWithPriceCount,
+      itemsPendingInvoiceCount,
+      mainStoreName: mainStoreName || 'Penyedia Resmi'
+    };
+  }, [stockMutations, contractStats.material]);
 
   return (
     <div className="space-y-6">
@@ -311,6 +370,152 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Bilah Khusus Finansial Pengadaan Material (Opsi B) */}
+      {!isViewer && (
+        <div className="bg-slate-50/90 dark:bg-slate-900/60 p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 space-y-4 transition-colors shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/70 dark:border-blue-900/50">
+                <Receipt className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Realisasi Finansial Belanja Material
+                  </h2>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 dark:text-blue-300 bg-blue-100/70 dark:bg-blue-950/80 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                    Audit Nota Riil
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 font-medium mt-0.5">
+                  Pelacakan nilai belanja barang masuk terhadap pagu material kontrak BOQ {tenantBranding.projectName}.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setCurrentView('stock-mutations')}
+              className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 inline-flex items-center gap-1 self-start sm:self-auto py-1 px-2.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors"
+            >
+              <span>Buka Rincian Nota & Mutasi</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            {/* Kartu 1: Belanja Material Masuk (Riil) */}
+            <div
+              onClick={() => setCurrentView('stock-mutations')}
+              className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs hover:border-blue-400 dark:hover:border-blue-500 transition-all cursor-pointer group"
+              title="Klik untuk melihat transaksi mutasi masuk"
+            >
+              <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Belanja Masuk (Riil)
+                </span>
+                <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <ShoppingBag className="w-3.5 h-3.5" />
+                </div>
+              </div>
+              <div className="mt-2 text-xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
+                {formatRupiah(materialFinancialStats.totalInValue)}
+              </div>
+              <div className="mt-1 flex items-center gap-1.5 text-[11px]">
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                  {materialFinancialStats.penyerapanPercent.toFixed(1)}% Terserap
+                </span>
+                <span className="text-slate-600 dark:text-slate-300 font-medium">dari Pagu Material</span>
+              </div>
+              <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-600 dark:text-slate-300 font-medium flex items-center justify-between">
+                <span>Penyedia: <strong className="text-slate-800 dark:text-slate-200">{materialFinancialStats.mainStoreName}</strong></span>
+                <span className="font-semibold text-blue-600 dark:text-blue-400">{materialFinancialStats.itemsWithPriceCount} item nota</span>
+              </div>
+            </div>
+
+            {/* Kartu 2: Sisa Pagu Anggaran Material BOQ */}
+            <div
+              onClick={() => setCurrentView('stock-mutations')}
+              className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs hover:border-cyan-400 dark:hover:border-cyan-500 transition-all cursor-pointer group"
+              title="Klik untuk membuka pemantauan BOQ"
+            >
+              <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Sisa Pagu Material BOQ
+                </span>
+                <div className="w-7 h-7 rounded-lg bg-cyan-50 dark:bg-cyan-950/60 text-cyan-600 dark:text-cyan-400 flex items-center justify-center">
+                  <Coins className="w-3.5 h-3.5" />
+                </div>
+              </div>
+              <div className="mt-2 text-xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
+                {formatRupiah(materialFinancialStats.sisaPaguMaterial)}
+              </div>
+              <div className="mt-1 flex items-center gap-1.5 text-[11px]">
+                <span className="font-semibold text-cyan-600 dark:text-cyan-400">
+                  {(100 - materialFinancialStats.penyerapanPercent).toFixed(1)}% Sisa Aman
+                </span>
+                <span className="text-slate-600 dark:text-slate-300 font-medium">tersedia</span>
+              </div>
+              <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-600 dark:text-slate-300 font-medium flex items-center justify-between">
+                <span>Pagu Total Material:</span>
+                <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">{formatRupiah(materialFinancialStats.boqMaterialBudget)}</span>
+              </div>
+            </div>
+
+            {/* Kartu 3: Valuasi Aset Stok di Gudang */}
+            <div
+              onClick={() => setCurrentView('stock-mutations')}
+              className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs hover:border-amber-400 dark:hover:border-amber-500 transition-all cursor-pointer group"
+              title="Klik untuk melihat stok barang di gudang"
+            >
+              <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Valuasi Stok Gudang
+                </span>
+                <div className="w-7 h-7 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                  <Warehouse className="w-3.5 h-3.5" />
+                </div>
+              </div>
+              <div className="mt-2 text-xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
+                {formatRupiah(materialFinancialStats.warehouseStockValue)}
+              </div>
+              <div className="mt-1 text-[11px] text-amber-600 dark:text-amber-400 font-semibold">
+                Aset fisik siap pakai ke lapangan
+              </div>
+              <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-600 dark:text-slate-300 font-medium flex items-center justify-between">
+                <span>Gudang Utama Proyek</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">Stok riil aktif</span>
+              </div>
+            </div>
+
+            {/* Kartu 4: Realisasi Terpasang / Keluar ke Pekerjaan */}
+            <div
+              onClick={() => setCurrentView('stock-mutations')}
+              className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs hover:border-indigo-400 dark:hover:border-indigo-500 transition-all cursor-pointer group"
+              title="Klik untuk melihat pemakaian material ke lapangan"
+            >
+              <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Material Terpakai (Keluar)
+                </span>
+                <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                  <Layers className="w-3.5 h-3.5" />
+                </div>
+              </div>
+              <div className="mt-2 text-xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
+                {formatRupiah(materialFinancialStats.totalOutValue)}
+              </div>
+              <div className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+                {materialFinancialStats.totalOutValue === 0 ? 'Belum ada pengeluaran fisik' : 'Teralokasi ke pos pekerjaan'}
+              </div>
+              <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-600 dark:text-slate-300 font-medium flex items-center justify-between">
+                <span>Realisasi Lapangan</span>
+                <span className="font-semibold text-indigo-600 dark:text-indigo-400">Pos Pekerjaan BOQ</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Two-Column Analytics: Recent Stock vs Recent Cash Mutations */}
       <div className={`grid grid-cols-1 ${isViewer ? 'lg:grid-cols-1' : 'lg:grid-cols-2'} gap-6`}>
