@@ -171,6 +171,7 @@ export async function generateStockMutationPDF(params: {
   branding?: TenantBranding;
   filterSummary?: string;
   customNotes?: string;
+  selectedColumns?: string[];
 }): Promise<DokumenLaporan> {
   const {
     docId,
@@ -182,7 +183,8 @@ export async function generateStockMutationPDF(params: {
     physicalMaterials = [],
     branding: rawBranding,
     filterSummary,
-    customNotes
+    customNotes,
+    selectedColumns
   } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
   const providerLabels = { contractorName: b.contractorName, clientName: b.clientName };
@@ -259,46 +261,78 @@ export async function generateStockMutationPDF(params: {
     doc.text('0 Transaksi', 152, 71);
   }
 
-  // Table Mutasi
+  // Definisi Pemetaan Kolom Fleksibel
+  const stockColumnMap: Record<string, {
+    header: string;
+    width?: number;
+    align?: 'left' | 'center' | 'right';
+    getValue: (m: MutasiBarang, idx: number, disc: any, isVoid: boolean) => string;
+  }> = {
+    no: { header: 'No', width: 9, align: 'center', getValue: (_, idx) => String(idx + 1) },
+    tanggal: { header: 'Waktu', width: 24, align: 'left', getValue: (m) => formatDateTime(m.tanggal) },
+    nomor_surat_jalan: { header: 'No Surat Jalan', width: 24, align: 'left', getValue: (m) => m.nomor_surat_jalan || '-' },
+    nama_barang: { header: 'Nama Material / Barang', width: 40, align: 'left', getValue: (m) => m.nama_barang },
+    jenis: { header: 'Jenis', width: 14, align: 'center', getValue: (m) => m.jenis },
+    jumlah: { header: 'Volume', width: 20, align: 'right', getValue: (m, _, __, isVoid) => isVoid ? '0 (Batal)' : `${m.jumlah} ${m.satuan}` },
+    satuan: { header: 'Satuan', width: 14, align: 'center', getValue: (m) => m.satuan },
+    tujuan_keperluan: {
+      header: 'Asal / Peruntukan',
+      width: 45,
+      align: 'left',
+      getValue: (m, _, disc) => {
+        const providerLine =
+          m.jenis === 'MASUK'
+            ? `Asal: ${m.source_name || disc?.actualProviderLabel || '-'}`
+            : m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN'
+            ? 'Beban: Permintaan Klien'
+            : m.beban_biaya === 'BONUS_KLIEN'
+            ? 'Beban: Bonus Klien'
+            : m.beban_biaya === 'OPERASIONAL'
+            ? 'Beban: Operasional'
+            : 'Beban: Proyek BOQ';
+        const purposeRaw = (m.tujuan_keperluan || '-').trim();
+        const mismatchLine = disc?.isMismatch ? `\n[!] ${disc.pdfNote}` : '';
+        return disc?.isMismatch && purposeRaw.toLowerCase().includes('talangan')
+          ? `${providerLine}${mismatchLine}`
+          : `${providerLine}\n${purposeRaw}${mismatchLine}`;
+      }
+    },
+    pic: { header: 'PIC', width: 18, align: 'left', getValue: (m) => m.pic_penerima_penyerah || '-' },
+    status_dokumen: {
+      header: 'Status',
+      width: 16,
+      align: 'center',
+      getValue: (m, _, __, isVoid) => {
+        const isReplaced = m.is_ganti || m.status_dokumen === 'DIGANTI';
+        return isVoid ? 'BATAL' : isReplaced ? 'DIGANTI' : (m.status_dokumen || 'DITERBITKAN');
+      }
+    }
+  };
+
+  const defaultStockCols = ['no', 'tanggal', 'nama_barang', 'jenis', 'jumlah', 'tujuan_keperluan', 'pic', 'status_dokumen'];
+  const activeStockCols = (selectedColumns && selectedColumns.length > 0)
+    ? selectedColumns.filter(c => stockColumnMap[c])
+    : defaultStockCols;
+
   const tableData = mutations.map((m, index) => {
     const isVoid = m.is_batal || m.status_dokumen === 'BATAL';
-    const isReplaced = m.is_ganti || m.status_dokumen === 'DIGANTI';
-    const statusText = isVoid ? 'BATAL' : isReplaced ? 'DIGANTI' : (m.status_dokumen || 'DITERBITKAN');
     const disc = discrepancyByRow[index];
-
-    const providerLine =
-      m.jenis === 'MASUK'
-        ? `Asal: ${m.source_name || disc.actualProviderLabel}`
-        : m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN'
-        ? 'Beban: Permintaan Klien'
-        : m.beban_biaya === 'BONUS_KLIEN'
-        ? 'Beban: Bonus Klien'
-        : m.beban_biaya === 'OPERASIONAL'
-        ? 'Beban: Operasional'
-        : 'Beban: Proyek BOQ';
-
-    const purposeRaw = (m.tujuan_keperluan || '-').trim();
-    const mismatchLine = disc.isMismatch ? `\n[!] ${disc.pdfNote}` : '';
-    const detailCell =
-      disc.isMismatch && purposeRaw.toLowerCase().includes('talangan')
-        ? `${providerLine}${mismatchLine}`
-        : `${providerLine}\n${purposeRaw}${mismatchLine}`;
-
-    return [
-      (index + 1).toString(),
-      formatDateTime(m.tanggal),
-      m.nama_barang,
-      m.jenis,
-      isVoid ? '0 (Batal)' : `${m.jumlah} ${m.satuan}`,
-      detailCell,
-      m.pic_penerima_penyerah || '-',
-      statusText
-    ];
+    return activeStockCols.map(c => stockColumnMap[c].getValue(m, index, disc, isVoid));
   });
+
+  const columnStylesConfig: any = {};
+  activeStockCols.forEach((c, idx) => {
+    columnStylesConfig[idx] = {
+      cellWidth: stockColumnMap[c].width,
+      halign: stockColumnMap[c].align
+    };
+  });
+
+  const purposeColIdx = activeStockCols.indexOf('tujuan_keperluan');
 
   autoTable(doc, {
     startY: 78,
-    head: [['No', 'Waktu', 'Nama Material / Barang', 'Jenis', 'Volume', 'Asal / Peruntukan', 'PIC', 'Status']],
+    head: [activeStockCols.map(c => stockColumnMap[c].header)],
     body: tableData,
     theme: 'grid',
     headStyles: {
@@ -311,22 +345,13 @@ export async function generateStockMutationPDF(params: {
       fontSize: 6.8,
       cellPadding: 1.8,
     },
-    columnStyles: {
-      0: { cellWidth: 9, halign: 'center' },
-      1: { cellWidth: 24 },
-      2: { cellWidth: 40 },
-      3: { cellWidth: 14, halign: 'center' },
-      4: { cellWidth: 20, halign: 'right' },
-      5: { cellWidth: 45 },
-      6: { cellWidth: 15 },
-      7: { cellWidth: 15, halign: 'center' },
-    },
+    columnStyles: columnStylesConfig,
     didParseCell: (data) => {
       if (data.section === 'body') {
         const disc = discrepancyByRow[data.row.index];
         if (disc?.isMismatch) {
           data.cell.styles.fillColor = [254, 243, 199];
-          if (data.column.index === 5) {
+          if (purposeColIdx !== -1 && data.column.index === purposeColIdx) {
             data.cell.styles.textColor = [146, 64, 14];
             data.cell.styles.fontStyle = 'bold';
           }
@@ -466,8 +491,9 @@ export async function generateCashflowPDF(params: {
   branding?: TenantBranding;
   filterSummary?: string;
   customNotes?: string;
+  selectedColumns?: string[];
 }): Promise<DokumenLaporan> {
-  const { docId, startDate, endDate, cashMutations, signer, projectName, branding: rawBranding, filterSummary, customNotes } = params;
+  const { docId, startDate, endDate, cashMutations, signer, projectName, branding: rawBranding, filterSummary, customNotes, selectedColumns } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -527,26 +553,54 @@ export async function generateCashflowPDF(params: {
   doc.setTextColor(15, 23, 42);
   doc.text(formatRupiah(endingBalance), 140, 71);
 
-  // Table Mutasi Kas
+  // Definisi Pemetaan Kolom Fleksibel Kas
+  const cashColumnMap: Record<string, {
+    header: string;
+    width?: number;
+    align?: 'left' | 'center' | 'right';
+    getValue: (m: MutasiKas, idx: number, isVoid: boolean) => string;
+  }> = {
+    no: { header: 'No', width: 10, align: 'center', getValue: (_, idx) => String(idx + 1) },
+    tanggal: { header: 'Waktu', width: 26, align: 'left', getValue: (m) => formatDateTime(m.tanggal) },
+    nomor_kuitansi: { header: 'No Kuitansi', width: 24, align: 'left', getValue: (m) => m.nomor_kuitansi || '-' },
+    untuk_apa: { header: 'Peruntukan / Keterangan', width: 46, align: 'left', getValue: (m) => m.untuk_apa },
+    kategori_keperluan: { header: 'Kategori', width: 22, align: 'left', getValue: (m) => m.kategori_keperluan || 'Operasional' },
+    jenis: { header: 'Jenis', width: 16, align: 'center', getValue: (m) => m.jenis },
+    jumlah_rp: { header: 'Nominal (Rp)', width: 26, align: 'right', getValue: (m, _, isVoid) => isVoid ? 'Rp 0 (Batal)' : `${m.jenis === 'MASUK' ? '+' : '-'} ${formatRupiah(m.jumlah_rp)}` },
+    saldo_setelah: { header: 'Saldo Kas (Rp)', width: 28, align: 'right', getValue: (m) => formatRupiah(m.saldo_setelah) },
+    pic: { header: 'PIC', width: 18, align: 'left', getValue: (m) => m.pic },
+    status_dokumen: {
+      header: 'Status Alur',
+      width: 18,
+      align: 'center',
+      getValue: (m, _, isVoid) => {
+        const isReplaced = m.is_ganti || m.status_dokumen === 'DIGANTI';
+        return isVoid ? 'BATAL' : isReplaced ? 'DIGANTI' : (m.status_dokumen || 'DITERBITKAN');
+      }
+    }
+  };
+
+  const defaultCashCols = ['no', 'tanggal', 'untuk_apa', 'kategori_keperluan', 'jenis', 'jumlah_rp', 'pic', 'status_dokumen'];
+  const activeCashCols = (selectedColumns && selectedColumns.length > 0)
+    ? selectedColumns.filter(c => cashColumnMap[c])
+    : defaultCashCols;
+
   const tableData = cashMutations.map((m, index) => {
     const isVoid = m.is_batal || m.status_dokumen === 'BATAL';
-    const isReplaced = m.is_ganti || m.status_dokumen === 'DIGANTI';
-    const statusText = isVoid ? 'BATAL' : isReplaced ? 'DIGANTI' : (m.status_dokumen || 'DITERBITKAN');
-    return [
-      (index + 1).toString(),
-      formatDateTime(m.tanggal),
-      m.untuk_apa,
-      m.kategori_keperluan || 'Operasional',
-      m.jenis,
-      isVoid ? 'Rp 0 (Batal)' : formatRupiah(m.jumlah_rp),
-      m.pic,
-      statusText
-    ];
+    return activeCashCols.map(c => cashColumnMap[c].getValue(m, index, isVoid));
+  });
+
+  const columnStylesConfig: any = {};
+  activeCashCols.forEach((c, idx) => {
+    columnStylesConfig[idx] = {
+      cellWidth: cashColumnMap[c].width,
+      halign: cashColumnMap[c].align
+    };
   });
 
   autoTable(doc, {
     startY: 78,
-    head: [['No', 'Waktu', 'Peruntukan / Keterangan', 'Kategori', 'Jenis', 'Nominal (Rp)', 'PIC', 'Status Alur']],
+    head: [activeCashCols.map(c => cashColumnMap[c].header)],
     body: tableData,
     theme: 'grid',
     headStyles: {
@@ -559,16 +613,7 @@ export async function generateCashflowPDF(params: {
       fontSize: 7,
       cellPadding: 2,
     },
-    columnStyles: {
-      0: { cellWidth: 10, halign: 'center' },
-      1: { cellWidth: 26 },
-      2: { cellWidth: 46 },
-      3: { cellWidth: 22 },
-      4: { cellWidth: 16, halign: 'center' },
-      5: { cellWidth: 26, halign: 'right' },
-      6: { cellWidth: 18 },
-      7: { cellWidth: 18, halign: 'center' },
-    },
+    columnStyles: columnStylesConfig,
     margin: { left: 14, right: 14 },
   });
 
@@ -700,6 +745,7 @@ export async function generateBOQReportPDF(params: {
   branding?: TenantBranding;
   hideFinancials?: boolean;
   customNotes?: string;
+  selectedColumns?: string[];
 }): Promise<DokumenLaporan> {
   const {
     docId,
@@ -710,7 +756,8 @@ export async function generateBOQReportPDF(params: {
     filterSummary,
     branding: rawBranding,
     hideFinancials = false,
-    customNotes
+    customNotes,
+    selectedColumns
   } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
   const doc = new jsPDF({
@@ -834,15 +881,41 @@ export async function generateBOQReportPDF(params: {
     doc.text(`* Pengadaan Klien (Free-Issue ${b.clientName}): ${formatRupiah(clientFreeIssue)} (Beban Kontraktor: Rp 0)`, pageWidth - 18, 53, { align: 'right' });
   }
 
-  // Siapkan Data Tabel Berdasarkan Hierarki (pertahankan urutan layar bila preserveOrder = true)
+  // Siapkan Data Tabel Berdasarkan Hierarki
   const sortedItems = preserveOrder
     ? [...items]
     : [...items].sort((a, bItem) => (a.source_excel_row || 0) - (bItem.source_excel_row || 0));
-  
+
+  // Pemetaan Kolom Fleksibel BOQ
+  const boqColumnMap: Record<string, {
+    header: string;
+    width: number;
+    align: 'left' | 'center' | 'right';
+    getValue: (it: ItemBarang, isClientItem: boolean, providerText: string) => string;
+  }> = {
+    kode_boq: { header: 'Kode BOQ', width: 22, align: 'left', getValue: (it) => it.kode_boq || '-' },
+    nama_barang: { header: 'Uraian Material / Pekerjaan', width: hideFinancials ? 90 : 70, align: 'left', getValue: (it) => it.nama_barang },
+    penyedia: { header: 'Penyedia', width: 26, align: 'center', getValue: (_, __, pText) => pText },
+    qty_boq: { header: 'Target BOQ', width: 24, align: 'right', getValue: (it) => `${it.qty_boq.toLocaleString('id-ID')} ${it.satuan}` },
+    harga_satuan: { header: 'Harga Satuan (Rp)', width: 28, align: 'right', getValue: (it, isClient) => isClient ? '0 (Klien)' : formatRupiah(it.harga_satuan) },
+    total_kontrak: { header: 'Total Kontrak (Rp)', width: 32, align: 'right', getValue: (it, isClient) => isClient ? '0 (Klien)' : formatRupiah(it.harga_satuan * it.qty_boq) },
+    qty_masuk: { header: 'Realisasi Masuk', width: 25, align: 'right', getValue: (it) => `${it.qty_masuk_total.toLocaleString('id-ID')} ${it.satuan}` },
+    qty_sisa: { header: 'Sisa Belum Tiba', width: 25, align: 'right', getValue: (it) => `${it.qty_pemenuhan_sisa.toLocaleString('id-ID')} ${it.satuan}` },
+    status: { header: 'Status', width: 22, align: 'center', getValue: (it) => it.status_pemenuhan }
+  };
+
+  const defaultBOQCols = hideFinancials
+    ? ['kode_boq', 'nama_barang', 'penyedia', 'qty_boq', 'qty_masuk', 'qty_sisa', 'status']
+    : ['kode_boq', 'nama_barang', 'penyedia', 'qty_boq', 'harga_satuan', 'total_kontrak', 'qty_masuk', 'qty_sisa', 'status'];
+
+  const activeBOQCols = (selectedColumns && selectedColumns.length > 0)
+    ? selectedColumns.filter(c => boqColumnMap[c] && !(hideFinancials && (c === 'harga_satuan' || c === 'total_kontrak')))
+    : defaultBOQCols;
+
+  const totalColSpan = activeBOQCols.length;
   const tableData: any[] = [];
   let currentDivision = '';
   let currentSubSection = '';
-  const totalColSpan = hideFinancials ? 7 : 9;
 
   sortedItems.forEach((it) => {
     const isClientItem = isClientProvidedRemark(it.keterangan, b.clientName);
@@ -873,64 +946,22 @@ export async function generateBOQReportPDF(params: {
     }
 
     const providerText = isClientItem ? b.clientName : b.contractorName;
-
-    if (hideFinancials) {
-      tableData.push([
-        it.kode_boq || '-',
-        it.nama_barang,
-        providerText,
-        `${it.qty_boq.toLocaleString('id-ID')} ${it.satuan}`,
-        `${it.qty_masuk_total.toLocaleString('id-ID')} ${it.satuan}`,
-        `${it.qty_pemenuhan_sisa.toLocaleString('id-ID')} ${it.satuan}`,
-        it.status_pemenuhan
-      ]);
-    } else {
-      const hargaSatuanText = isClientItem ? '0 (By Klien)' : formatRupiah(it.harga_satuan);
-      const totalHargaText = isClientItem ? '0 (By Klien)' : formatRupiah(it.harga_satuan * it.qty_boq);
-
-      tableData.push([
-        it.kode_boq || '-',
-        it.nama_barang,
-        providerText,
-        `${it.qty_boq.toLocaleString('id-ID')} ${it.satuan}`,
-        hargaSatuanText,
-        totalHargaText,
-        `${it.qty_masuk_total.toLocaleString('id-ID')} ${it.satuan}`,
-        `${it.qty_pemenuhan_sisa.toLocaleString('id-ID')} ${it.satuan}`,
-        it.status_pemenuhan
-      ]);
-    }
+    tableData.push(
+      activeBOQCols.map(c => boqColumnMap[c].getValue(it, isClientItem, providerText))
+    );
   });
 
-  const tableHeaders = hideFinancials
-    ? [['Kode BOQ', 'Uraian Material / Pekerjaan', 'Penyedia', 'Target BOQ', 'Realisasi Masuk', 'Sisa Belum Tiba', 'Status']]
-    : [['Kode BOQ', 'Uraian Material / Pekerjaan', 'Penyedia', 'Target BOQ', 'Harga Satuan (Rp)', 'Total Kontrak (Rp)', 'Realisasi Masuk', 'Sisa Belum Tiba', 'Status']];
-
-  const columnStylesConfig: any = hideFinancials
-    ? {
-        0: { cellWidth: 24 },
-        1: { cellWidth: 105 },
-        2: { cellWidth: 32, halign: 'center' },
-        3: { cellWidth: 28, halign: 'right' },
-        4: { cellWidth: 28, halign: 'right' },
-        5: { cellWidth: 28, halign: 'right' },
-        6: { cellWidth: 25, halign: 'center' },
-      }
-    : {
-        0: { cellWidth: 20 },
-        1: { cellWidth: 70 },
-        2: { cellWidth: 24, halign: 'center' },
-        3: { cellWidth: 24, halign: 'right' },
-        4: { cellWidth: 28, halign: 'right' },
-        5: { cellWidth: 32, halign: 'right' },
-        6: { cellWidth: 24, halign: 'right' },
-        7: { cellWidth: 24, halign: 'right' },
-        8: { cellWidth: 23, halign: 'center' },
-      };
+  const columnStylesConfig: any = {};
+  activeBOQCols.forEach((c, idx) => {
+    columnStylesConfig[idx] = {
+      cellWidth: boqColumnMap[c].width,
+      halign: boqColumnMap[c].align
+    };
+  });
 
   autoTable(doc, {
     startY: 65,
-    head: tableHeaders,
+    head: [activeBOQCols.map(c => boqColumnMap[c].header)],
     body: tableData,
     theme: 'grid',
     headStyles: {
@@ -1080,6 +1111,7 @@ export async function generateWarehouseSummaryPDF(params: {
   signer?: UserProfile;
   stockMutations?: MutasiBarang[];
   branding?: TenantBranding;
+  selectedColumns?: string[];
 }): Promise<DokumenLaporan> {
   const {
     docId,
@@ -1089,7 +1121,8 @@ export async function generateWarehouseSummaryPDF(params: {
     customNotes,
     signer,
     stockMutations = [],
-    branding: rawBranding
+    branding: rawBranding,
+    selectedColumns
   } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
   const providerLabels = { contractorName: b.contractorName, clientName: b.clientName };
@@ -1122,54 +1155,93 @@ export async function generateWarehouseSummaryPDF(params: {
     45
   );
 
+  // Pemetaan Kolom Fleksibel Rekap Gudang
+  const warehouseColumnMap: Record<string, {
+    header: string;
+    width: number;
+    align: 'left' | 'center' | 'right';
+    getValue: (pm: PhysicalMaterialItem, idx: number, disc: any) => string;
+  }> = {
+    no: { header: 'No', width: 10, align: 'center', getValue: (_, idx) => String(idx + 1) },
+    nama_barang: {
+      header: 'Nama Material & Cakupan Pos BOQ',
+      width: 78,
+      align: 'left',
+      getValue: (pm, _, disc) => {
+        const extraLines: string[] = [];
+        if (disc?.mixedBreakdownText) extraLines.push(disc.mixedBreakdownText);
+        if (disc?.hasMismatch) extraLines.push(`[!] ${disc.summaryText}`);
+        return extraLines.length > 0
+          ? `${pm.nama_barang} (${pm.budget_lines.length} Pos BOQ)\n${extraLines.join('\n')}`
+          : `${pm.nama_barang} (${pm.budget_lines.length} Pos BOQ)`;
+      }
+    },
+    satuan: { header: 'Satuan', width: 18, align: 'center', getValue: (pm) => pm.satuan },
+    target_kebutuhan: { header: 'Kebutuhan BOQ', width: 26, align: 'right', getValue: (pm) => (pm.total_qty_boq || 0).toLocaleString('id-ID', { maximumFractionDigits: 3 }) },
+    sudah_masuk: {
+      header: 'Masuk Gudang',
+      width: 32,
+      align: 'right',
+      getValue: (pm) => {
+        const totalTarget = pm.total_qty_boq || 0;
+        const totalMasuk = pm.total_qty_masuk || 0;
+        const pctTiba = totalTarget > 0 ? Math.round((totalMasuk / totalTarget) * 100) : 0;
+        return `${totalMasuk.toLocaleString('id-ID', { maximumFractionDigits: 3 })} (${pctTiba}%)`;
+      }
+    },
+    sisa_belum_tiba: {
+      header: 'Sisa Belum Tiba',
+      width: 26,
+      align: 'right',
+      getValue: (pm) => Math.max(0, (pm.total_qty_boq || 0) - (pm.total_qty_masuk || 0)).toLocaleString('id-ID', { maximumFractionDigits: 3 })
+    },
+    sudah_dipakai: {
+      header: 'Sudah Dipakai',
+      width: 26,
+      align: 'right',
+      getValue: (pm) => (pm.total_qty_keluar || 0).toLocaleString('id-ID', { maximumFractionDigits: 3 })
+    },
+    saldo_gudang: {
+      header: 'Saldo Gudang',
+      width: 26,
+      align: 'right',
+      getValue: (pm) => pm.stok_fisik.toLocaleString('id-ID', { maximumFractionDigits: 3 })
+    },
+    status_gudang: {
+      header: 'Status Gudang',
+      width: 26,
+      align: 'center',
+      getValue: (pm) => {
+        return pm.stok_fisik > 0
+          ? `Tersedia (${pm.stok_fisik.toLocaleString('id-ID', { maximumFractionDigits: 3 })})`
+          : (pm.total_qty_masuk || 0) > 0
+          ? 'Habis Terpakai'
+          : 'Belum Ada Masuk';
+      }
+    }
+  };
+
+  const defaultWarehouseCols = ['no', 'nama_barang', 'satuan', 'target_kebutuhan', 'sudah_masuk', 'sisa_belum_tiba', 'sudah_dipakai', 'saldo_gudang', 'status_gudang'];
+  const activeWarehouseCols = (selectedColumns && selectedColumns.length > 0)
+    ? selectedColumns.filter(c => warehouseColumnMap[c])
+    : defaultWarehouseCols;
+
   const tableBody = materials.map((pm, idx) => {
-    const totalTarget = pm.total_qty_boq || 0;
-    const totalMasuk = pm.total_qty_masuk || 0;
-    const totalKeluar = pm.total_qty_keluar || 0;
-    const sisaBelumTiba = Math.max(0, totalTarget - totalMasuk);
-    const pctTiba = totalTarget > 0 ? Math.round((totalMasuk / totalTarget) * 100) : 0;
-    const statusLabel =
-      pm.stok_fisik > 0
-        ? `Tersedia (${pm.stok_fisik.toLocaleString('id-ID', { maximumFractionDigits: 3 })})`
-        : totalMasuk > 0
-        ? 'Habis Terpakai'
-        : 'Belum Ada Masuk';
-
     const disc = discrepancyList[idx];
-    const extraLines: string[] = [];
-    if (disc.mixedBreakdownText) extraLines.push(disc.mixedBreakdownText);
-    if (disc.hasMismatch) extraLines.push(`[!] ${disc.summaryText}`);
-    const nameCell =
-      extraLines.length > 0
-        ? `${pm.nama_barang} (${pm.budget_lines.length} Pos BOQ)\n${extraLines.join('\n')}`
-        : `${pm.nama_barang} (${pm.budget_lines.length} Pos BOQ)`;
+    return activeWarehouseCols.map(c => warehouseColumnMap[c].getValue(pm, idx, disc));
+  });
 
-    return [
-      String(idx + 1),
-      nameCell,
-      pm.satuan,
-      totalTarget.toLocaleString('id-ID', { maximumFractionDigits: 3 }),
-      `${totalMasuk.toLocaleString('id-ID', { maximumFractionDigits: 3 })} (${pctTiba}%)`,
-      sisaBelumTiba.toLocaleString('id-ID', { maximumFractionDigits: 3 }),
-      totalKeluar.toLocaleString('id-ID', { maximumFractionDigits: 3 }),
-      pm.stok_fisik.toLocaleString('id-ID', { maximumFractionDigits: 3 }),
-      statusLabel
-    ];
+  const columnStylesConfig: any = {};
+  activeWarehouseCols.forEach((c, idx) => {
+    columnStylesConfig[idx] = {
+      cellWidth: warehouseColumnMap[c].width,
+      halign: warehouseColumnMap[c].align
+    };
   });
 
   autoTable(doc, {
     startY: 50,
-    head: [[
-      'No',
-      'Nama Material & Cakupan Pos BOQ',
-      'Satuan',
-      'Kebutuhan Proyek',
-      'Sudah Masuk Gudang',
-      'Sisa Belum Tiba',
-      'Sudah Dipakai',
-      'Saldo Gudang',
-      'Status Gudang'
-    ]],
+    head: [activeWarehouseCols.map(c => warehouseColumnMap[c].header)],
     body: tableBody,
     theme: 'grid',
     headStyles: {
@@ -1182,17 +1254,7 @@ export async function generateWarehouseSummaryPDF(params: {
       fontSize: 7,
       cellPadding: 2,
     },
-    columnStyles: {
-      0: { cellWidth: 10, halign: 'center' },
-      1: { cellWidth: 82 },
-      2: { cellWidth: 18, halign: 'center' },
-      3: { cellWidth: 26, halign: 'right' },
-      4: { cellWidth: 32, halign: 'right' },
-      5: { cellWidth: 26, halign: 'right' },
-      6: { cellWidth: 24, halign: 'right' },
-      7: { cellWidth: 24, halign: 'right' },
-      8: { cellWidth: 27, halign: 'center' },
-    },
+    columnStyles: columnStylesConfig,
     didParseCell: (data) => {
       if (data.section === 'body') {
         const disc = discrepancyList[data.row.index];

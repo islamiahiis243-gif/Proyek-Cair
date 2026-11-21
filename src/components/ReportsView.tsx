@@ -157,7 +157,8 @@ export const ReportsView: React.FC = () => {
           physicalMaterials,
           branding: tenantBranding,
           filterSummary: `${typeLabel}${searchPart} · Urut: ${sortLabel}`,
-          customNotes: config.customNotes
+          customNotes: config.customNotes,
+          selectedColumns: config.selectedColumns
         });
 
         setGenerationSuccess(`Ekspor PDF internal ${docId} (${filtered.length} transaksi sesuai filter & konfigurasi) berhasil diunduh.`);
@@ -198,7 +199,8 @@ export const ReportsView: React.FC = () => {
           projectName,
           branding: tenantBranding,
           filterSummary: `${typeLabel}${searchPart} · Urut: ${sortLabel}`,
-          customNotes: config.customNotes
+          customNotes: config.customNotes,
+          selectedColumns: config.selectedColumns
         });
 
         setGenerationSuccess(`Ekspor PDF internal ${docId} (${filtered.length} transaksi sesuai filter & konfigurasi) berhasil diunduh.`);
@@ -546,7 +548,7 @@ export const ReportsView: React.FC = () => {
         onClose={() => setIsExportModalOpen(false)}
         targetType={reportType === 'stock' ? 'STOCK_JOURNAL' : 'CASH'}
         title={`Studio Laporan: ${reportType === 'stock' ? 'Mutasi Stok Barang' : 'Mutasi Kas Proyek'}`}
-        itemCount={matchingCount}
+        totalOriginalCount={matchingCount}
         initialIncludeFinancials={reportType === 'stock' ? !isViewer : true}
         onConfirmExport={handleConfirmExport}
         currentFilterLabel={`Periode: ${startDate} s/d ${endDate} · ${filterType === 'ALL' ? 'Semua Jenis' : filterType === 'MASUK' ? 'Masuk' : 'Keluar'}${searchQuery.trim() ? ` · "${searchQuery.trim()}"` : ''}`}

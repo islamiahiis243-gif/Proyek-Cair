@@ -1105,17 +1105,44 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       try {
         setIsExportingWarehouse(true);
         const docId = `GDG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+        let materialsToExport = [...filteredWarehouseMaterials];
+        if (config.filterScope.statusScope === 'HAS_STOCK') {
+          materialsToExport = materialsToExport.filter(pm => pm.stok_fisik > 0);
+        } else if (config.filterScope.statusScope === 'HAS_ARRIVED') {
+          materialsToExport = materialsToExport.filter(pm => (pm.total_qty_masuk || 0) > 0);
+        } else if (config.filterScope.statusScope === 'NOT_ARRIVED') {
+          materialsToExport = materialsToExport.filter(pm => (pm.total_qty_masuk || 0) === 0);
+        }
+
+        if (config.sortConfig.key !== 'default') {
+          const dirMul = config.sortConfig.dir === 'desc' ? -1 : 1;
+          materialsToExport.sort((a, b) => {
+            if (config.sortConfig.key === 'nama_barang') return a.nama_barang.localeCompare(b.nama_barang) * dirMul;
+            if (config.sortConfig.key === 'target_kebutuhan') return ((a.total_qty_boq || 0) - (b.total_qty_boq || 0)) * dirMul;
+            if (config.sortConfig.key === 'sudah_masuk') return ((a.total_qty_masuk || 0) - (b.total_qty_masuk || 0)) * dirMul;
+            if (config.sortConfig.key === 'saldo_gudang') return (a.stok_fisik - b.stok_fisik) * dirMul;
+            if (config.sortConfig.key === 'sisa_belum_tiba') {
+              const sisaA = Math.max(0, (a.total_qty_boq || 0) - (a.total_qty_masuk || 0));
+              const sisaB = Math.max(0, (b.total_qty_boq || 0) - (b.total_qty_masuk || 0));
+              return (sisaA - sisaB) * dirMul;
+            }
+            return 0;
+          });
+        }
+
         await generateWarehouseSummaryPDF({
           docId,
-          materials: filteredWarehouseMaterials,
+          materials: materialsToExport,
           projectName: tenantBranding.projectName,
           filterSummary: `${exportModalState.currentFilterLabel} · ${exportModalState.currentSortLabel}`,
           customNotes: config.customNotes,
           signer: user || undefined,
           stockMutations,
-          branding: tenantBranding
+          branding: tenantBranding,
+          selectedColumns: config.selectedColumns
         });
-        setNoticeMessage(`PDF Rekap Gudang (${filteredWarehouseMaterials.length} material sesuai konfigurasi) berhasil diunduh.`);
+        setNoticeMessage(`PDF Rekap Gudang (${materialsToExport.length} material · ${config.selectedColumns.length} kolom) berhasil diunduh.`);
       } catch (err: any) {
         console.error('Error exporting Warehouse PDF:', err);
         setErrorMessage('Gagal mengunduh PDF Rekap Gudang: ' + (err?.message || 'Kesalahan sistem'));
@@ -1123,22 +1150,55 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         setIsExportingWarehouse(false);
       }
     } else if (exportModalState.targetType === 'BOQ') {
-      const visibleItems = groupedBoqData.flatMap((d) => d.subSections.flatMap((s) => s.items));
       try {
         setIsExportingBoq(true);
         const docId = `BOQ-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+        let itemsToExport = groupedBoqData.flatMap((d) => d.subSections.flatMap((s) => s.items));
+        if (config.filterScope.providerScope === 'KONTRAKTOR') {
+          itemsToExport = itemsToExport.filter(it => !isClientProvidedRemark(it.keterangan, tenantBranding.clientName));
+        } else if (config.filterScope.providerScope === 'IMK') {
+          itemsToExport = itemsToExport.filter(it => isClientProvidedRemark(it.keterangan, tenantBranding.clientName));
+        }
+
+        if (config.filterScope.statusScope === 'LENGKAP') {
+          itemsToExport = itemsToExport.filter(it => it.status_pemenuhan === 'Terpenuhi');
+        } else if (config.filterScope.statusScope === 'BELUM_LENGKAP') {
+          itemsToExport = itemsToExport.filter(it => it.status_pemenuhan === 'Dalam pemenuhan');
+        } else if (config.filterScope.statusScope === 'BELUM_TIBA') {
+          itemsToExport = itemsToExport.filter(it => it.status_pemenuhan === 'Belum dipenuhi');
+        }
+
+        if (config.filterScope.onlyRemaining) {
+          itemsToExport = itemsToExport.filter(it => it.qty_pemenuhan_sisa > 0);
+        }
+
+        if (config.sortConfig.key !== 'default') {
+          const dirMul = config.sortConfig.dir === 'desc' ? -1 : 1;
+          itemsToExport.sort((a, b) => {
+            if (config.sortConfig.key === 'nama_barang') return a.nama_barang.localeCompare(b.nama_barang) * dirMul;
+            if (config.sortConfig.key === 'kode_boq') return (a.kode_boq || '').localeCompare(b.kode_boq || '') * dirMul;
+            if (config.sortConfig.key === 'qty_boq') return (a.qty_boq - b.qty_boq) * dirMul;
+            if (config.sortConfig.key === 'qty_masuk') return (a.qty_masuk_total - b.qty_masuk_total) * dirMul;
+            if (config.sortConfig.key === 'qty_sisa') return (a.qty_pemenuhan_sisa - b.qty_pemenuhan_sisa) * dirMul;
+            if (config.sortConfig.key === 'total_kontrak') return ((a.harga_satuan * a.qty_boq) - (b.harga_satuan * b.qty_boq)) * dirMul;
+            return 0;
+          });
+        }
+
         await generateBOQReportPDF({
           docId,
-          items: visibleItems,
+          items: itemsToExport,
           projectName: tenantBranding.projectName,
           signer: user || undefined,
-          preserveOrder: true,
+          preserveOrder: config.sortConfig.key === 'default',
           filterSummary: `${exportModalState.currentFilterLabel} · ${exportModalState.currentSortLabel}`,
           branding: tenantBranding,
           hideFinancials: activeRole === 'Viewer/Pengamat' ? true : !config.includeFinancials,
-          customNotes: config.customNotes
+          customNotes: config.customNotes,
+          selectedColumns: config.selectedColumns
         });
-        setNoticeMessage(`PDF Realisasi BOQ (${visibleItems.length} pos sesuai konfigurasi) berhasil diunduh.`);
+        setNoticeMessage(`PDF Realisasi BOQ (${itemsToExport.length} pos · ${config.selectedColumns.length} kolom) berhasil diunduh.`);
       } catch (err: any) {
         console.error('Error exporting BOQ PDF:', err);
         setErrorMessage('Gagal mengunduh PDF BOQ: ' + (err?.message || 'Kesalahan sistem'));
@@ -1149,7 +1209,30 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       try {
         setIsExportingJournal(true);
         const docId = `JRN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
-        const dates = filteredMutations
+
+        let mutationsToExport = [...filteredMutations];
+        if (config.filterScope.transactionType === 'MASUK') {
+          mutationsToExport = mutationsToExport.filter(m => m.jenis === 'MASUK');
+        } else if (config.filterScope.transactionType === 'KELUAR') {
+          mutationsToExport = mutationsToExport.filter(m => m.jenis === 'KELUAR');
+        }
+
+        if (config.filterScope.onlyActive) {
+          mutationsToExport = mutationsToExport.filter(m => !m.is_batal && !m.is_ganti && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI');
+        }
+
+        if (config.sortConfig.key !== 'default') {
+          const dirMul = config.sortConfig.dir === 'desc' ? -1 : 1;
+          mutationsToExport.sort((a, b) => {
+            if (config.sortConfig.key === 'tanggal') return (new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime()) * dirMul;
+            if (config.sortConfig.key === 'nama_barang') return a.nama_barang.localeCompare(b.nama_barang) * dirMul;
+            if (config.sortConfig.key === 'jumlah') return (a.jumlah - b.jumlah) * dirMul;
+            if (config.sortConfig.key === 'nomor_surat_jalan') return (a.nomor_surat_jalan || '').localeCompare(b.nomor_surat_jalan || '') * dirMul;
+            return 0;
+          });
+        }
+
+        const dates = mutationsToExport
           .map((m) => (m.tanggal ? new Date(m.tanggal).getTime() : NaN))
           .filter((t) => !Number.isNaN(t));
         const today = new Date().toISOString().slice(0, 10);
@@ -1160,15 +1243,16 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           docId,
           startDate,
           endDate,
-          mutations: filteredMutations,
+          mutations: mutationsToExport,
           signer: user,
           projectName: tenantBranding.projectName,
           physicalMaterials,
           branding: tenantBranding,
           filterSummary: `${exportModalState.currentFilterLabel} · ${exportModalState.currentSortLabel}`,
-          customNotes: config.customNotes
+          customNotes: config.customNotes,
+          selectedColumns: config.selectedColumns
         });
-        setNoticeMessage(`PDF Jurnal Mutasi (${filteredMutations.length} baris sesuai konfigurasi) berhasil diunduh.`);
+        setNoticeMessage(`PDF Jurnal Mutasi (${mutationsToExport.length} baris · ${config.selectedColumns.length} kolom) berhasil diunduh.`);
       } catch (err: any) {
         console.error('Error exporting Journal PDF:', err);
         setErrorMessage('Gagal mengunduh PDF Jurnal Transaksi: ' + (err?.message || 'Kesalahan sistem'));
@@ -2746,7 +2830,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         onClose={() => setExportModalState(prev => ({ ...prev, isOpen: false }))}
         targetType={exportModalState.targetType}
         title={exportModalState.title}
-        itemCount={exportModalState.itemCount}
+        totalOriginalCount={exportModalState.itemCount}
         initialIncludeFinancials={exportModalState.initialIncludeFinancials}
         onConfirmExport={handleConfirmExport}
         currentFilterLabel={exportModalState.currentFilterLabel}

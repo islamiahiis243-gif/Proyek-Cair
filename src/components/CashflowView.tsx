@@ -166,7 +166,29 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
     try {
       setIsExportingCash(true);
       const docId = `KAS-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
-      const dates = sortedCashList
+
+      let cashToExport = [...sortedCashList];
+      if (config.filterScope.transactionType === 'MASUK') {
+        cashToExport = cashToExport.filter(c => c.jenis === 'MASUK');
+      } else if (config.filterScope.transactionType === 'KELUAR') {
+        cashToExport = cashToExport.filter(c => c.jenis === 'KELUAR');
+      }
+
+      if (config.filterScope.onlyActive) {
+        cashToExport = cashToExport.filter(c => !c.is_batal && c.status_dokumen !== 'BATAL' && c.status_dokumen !== 'DIGANTI');
+      }
+
+      if (config.sortConfig.key !== 'default') {
+        const dirMul = config.sortConfig.dir === 'desc' ? -1 : 1;
+        cashToExport.sort((a, b) => {
+          if (config.sortConfig.key === 'tanggal') return (new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime()) * dirMul;
+          if (config.sortConfig.key === 'jumlah_rp') return (a.jumlah_rp - b.jumlah_rp) * dirMul;
+          if (config.sortConfig.key === 'kategori_keperluan') return (a.kategori_keperluan || '').localeCompare(b.kategori_keperluan || '') * dirMul;
+          return 0;
+        });
+      }
+
+      const dates = cashToExport
         .map((c) => (c.tanggal ? new Date(c.tanggal).getTime() : NaN))
         .filter((t) => !Number.isNaN(t));
       const today = new Date().toISOString().slice(0, 10);
@@ -181,14 +203,15 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
         docId,
         startDate,
         endDate,
-        cashMutations: sortedCashList,
+        cashMutations: cashToExport,
         signer: user,
         projectName: tenantBranding.projectName,
         branding: tenantBranding,
         filterSummary: `${typeLabel}${searchPart} · ${sortLabel}`,
-        customNotes: config.customNotes
+        customNotes: config.customNotes,
+        selectedColumns: config.selectedColumns
       });
-      setNoticeMessage(`PDF Jurnal Kas (${sortedCashList.length} baris sesuai konfigurasi) berhasil diunduh.`);
+      setNoticeMessage(`PDF Jurnal Kas (${cashToExport.length} baris · ${config.selectedColumns.length} kolom) berhasil diunduh.`);
     } catch (err: any) {
       setErrorMessage('Gagal mengunduh PDF Kas: ' + (err?.message || 'Kesalahan sistem'));
     } finally {
@@ -1387,7 +1410,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
         onClose={() => setIsExportModalOpen(false)}
         targetType="CASH"
         title="Buku Mutasi Kas & Rekonsiliasi Dana Proyek"
-        itemCount={sortedCashList.length}
+        totalOriginalCount={sortedCashList.length}
         initialIncludeFinancials={true}
         onConfirmExport={handleConfirmExportCash}
         currentFilterLabel={`${filterType === 'ALL' ? 'Semua Jenis' : filterType === 'MASUK' ? 'Kas Masuk (IN)' : 'Kas Keluar (OUT)'}${searchQuery.trim() ? ` · Cari: "${searchQuery.trim()}"` : ''}`}
