@@ -78,7 +78,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     rolePermissions,
     activeRole,
     dataReady,
-    tenantBranding
+    tenantBranding,
+    canViewFinancials
   } = useApp();
 
   const providerLabels = useMemo(
@@ -223,6 +224,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   const [batalReason, setBatalReason] = useState('');
   const [gantiTarget, setGantiTarget] = useState<MutasiBarang | null>(null);
   const [gantiReason, setGantiReason] = useState('');
+  const [gantiHargaSatuan, setGantiHargaSatuan] = useState<number | ''>('');
+  const [gantiIsHargaBelumDiketahui, setGantiIsHargaBelumDiketahui] = useState(false);
+  const [gantiIsNotaMenyusul, setGantiIsNotaMenyusul] = useState(false);
+  const [gantiNamaItemAktual, setGantiNamaItemAktual] = useState('');
 
   // Sinkronisasi saat modal dibuka dari luar (Dashboard / Inventaris via App.tsx)
   useEffect(() => {
@@ -851,6 +856,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     setMutationDate(toLocalDateInput(item.tanggal));
     setSourceName(item.source_name || '');
     setDestinationName(item.destination_name || '');
+    setGantiHargaSatuan(item.harga_satuan_beli != null ? item.harga_satuan_beli : '');
+    setGantiIsHargaBelumDiketahui(item.status_harga === 'BELUM_DIKETAHUI');
+    setGantiIsNotaMenyusul(item.status_harga === 'NOTA_MENYUSUL');
+    setGantiNamaItemAktual(item.nama_item_aktual || '');
   };
 
   // Konfirmasi GANTI Mutasi
@@ -862,6 +871,16 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
     const itemName = isCustomMode ? customItemName.trim() : (currentPhysicalMaterial?.nama_barang || gantiTarget.nama_barang || 'Material');
     const itemSatuan = isCustomMode ? customItemUom.trim() : (currentPhysicalMaterial?.satuan || gantiTarget.satuan || 'Unit');
+
+    let computedStatusHarga: 'NOTA_MENYUSUL' | 'BELUM_DIKETAHUI' | undefined = undefined;
+    if (gantiIsHargaBelumDiketahui) {
+      computedStatusHarga = 'BELUM_DIKETAHUI';
+    } else if (gantiIsNotaMenyusul) {
+      computedStatusHarga = 'NOTA_MENYUSUL';
+    }
+    const computedHargaBeli = (gantiIsHargaBelumDiketahui || gantiIsNotaMenyusul || gantiHargaSatuan === '')
+      ? undefined
+      : Number(gantiHargaSatuan);
 
     try {
       const res = await gantiStockMutation(
@@ -883,7 +902,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           owner_type: ownerType,
           purpose: purpose,
           beban_biaya: bebanBiaya,
-          is_custom_item: isCustomMode
+          is_custom_item: isCustomMode,
+          harga_satuan_beli: computedHargaBeli,
+          status_harga: computedStatusHarga,
+          nama_item_aktual: gantiNamaItemAktual.trim() || undefined
         },
         gantiReason
       );
@@ -1297,6 +1319,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
         if (config.filterScope.onlyActive) {
           mutationsToExport = mutationsToExport.filter(m => !m.is_batal && !m.is_ganti && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI');
+        }
+
+        if (config.filterScope.onlyPendingInvoice) {
+          mutationsToExport = mutationsToExport.filter(m =>
+            m.status_harga === 'NOTA_MENYUSUL' || m.status_harga === 'BELUM_DIKETAHUI' || (m.jenis === 'MASUK' && m.harga_satuan_beli == null)
+          );
         }
 
         if (config.sortConfig.key !== 'default') {
@@ -2361,9 +2389,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                               key={mut.id}
                               className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors ${
                                 isVoid
-                                  ? 'opacity-55 bg-rose-50/20 line-through'
+                                  ? 'opacity-65 bg-rose-50/30 dark:bg-rose-950/20'
                                   : isReplaced
-                                  ? 'opacity-65 bg-amber-50/20 line-through'
+                                  ? 'opacity-70 bg-amber-50/30 dark:bg-amber-950/20'
                                   : rowDiscrepancy.isMismatch
                                   ? 'bg-amber-50/50 dark:bg-amber-950/20'
                                   : ''
@@ -2390,6 +2418,16 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                               <td className="py-3 px-3.5">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="font-semibold text-slate-900 dark:text-white">{mut.nama_barang}</span>
+                                  {isVoid && (
+                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
+                                      ❌ BATAL · Dinolkan
+                                    </span>
+                                  )}
+                                  {isReplaced && (
+                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-950/70 dark:text-amber-200 border border-amber-200 dark:border-amber-900" title={mut.alasan_batal_ganti || 'Baris ini digantikan oleh data revisi baru'}>
+                                      🔄 DIGANTI · Dinolkan
+                                    </span>
+                                  )}
                                   {mut.is_custom_item ? (
                                     <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">
                                       ✍️ Kustom Non-BOQ
@@ -2409,16 +2447,22 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                 {mut.catatan && <div className="text-[11px] text-slate-600 dark:text-slate-300 italic mt-0.5">{mut.catatan}</div>}
                               </td>
                               <td className="py-3 px-3.5 text-right font-mono font-bold tabular-nums whitespace-nowrap">
-                                <span className={mut.jenis === 'MASUK' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                                  {mut.jenis === 'MASUK' ? '+' : '-'} {mut.jumlah.toLocaleString('id-ID')}
-                                </span>{' '}
-                                <span className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">{mut.satuan}</span>
-                                {(isVoid || isReplaced) && (
-                                  <div className="text-[9px] font-bold text-rose-600 dark:text-rose-400 no-underline">
-                                    Dinolkan (0 {mut.satuan})
+                                {(isVoid || isReplaced) ? (
+                                  <div>
+                                    <span className="text-slate-400 dark:text-slate-500 font-mono font-bold">
+                                      0 <span className="text-[11px] font-normal">{mut.satuan}</span>
+                                    </span>
+                                    <div className="text-[9px] font-bold text-rose-600 dark:text-rose-400">
+                                      Ditolak / Dinolkan
+                                    </div>
                                   </div>
+                                ) : (
+                                  <span className={mut.jenis === 'MASUK' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                                    {mut.jenis === 'MASUK' ? '+' : '-'} {mut.jumlah.toLocaleString('id-ID')}{' '}
+                                    <span className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">{mut.satuan}</span>
+                                  </span>
                                 )}
-                                {mut.harga_satuan_beli != null && activeRole !== 'Viewer/Pengamat' && (
+                                {mut.harga_satuan_beli != null && canViewFinancials && (
                                   <div className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300 font-semibold">
                                     @ Rp {mut.harga_satuan_beli.toLocaleString('id-ID')}
                                   </div>
@@ -2997,7 +3041,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Jumlah Baru</label>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Jumlah Baru</label>
                 <input
                   type="number"
                   min="0.01"
@@ -3009,15 +3053,105 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 />
               </div>
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">No. Surat Jalan Baru</label>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Tanggal Transaksi</label>
                 <input
-                  type="text"
-                  value={suratJalan}
-                  onChange={(e) => setSuratJalan(e.target.value)}
+                  type="date"
+                  required
+                  value={mutationDate}
+                  onChange={(e) => setMutationDate(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl font-mono text-xs"
                 />
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">No. Surat Jalan Baru</label>
+                <input
+                  type="text"
+                  value={suratJalan}
+                  onChange={(e) => setSuratJalan(e.target.value)}
+                  placeholder="Opsional..."
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl font-mono text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">PIC Petugas</label>
+                <input
+                  type="text"
+                  value={pic}
+                  onChange={(e) => setPic(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl text-xs"
+                />
+              </div>
+            </div>
+
+            {/* Input Finansial & Pengganti Khusus MASUK */}
+            {gantiTarget.jenis === 'MASUK' && (
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Harga Nota / Satuan Riil
+                  </label>
+                  <span className="text-[10px] text-slate-500">Harga beli riil di toko</span>
+                </div>
+
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">Rp</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    disabled={gantiIsHargaBelumDiketahui || gantiIsNotaMenyusul}
+                    value={gantiIsHargaBelumDiketahui || gantiIsNotaMenyusul ? '' : gantiHargaSatuan}
+                    onChange={(e) => setGantiHargaSatuan(e.target.value === '' ? '' : Number(e.target.value))}
+                    placeholder={gantiIsHargaBelumDiketahui ? 'Harga belum diketahui' : gantiIsNotaMenyusul ? 'Nota menyusul' : '0'}
+                    className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl font-mono text-xs font-bold disabled:opacity-50"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-4 text-xs text-slate-700 dark:text-slate-300">
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={gantiIsHargaBelumDiketahui}
+                      onChange={(e) => {
+                        setGantiIsHargaBelumDiketahui(e.target.checked);
+                        if (e.target.checked) setGantiIsNotaMenyusul(false);
+                      }}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>Harga belum diketahui</span>
+                  </label>
+
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={gantiIsNotaMenyusul}
+                      onChange={(e) => {
+                        setGantiIsNotaMenyusul(e.target.checked);
+                        if (e.target.checked) setGantiIsHargaBelumDiketahui(false);
+                      }}
+                      className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    <span>Nota menyusul</span>
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Nama / Merek Aktual yang Tiba (Barang Pengganti)
+                  </label>
+                  <input
+                    type="text"
+                    value={gantiNamaItemAktual}
+                    onChange={(e) => setGantiNamaItemAktual(e.target.value)}
+                    placeholder="Contoh: Semen Gresik 50kg (Pengganti Tiga Roda karena toko kosong)..."
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl text-xs"
+                  />
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Uraian Keperluan Baru</label>

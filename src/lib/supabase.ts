@@ -85,6 +85,7 @@ export interface ActiveContextProject {
   membership_id: string;
   role_code?: string;
   role_name?: string;
+  can_view_financials?: boolean;
   permissions: string[];
 }
 export interface ActiveContext { authenticated:boolean; user_id?:string; is_platform_super_admin?:boolean; workspaces:ActiveContextWorkspace[]; projects:ActiveContextProject[] }

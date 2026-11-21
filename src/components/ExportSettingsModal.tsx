@@ -41,6 +41,7 @@ export interface ExportFilterScope {
   onlyRemaining: boolean;
   onlyMismatch: boolean;
   onlyActive: boolean;
+  onlyPendingInvoice?: boolean;
 }
 
 export interface ExportSortConfig {
@@ -80,8 +81,9 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
   currentSortLabel,
   onConfirmExport
 }) => {
-  const { activeRole, tenantBranding, user } = useApp();
-  const isViewer = activeRole === 'Viewer/Pengamat';
+  const { activeRole, tenantBranding, user, canViewFinancials } = useApp();
+  const isViewer = !canViewFinancials;
+  const isFinancialLocked = !canViewFinancials;
 
   // Daftar Definisi Kolom berdasarkan Target
   const availableColumns = useMemo<ExportColumnDef[]>(() => {
@@ -92,8 +94,8 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
           { key: 'nama_barang', label: 'Uraian Material / Pekerjaan', defaultSelected: true },
           { key: 'penyedia', label: 'Pihak Penyedia (Kontraktor / Klien)', defaultSelected: true },
           { key: 'qty_boq', label: 'Target Volume BOQ', defaultSelected: true },
-          { key: 'harga_satuan', label: 'Harga Satuan (Rp)', isFinancial: true, defaultSelected: !isViewer },
-          { key: 'total_kontrak', label: 'Total Nilai Kontrak (Rp)', isFinancial: true, defaultSelected: !isViewer },
+          { key: 'harga_satuan', label: 'Harga Satuan (Rp)', isFinancial: true, defaultSelected: canViewFinancials },
+          { key: 'total_kontrak', label: 'Total Nilai Kontrak (Rp)', isFinancial: true, defaultSelected: canViewFinancials },
           { key: 'qty_masuk', label: 'Realisasi Masuk Gudang', defaultSelected: true },
           { key: 'qty_sisa', label: 'Sisa Belum Tiba', defaultSelected: true },
           { key: 'status', label: 'Status Pemenuhan', defaultSelected: true }
@@ -116,9 +118,13 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
           { key: 'tanggal', label: 'Waktu Transaksi', defaultSelected: true },
           { key: 'nomor_surat_jalan', label: 'Nomor Surat Jalan / Bukti', defaultSelected: true },
           { key: 'nama_barang', label: 'Nama Material & Spesifikasi', defaultSelected: true },
+          { key: 'nama_item_aktual', label: 'Item Aktual / Pengganti', defaultSelected: true },
           { key: 'jenis', label: 'Jenis Mutasi (Masuk / Keluar)', defaultSelected: true },
           { key: 'jumlah', label: 'Volume Kuantitas (QTY)', defaultSelected: true },
           { key: 'satuan', label: 'Satuan', defaultSelected: false },
+          { key: 'harga_satuan_beli', label: 'Harga Nota / Satuan (Rp)', isFinancial: true, defaultSelected: canViewFinancials },
+          { key: 'total_harga_nota', label: 'Total Belanja Riil (Rp)', isFinancial: true, defaultSelected: canViewFinancials },
+          { key: 'status_harga', label: 'Status Nota (Menyusul/Belum Tahu)', defaultSelected: true },
           { key: 'tujuan_keperluan', label: 'Asal / Peruntukan / Pos BOQ', defaultSelected: true },
           { key: 'pic', label: 'PIC Petugas', defaultSelected: true },
           { key: 'status_dokumen', label: 'Status Alur Dokumen', defaultSelected: true }
@@ -131,13 +137,13 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
           { key: 'untuk_apa', label: 'Peruntukan / Keperluan Kas', defaultSelected: true },
           { key: 'kategori_keperluan', label: 'Kategori Keperluan', defaultSelected: true },
           { key: 'jenis', label: 'Jenis Kas (Masuk / Keluar)', defaultSelected: true },
-          { key: 'jumlah_rp', label: 'Nominal Dana (Rp)', isFinancial: true, defaultSelected: true },
-          { key: 'saldo_setelah', label: 'Saldo Kas Setelahnya (Rp)', isFinancial: true, defaultSelected: true },
+          { key: 'jumlah_rp', label: 'Nominal Dana (Rp)', isFinancial: true, defaultSelected: canViewFinancials },
+          { key: 'saldo_setelah', label: 'Saldo Kas Setelahnya (Rp)', isFinancial: true, defaultSelected: canViewFinancials },
           { key: 'pic', label: 'PIC Penanggung Jawab', defaultSelected: true },
           { key: 'status_dokumen', label: 'Status Alur Dokumen', defaultSelected: true }
         ];
     }
-  }, [targetType, isViewer]);
+  }, [targetType, canViewFinancials]);
 
   // Pilihan Kolom Sortir Berdasarkan Target
   const sortOptions = useMemo(() => {
@@ -197,6 +203,7 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
   const [onlyRemaining, setOnlyRemaining] = useState<boolean>(false);
   const [onlyMismatch, setOnlyMismatch] = useState<boolean>(false);
   const [onlyActive, setOnlyActive] = useState<boolean>(true);
+  const [onlyPendingInvoice, setOnlyPendingInvoice] = useState<boolean>(false);
 
   // State 4: Sortir Kolom & Arah
   const [sortKey, setSortKey] = useState<string>('default');
@@ -323,7 +330,8 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
           transactionType,
           onlyRemaining,
           onlyMismatch,
-          onlyActive
+          onlyActive,
+          onlyPendingInvoice
         },
         sortConfig: {
           key: sortKey,
@@ -573,25 +581,41 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-3 gap-1.5">
-                  {[
-                    { id: 'ALL', label: 'Semua Arah' },
-                    { id: 'MASUK', label: 'Masuk Saja (IN)' },
-                    { id: 'KELUAR', label: 'Keluar Saja (OUT)' }
-                  ].map(t => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setTransactionType(t.id as any)}
-                      className={`p-2 rounded-lg border text-xs font-semibold text-center transition-all cursor-pointer truncate ${
-                        transactionType === t.id
-                          ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-100 shadow-xs ring-1 ring-emerald-500'
-                          : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800'
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
+                <div className="space-y-2">
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[
+                      { id: 'ALL', label: 'Semua Arah' },
+                      { id: 'MASUK', label: 'Masuk Saja (IN)' },
+                      { id: 'KELUAR', label: 'Keluar Saja (OUT)' }
+                    ].map(t => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setTransactionType(t.id as any)}
+                        className={`p-2 rounded-lg border text-xs font-semibold text-center transition-all cursor-pointer truncate ${
+                          transactionType === t.id
+                            ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-100 shadow-xs ring-1 ring-emerald-500'
+                            : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {targetType === 'STOCK_JOURNAL' && (
+                    <label className="flex items-center gap-2 pt-1 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={onlyPendingInvoice}
+                        onChange={(e) => setOnlyPendingInvoice(e.target.checked)}
+                        className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                      />
+                      <span className="font-semibold text-amber-900 dark:text-amber-200">
+                        Hanya Tampilkan Nota Menyusul / Belum Ada Harga
+                      </span>
+                    </label>
+                  )}
                 </div>
               )}
             </div>

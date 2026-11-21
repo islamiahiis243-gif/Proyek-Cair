@@ -586,14 +586,16 @@ export const computeWizardSteps = (answers: StockWizardAnswers): WizardStepId[] 
     steps.push('CUSTOM_IDENTITY');
   }
 
-  steps.push('QTY_DATE');
-
   if (answers.mutationType === 'MASUK') {
+    // Alur Masuk: Tentukan Asal/Penyedia Dulu agar saat input QTY & Harga tahu status kewajiban harganya
     steps.push('ORIGIN');
     if (answers.itemSource === 'CUSTOM_EXISTING' || answers.itemSource === 'CUSTOM_NEW') {
       steps.push('CUSTOM_IN_PURPOSE');
     }
+    steps.push('QTY_DATE');
   } else {
+    // Alur Keluar: QTY & Tanggal -> Kategori Keluar -> Pos BOQ / Uraian
+    steps.push('QTY_DATE');
     steps.push('EXIT_CATEGORY');
     const isBoqProjectExit =
       answers.itemSource === 'BOQ' && answers.tujuanPengeluaran === 'PROYEK_BOQ';

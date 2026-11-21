@@ -296,9 +296,33 @@ export async function generateStockMutationPDF(params: {
     tanggal: { header: 'Waktu', width: 24, align: 'left', getValue: (m) => formatDateTime(m.tanggal) },
     nomor_surat_jalan: { header: 'No Surat Jalan', width: 24, align: 'left', getValue: (m) => m.nomor_surat_jalan || '-' },
     nama_barang: { header: 'Nama Material / Barang', width: 40, align: 'left', getValue: (m) => m.nama_barang },
+    nama_item_aktual: {
+      header: 'Item Aktual / Pengganti',
+      width: 32,
+      align: 'left',
+      getValue: (m) => m.nama_item_aktual || '-'
+    },
     jenis: { header: 'Jenis', width: 14, align: 'center', getValue: (m) => m.jenis },
     jumlah: { header: 'Volume', width: 20, align: 'right', getValue: (m, _, __, isVoid) => isVoid ? '0 (Batal)' : `${m.jumlah} ${m.satuan}` },
     satuan: { header: 'Satuan', width: 14, align: 'center', getValue: (m) => m.satuan },
+    harga_satuan_beli: {
+      header: 'Harga Satuan',
+      width: 22,
+      align: 'right',
+      getValue: (m, _, __, isVoid) => isVoid ? '-' : m.harga_satuan_beli != null ? `Rp ${m.harga_satuan_beli.toLocaleString('id-ID')}` : '-'
+    },
+    total_harga_nota: {
+      header: 'Total Belanja',
+      width: 24,
+      align: 'right',
+      getValue: (m, _, __, isVoid) => isVoid ? 'Rp 0' : m.harga_satuan_beli != null ? `Rp ${(m.harga_satuan_beli * m.jumlah).toLocaleString('id-ID')}` : '-'
+    },
+    status_harga: {
+      header: 'Status Nota',
+      width: 20,
+      align: 'center',
+      getValue: (m) => m.status_harga === 'NOTA_MENYUSUL' ? 'Nota Menyusul' : m.status_harga === 'BELUM_DIKETAHUI' ? 'Belum Tahu' : m.harga_satuan_beli != null ? 'Tercatat' : '-'
+    },
     tujuan_keperluan: {
       header: 'Asal / Peruntukan',
       width: 45,
@@ -381,8 +405,15 @@ export async function generateStockMutationPDF(params: {
     columnStyles: columnStylesConfig,
     didParseCell: (data) => {
       if (data.section === 'body') {
+        const m = mutations[data.row.index];
+        const isVoid = m?.is_batal || m?.status_dokumen === 'BATAL';
+        const isReplaced = m?.is_ganti || m?.status_dokumen === 'DIGANTI';
         const disc = discrepancyByRow[data.row.index];
-        if (disc?.isMismatch) {
+
+        if (isVoid || isReplaced) {
+          data.cell.styles.fillColor = [248, 250, 252];
+          data.cell.styles.textColor = [148, 163, 184];
+        } else if (disc?.isMismatch) {
           data.cell.styles.fillColor = [254, 243, 199];
           if (purposeColIdx !== -1 && data.column.index === purposeColIdx) {
             data.cell.styles.textColor = [120, 53, 15];

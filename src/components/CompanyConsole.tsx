@@ -47,6 +47,7 @@ type CoverageMember = {
   email?: string;
   avatar_url?: string | null;
   membership_status: string;
+  can_view_financials?: boolean;
   roles?: CoverageRole[];
   permissions: CoveragePermission[];
 };
@@ -121,6 +122,42 @@ export const CompanyConsole: React.FC = () => {
       setError(err?.message || 'Gagal mencabut jabatan.');
     } finally {
       setRevokeLoading(false);
+    }
+  };
+
+  const [togglingFinancialUserId, setTogglingFinancialUserId] = useState<string | null>(null);
+
+  const handleToggleFinancialAccess = async (
+    projectId: string,
+    userId: string,
+    memberName: string,
+    currentAccess: boolean
+  ) => {
+    setTogglingFinancialUserId(userId);
+    setError('');
+    try {
+      const newAccess = !currentAccess;
+      const { data, error: rpcErr } = await db.rpc('toggle_member_financial_access', {
+        p_project_id: projectId,
+        p_user_id: userId,
+        p_can_view: newAccess
+      });
+      if (rpcErr) {
+        const { error: directErr } = await db
+          .from('project_memberships')
+          .update({ can_view_financials: newAccess })
+          .eq('project_id', projectId)
+          .eq('user_id', userId)
+          .eq('membership_status', 'ACTIVE');
+        if (directErr) throw directErr;
+      }
+      setNotice(`Wewenang nominal ${memberName} berhasil diubah ke: ${newAccess ? 'Aktif (Dapat melihat harga & belanja)' : 'Terbatas (Nominal disembunyikan)'}.`);
+      setTimeout(() => setNotice(''), 4000);
+      await loadProjectCoverage(workspaceId);
+    } catch (err: any) {
+      setError(err?.message || 'Gagal mengubah wewenang nominal.');
+    } finally {
+      setTogglingFinancialUserId(null);
     }
   };
 
@@ -724,6 +761,24 @@ export const CompanyConsole: React.FC = () => {
                                         <span className="text-[10px] text-slate-600 dark:text-slate-300 italic">Belum ada jabatan</span>
                                       )}
                                     </div>
+                                  </div>
+
+                                  {/* Pengaturan Akses Nominal & Finansial CSA */}
+                                  <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2">
+                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Akses Nominal:</span>
+                                    <button
+                                      type="button"
+                                      disabled={togglingFinancialUserId === member.user_id}
+                                      onClick={() => handleToggleFinancialAccess(project.id, member.user_id, member.full_name, member.can_view_financials ?? true)}
+                                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-all cursor-pointer ${
+                                        (member.can_view_financials ?? true)
+                                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800 hover:bg-emerald-100'
+                                          : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 hover:bg-slate-200'
+                                      }`}
+                                      title="Klik untuk mengubah izin akses nominal & finansial anggota ini pada proyek"
+                                    >
+                                      <span>{(member.can_view_financials ?? true) ? '💰 Nominal Aktif' : '🔒 Nominal Terbatas'}</span>
+                                    </button>
                                   </div>
                                 </div>
                               ))}

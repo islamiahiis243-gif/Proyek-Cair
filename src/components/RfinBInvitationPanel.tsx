@@ -45,6 +45,7 @@ export const RfinBInvitationPanel: React.FC<{
     return [];
   });
   const [expiryDays, setExpiryDays] = useState('7');
+  const [canViewFinancials, setCanViewFinancials] = useState(true);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -121,7 +122,8 @@ export const RfinBInvitationPanel: React.FC<{
         p_recipient_email: email.trim().toLowerCase(),
         p_role_code: selectedRole,
         p_project_ids: selectedProjectIds,
-        p_expires_in: `${expiryDays} days`
+        p_expires_in: `${expiryDays} days`,
+        p_can_view_financials: canViewFinancials
       });
 
       if (rpcErr) throw rpcErr;
@@ -400,6 +402,26 @@ export const RfinBInvitationPanel: React.FC<{
                 Belum ada project terdaftar pada perusahaan ini. Buat project terlebih dahulu di menu Pengaturan Proyek.
               </p>
             )}
+          </div>
+
+          {/* Pengaturan Kewenangan Nominal & Finansial (Diatur CSA) */}
+          <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={canViewFinancials}
+                onChange={(e) => setCanViewFinancials(e.target.checked)}
+                className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <div>
+                <span className="text-xs font-bold text-slate-900 dark:text-white">
+                  Berikan Izin Akses Nominal & Finansial
+                </span>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 font-medium mt-0.5">
+                  Jika dicentang, anggota dapat melihat harga satuan nota, total belanja riil, dan nominal finansial proyek. Jika tidak dicentang, angka nominal akan disembunyikan.
+                </p>
+              </div>
+            </label>
           </div>
 
           <div className="pt-2">

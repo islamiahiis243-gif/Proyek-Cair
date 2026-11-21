@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, startTransition } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, startTransition } from 'react';
 import {
   ItemBarang,
   MutasiBarang,
@@ -136,6 +136,7 @@ interface AppContextType {
   updateCompanyLogo: (logoUrl: string) => Promise<void>;
   tenantBranding: TenantBranding;
   rolePermissions: RolePermissions;
+  canViewFinancials: boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -814,6 +815,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         owner_type: newMutation.owner_type || 'KONTRAKTOR',
         status_dokumen: 'DITERBITKAN',
         referensi_ganti_id: id,
+        harga_satuan_beli: newMutation.harga_satuan_beli != null ? newMutation.harga_satuan_beli : null,
+        status_harga: newMutation.status_harga || null,
+        nama_item_aktual: newMutation.nama_item_aktual || null,
         created_by_name: `${user.name} (${activeRole})`
       }).select().single();
 
@@ -1241,6 +1245,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     directorEmail: activeRole === 'CEO/Direktur' && user?.email ? user.email : ''
   };
 
+  const canViewFinancials = useMemo(() => {
+    if (activeRole === 'CEO/Direktur') return true;
+    const isCsa = activeContext?.workspaces?.some(w => w.type === 'COMPANY' && w.is_company_super_admin);
+    if (isCsa) return true;
+
+    const currentProj = activeProject || activeContext?.projects.find(p => p.id === activeProjectId);
+    if (currentProj && typeof currentProj.can_view_financials === 'boolean') {
+      return currentProj.can_view_financials;
+    }
+
+    if (activeRole === 'Viewer/Pengamat') {
+      return false;
+    }
+
+    return true;
+  }, [activeRole, activeContext, activeProjectId, activeProject]);
+
   return (
     <AppContext.Provider
       value={{
@@ -1305,7 +1326,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveCompany,
         updateCompanyLogo,
         tenantBranding,
-        rolePermissions
+        rolePermissions,
+        canViewFinancials
       }}
     >
       {children}

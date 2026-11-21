@@ -207,9 +207,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
     };
     setAnswers(nextAnswers);
     setStepError(null);
-    const nextSteps = computeWizardSteps(nextAnswers);
-    const qtyIdx = nextSteps.indexOf('QTY_DATE');
-    setStepIndex(qtyIdx >= 0 ? qtyIdx : 1);
+    setStepIndex(1);
   };
 
   const handleSelectExistingCustomItem = (ci: CustomStockOption) => {
@@ -228,9 +226,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
     };
     setAnswers(nextAnswers);
     setStepError(null);
-    const nextSteps = computeWizardSteps(nextAnswers);
-    const qtyIdx = nextSteps.indexOf('QTY_DATE');
-    setStepIndex(qtyIdx >= 0 ? qtyIdx : 1);
+    setStepIndex(1);
   };
 
   const handleChooseOtherNewItem = () => {
@@ -330,9 +326,6 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
   if (!isDoneNext && safeStepIndex > 0 && activeName) {
     contextChips.push(activeName);
   }
-  if (!isDoneNext && safeStepIndex > steps.indexOf('QTY_DATE') && answers.qty > 0) {
-    contextChips.push(`${answers.qty.toLocaleString('id-ID', { maximumFractionDigits: 3 })} ${activeUom}`);
-  }
   if (
     !isDoneNext &&
     answers.mutationType === 'MASUK' &&
@@ -341,11 +334,14 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
   ) {
     contextChips.push(
       answers.asalBarang === 'KLIEN'
-        ? `Klien (${tenantBranding.clientName})`
+        ? `Asal: Klien (${tenantBranding.clientName})`
         : answers.asalBarang === 'TOKO_BEBAS'
-        ? answers.tokoBebasName.trim() || 'Lainnya'
-        : tenantBranding.contractorName
+        ? `Asal: ${answers.tokoBebasName.trim() || 'Toko Bebas'}`
+        : `Asal: ${tenantBranding.contractorName}`
     );
+  }
+  if (!isDoneNext && safeStepIndex > steps.indexOf('QTY_DATE') && answers.qty > 0) {
+    contextChips.push(`${answers.qty.toLocaleString('id-ID', { maximumFractionDigits: 3 })} ${activeUom}`);
   }
 
   return (
