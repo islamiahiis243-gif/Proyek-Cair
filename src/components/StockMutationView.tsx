@@ -44,6 +44,7 @@ import {
   toLocalDateInput
 } from '../lib/stockMutationEngine';
 import { StockMutationWizardModal } from './StockMutationWizardModal';
+import { ExportSettingsModal, ExportTargetType, ExportSettingsConfig } from './ExportSettingsModal';
 
 interface StockMutationViewProps {
   isModalOpen: boolean;
@@ -1009,15 +1010,28 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     }
   };
 
-  // Ekspor PDF Tab 1: Rekap Gudang ("Satukan Masuk") — sesuai filter & urutan sortir layar
-  const handleExportWarehousePDF = async () => {
-    if (filteredWarehouseMaterials.length === 0) {
-      setErrorMessage('Tidak ada data material di layar untuk diekspor ke PDF.');
-      return;
-    }
-    try {
-      setIsExportingWarehouse(true);
-      const docId = `GDG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+  // Modal Pengaturan Ekspor PDF (Tokopedia/ERP Style)
+  const [exportModalState, setExportModalState] = useState<{
+    isOpen: boolean;
+    targetType: ExportTargetType;
+    title: string;
+    itemCount: number;
+    initialIncludeFinancials?: boolean;
+    currentFilterLabel?: string;
+    currentSortLabel?: string;
+  }>({
+    isOpen: false,
+    targetType: 'BOQ',
+    title: '',
+    itemCount: 0,
+  });
+
+  const openExportModal = (targetType: ExportTargetType) => {
+    if (targetType === 'WAREHOUSE') {
+      if (filteredWarehouseMaterials.length === 0) {
+        setErrorMessage('Tidak ada data material di layar untuk diekspor ke PDF.');
+        return;
+      }
       const filterLabelMap: Record<typeof warehouseFilter, string> = {
         ALL: 'Semua Material',
         HAS_ARRIVED: 'Sudah Ada Masuk',
@@ -1029,34 +1043,21 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         : 'Urut: Default';
       const searchPart = warehouseSearchQuery.trim() ? ` · Cari: "${warehouseSearchQuery.trim()}"` : '';
 
-      await generateWarehouseSummaryPDF({
-        docId,
-        materials: filteredWarehouseMaterials,
-        projectName: tenantBranding.projectName,
-        filterSummary: `${filterLabelMap[warehouseFilter]}${searchPart} · ${sortLabel}`,
-        signer: user || undefined,
-        stockMutations,
-        branding: tenantBranding
+      setExportModalState({
+        isOpen: true,
+        targetType: 'WAREHOUSE',
+        title: 'Rekapitulasi Gudang Material ("Satukan Masuk")',
+        itemCount: filteredWarehouseMaterials.length,
+        initialIncludeFinancials: false,
+        currentFilterLabel: `${filterLabelMap[warehouseFilter]}${searchPart}`,
+        currentSortLabel: sortLabel
       });
-      setNoticeMessage(`PDF Rekap Gudang (${filteredWarehouseMaterials.length} material sesuai sortir layar) berhasil diunduh.`);
-    } catch (err: any) {
-      console.error('Error exporting Warehouse PDF:', err);
-      setErrorMessage('Gagal mengunduh PDF Rekap Gudang: ' + (err?.message || 'Kesalahan sistem'));
-    } finally {
-      setIsExportingWarehouse(false);
-    }
-  };
-
-  // Ekspor PDF Tab 2: Realisasi per Pos BOQ ("Bedakan Keluar") — sesuai filter & urutan sortir layar
-  const handleExportBOQPDF = async () => {
-    const visibleItems = groupedBoqData.flatMap((d) => d.subSections.flatMap((s) => s.items));
-    if (visibleItems.length === 0) {
-      setErrorMessage('Tidak ada pos BOQ di layar untuk diekspor ke PDF.');
-      return;
-    }
-    try {
-      setIsExportingBoq(true);
-      const docId = `BOQ-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+    } else if (targetType === 'BOQ') {
+      const visibleItems = groupedBoqData.flatMap((d) => d.subSections.flatMap((s) => s.items));
+      if (visibleItems.length === 0) {
+        setErrorMessage('Tidak ada pos BOQ di layar untuk diekspor ke PDF.');
+        return;
+      }
       const providerLabel =
         boqProviderFilter === 'KONTRAKTOR'
           ? tenantBranding.contractorName
@@ -1069,62 +1070,111 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         : 'Urut: Default';
       const searchPart = boqSearchQuery.trim() ? ` · Cari: "${boqSearchQuery.trim()}"` : '';
 
-      await generateBOQReportPDF({
-        docId,
-        items: visibleItems,
-        projectName: tenantBranding.projectName,
-        signer: user || undefined,
-        preserveOrder: true,
-        filterSummary: `${providerLabel} · ${statusLabel}${searchPart} · ${sortLabel}`,
-        branding: tenantBranding,
-        hideFinancials: activeRole === 'Viewer/Pengamat'
+      setExportModalState({
+        isOpen: true,
+        targetType: 'BOQ',
+        title: 'Laporan Realisasi & Kontrol Pemenuhan BOQ',
+        itemCount: visibleItems.length,
+        initialIncludeFinancials: activeRole !== 'Viewer/Pengamat',
+        currentFilterLabel: `${providerLabel} · ${statusLabel}${searchPart}`,
+        currentSortLabel: sortLabel
       });
-      setNoticeMessage(`PDF Realisasi BOQ (${visibleItems.length} pos sesuai sortir layar) berhasil diunduh.`);
-    } catch (err: any) {
-      console.error('Error exporting BOQ PDF:', err);
-      setErrorMessage('Gagal mengunduh PDF BOQ: ' + (err?.message || 'Kesalahan sistem'));
-    } finally {
-      setIsExportingBoq(false);
-    }
-  };
-
-  // Ekspor PDF Tab 3: Jurnal Transaksi & Barang Kustom — sesuai filter & urutan sortir layar
-  const handleExportJournalPDF = async () => {
-    if (filteredMutations.length === 0) {
-      setErrorMessage('Tidak ada baris transaksi di layar untuk diekspor ke PDF.');
-      return;
-    }
-    try {
-      setIsExportingJournal(true);
-      const docId = `JRN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
-      const dates = filteredMutations
-        .map((m) => (m.tanggal ? new Date(m.tanggal).getTime() : NaN))
-        .filter((t) => !Number.isNaN(t));
-      const today = new Date().toISOString().slice(0, 10);
-      const startDate = dates.length > 0 ? new Date(Math.min(...dates)).toISOString().slice(0, 10) : today;
-      const endDate = dates.length > 0 ? new Date(Math.max(...dates)).toISOString().slice(0, 10) : today;
-
+    } else if (targetType === 'STOCK_JOURNAL') {
+      if (filteredMutations.length === 0) {
+        setErrorMessage('Tidak ada baris transaksi di layar untuk diekspor ke PDF.');
+        return;
+      }
       const typeLabel = deferredFilterType === 'ALL' ? 'Semua Jenis' : deferredFilterType;
       const searchPart = deferredSearchQuery.trim() ? ` · Cari: "${deferredSearchQuery.trim()}"` : '';
       const sortLabel = `Urut: ${deferredJournalSort.key} (${deferredJournalSort.dir === 'asc' ? 'Naik' : 'Turun'})`;
 
-      await generateStockMutationPDF({
-        docId,
-        startDate,
-        endDate,
-        mutations: filteredMutations,
-        signer: user,
-        projectName: tenantBranding.projectName,
-        physicalMaterials,
-        branding: tenantBranding,
-        filterSummary: `${typeLabel}${searchPart} · ${sortLabel}`
+      setExportModalState({
+        isOpen: true,
+        targetType: 'STOCK_JOURNAL',
+        title: 'Buku Jurnal Mutasi Barang Proyek',
+        itemCount: filteredMutations.length,
+        initialIncludeFinancials: false,
+        currentFilterLabel: `${typeLabel}${searchPart}`,
+        currentSortLabel: sortLabel
       });
-      setNoticeMessage(`PDF Jurnal Mutasi (${filteredMutations.length} baris sesuai sortir layar) berhasil diunduh.`);
-    } catch (err: any) {
-      console.error('Error exporting Journal PDF:', err);
-      setErrorMessage('Gagal mengunduh PDF Jurnal Transaksi: ' + (err?.message || 'Kesalahan sistem'));
-    } finally {
-      setIsExportingJournal(false);
+    }
+  };
+
+  const handleConfirmExport = async (config: ExportSettingsConfig) => {
+    if (exportModalState.targetType === 'WAREHOUSE') {
+      try {
+        setIsExportingWarehouse(true);
+        const docId = `GDG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+        await generateWarehouseSummaryPDF({
+          docId,
+          materials: filteredWarehouseMaterials,
+          projectName: tenantBranding.projectName,
+          filterSummary: `${exportModalState.currentFilterLabel} · ${exportModalState.currentSortLabel}`,
+          customNotes: config.customNotes,
+          signer: user || undefined,
+          stockMutations,
+          branding: tenantBranding
+        });
+        setNoticeMessage(`PDF Rekap Gudang (${filteredWarehouseMaterials.length} material sesuai konfigurasi) berhasil diunduh.`);
+      } catch (err: any) {
+        console.error('Error exporting Warehouse PDF:', err);
+        setErrorMessage('Gagal mengunduh PDF Rekap Gudang: ' + (err?.message || 'Kesalahan sistem'));
+      } finally {
+        setIsExportingWarehouse(false);
+      }
+    } else if (exportModalState.targetType === 'BOQ') {
+      const visibleItems = groupedBoqData.flatMap((d) => d.subSections.flatMap((s) => s.items));
+      try {
+        setIsExportingBoq(true);
+        const docId = `BOQ-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+        await generateBOQReportPDF({
+          docId,
+          items: visibleItems,
+          projectName: tenantBranding.projectName,
+          signer: user || undefined,
+          preserveOrder: true,
+          filterSummary: `${exportModalState.currentFilterLabel} · ${exportModalState.currentSortLabel}`,
+          branding: tenantBranding,
+          hideFinancials: activeRole === 'Viewer/Pengamat' ? true : !config.includeFinancials,
+          customNotes: config.customNotes
+        });
+        setNoticeMessage(`PDF Realisasi BOQ (${visibleItems.length} pos sesuai konfigurasi) berhasil diunduh.`);
+      } catch (err: any) {
+        console.error('Error exporting BOQ PDF:', err);
+        setErrorMessage('Gagal mengunduh PDF BOQ: ' + (err?.message || 'Kesalahan sistem'));
+      } finally {
+        setIsExportingBoq(false);
+      }
+    } else if (exportModalState.targetType === 'STOCK_JOURNAL') {
+      try {
+        setIsExportingJournal(true);
+        const docId = `JRN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+        const dates = filteredMutations
+          .map((m) => (m.tanggal ? new Date(m.tanggal).getTime() : NaN))
+          .filter((t) => !Number.isNaN(t));
+        const today = new Date().toISOString().slice(0, 10);
+        const startDate = dates.length > 0 ? new Date(Math.min(...dates)).toISOString().slice(0, 10) : today;
+        const endDate = dates.length > 0 ? new Date(Math.max(...dates)).toISOString().slice(0, 10) : today;
+
+        await generateStockMutationPDF({
+          docId,
+          startDate,
+          endDate,
+          mutations: filteredMutations,
+          signer: user,
+          projectName: tenantBranding.projectName,
+          physicalMaterials,
+          branding: tenantBranding,
+          filterSummary: `${exportModalState.currentFilterLabel} · ${exportModalState.currentSortLabel}`,
+          customNotes: config.customNotes
+        });
+        setNoticeMessage(`PDF Jurnal Mutasi (${filteredMutations.length} baris sesuai konfigurasi) berhasil diunduh.`);
+      } catch (err: any) {
+        console.error('Error exporting Journal PDF:', err);
+        setErrorMessage('Gagal mengunduh PDF Jurnal Transaksi: ' + (err?.message || 'Kesalahan sistem'));
+      } finally {
+        setIsExportingJournal(false);
+      }
     }
   };
 
@@ -1335,7 +1385,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   </div>
                   <button
                     type="button"
-                    onClick={handleExportWarehousePDF}
+                    onClick={() => openExportModal('WAREHOUSE')}
                     disabled={isExportingWarehouse || filteredWarehouseMaterials.length === 0}
                     title="Ekspor PDF sesuai filter & urutan sortir di layar"
                     className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer disabled:opacity-40"
@@ -1580,7 +1630,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={handleExportBOQPDF}
+                      onClick={() => openExportModal('BOQ')}
                       disabled={isExportingBoq}
                       className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
                     >
@@ -1669,7 +1719,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   </div>
                   <button
                     type="button"
-                    onClick={handleExportBOQPDF}
+                    onClick={() => openExportModal('BOQ')}
                     disabled={isExportingBoq || groupedBoqData.length === 0}
                     title="Ekspor PDF sesuai filter & urutan sortir di layar"
                     className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors cursor-pointer disabled:opacity-40"
@@ -2054,7 +2104,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   </div>
                   <button
                     type="button"
-                    onClick={handleExportJournalPDF}
+                    onClick={() => openExportModal('STOCK_JOURNAL')}
                     disabled={isExportingJournal || filteredMutations.length === 0}
                     title="Ekspor PDF sesuai filter & urutan sortir di layar"
                     className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors cursor-pointer disabled:opacity-40"
@@ -2688,6 +2738,19 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         preselectedLineId={wizardPreselectedLineId}
         onSubmitPayload={addStockMutation}
         onSuccessNotice={(msg) => setNoticeMessage(msg)}
+      />
+
+      {/* Modal Pengaturan Ekspor PDF (Tokopedia/ERP Style) */}
+      <ExportSettingsModal
+        isOpen={exportModalState.isOpen}
+        onClose={() => setExportModalState(prev => ({ ...prev, isOpen: false }))}
+        targetType={exportModalState.targetType}
+        title={exportModalState.title}
+        itemCount={exportModalState.itemCount}
+        initialIncludeFinancials={exportModalState.initialIncludeFinancials}
+        onConfirmExport={handleConfirmExport}
+        currentFilterLabel={exportModalState.currentFilterLabel}
+        currentSortLabel={exportModalState.currentSortLabel}
       />
 
       {/* Modal Konfirmasi BATAL */}

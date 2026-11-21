@@ -20,6 +20,7 @@ import {
   formatDateOnly,
   formatRupiah,
 } from '../lib/pdfGenerator';
+import { ExportSettingsModal, ExportSettingsConfig } from './ExportSettingsModal';
 
 export const ReportsView: React.FC = () => {
   const { stockMutations, physicalMaterials, cashMutations, documents, activeProject, activeWorkspaceId, user, setVerifyingDocId, setCurrentView, dataReady, dataError, refreshData, tenantBranding, activeRole } = useApp();
@@ -75,19 +76,43 @@ export const ReportsView: React.FC = () => {
     }
   }, [reportType, stockMutations, cashMutations, startDate, endDate, filterType, searchQuery]);
 
-  const handleGeneratePDF = async (e: React.FormEvent) => {
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+
+  const handleOpenExportModal = (e: React.FormEvent) => {
     e.preventDefault();
     setGenerationSuccess(null);
     setGenerationError(null);
-    if(!activeProject||activeProject.workspace_id!==activeWorkspaceId){setGenerationError('Pilih Project aktif sebelum membuat ekspor laporan.');return;}
-    if(reportType==='stock'&&!canReadStock){setGenerationError('Permission inventory.read pada Project aktif diperlukan untuk ekspor laporan stok.');return;}
-    if(reportType==='cash'&&!canReadCash){setGenerationError('Permission cash.read pada Project aktif diperlukan untuk ekspor laporan kas.');return;}
-    if(!startDate||!endDate||startDate>endDate){setGenerationError('Rentang tanggal tidak valid. Tanggal awal harus sama dengan atau lebih awal dari tanggal akhir.');return;}
+    if (!activeProject || activeProject.workspace_id !== activeWorkspaceId) {
+      setGenerationError('Pilih Project aktif sebelum membuat ekspor laporan.');
+      return;
+    }
+    if (reportType === 'stock' && !canReadStock) {
+      setGenerationError('Permission inventory.read pada Project aktif diperlukan untuk ekspor laporan stok.');
+      return;
+    }
+    if (reportType === 'cash' && !canReadCash) {
+      setGenerationError('Permission cash.read pada Project aktif diperlukan untuk ekspor laporan kas.');
+      return;
+    }
+    if (!startDate || !endDate || startDate > endDate) {
+      setGenerationError('Rentang tanggal tidak valid. Tanggal awal harus sama dengan atau lebih awal dari tanggal akhir.');
+      return;
+    }
+    if (matchingCount === 0) {
+      setGenerationError('Tidak ada baris data yang cocok dengan kriteria filter saat ini.');
+      return;
+    }
+    setIsExportModalOpen(true);
+  };
+
+  const handleConfirmExport = async (config: ExportSettingsConfig) => {
     setIsGenerating(true);
+    setGenerationSuccess(null);
+    setGenerationError(null);
 
     try {
       const dateTag = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const docId = `RPT-EXPORT-${dateTag}-${crypto.randomUUID().slice(0,8).toUpperCase()}`;
+      const docId = `RPT-EXPORT-${dateTag}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
       const projectName = activeProject?.name || activeProject?.project_code || 'Proyek aktif';
 
       if (reportType === 'cash' && !canReadCash) throw new Error('Permission cash.read pada Project aktif diperlukan.');
@@ -131,10 +156,11 @@ export const ReportsView: React.FC = () => {
           projectName,
           physicalMaterials,
           branding: tenantBranding,
-          filterSummary: `${typeLabel}${searchPart} · Urut: ${sortLabel}`
+          filterSummary: `${typeLabel}${searchPart} · Urut: ${sortLabel}`,
+          customNotes: config.customNotes
         });
 
-        setGenerationSuccess(`Ekspor PDF internal ${docId} (${filtered.length} transaksi sesuai filter & sortir) berhasil diunduh.`);
+        setGenerationSuccess(`Ekspor PDF internal ${docId} (${filtered.length} transaksi sesuai filter & konfigurasi) berhasil diunduh.`);
       } else {
         const filtered = cashMutations.filter((c) => {
           const dateOnly = c.tanggal.split('T')[0];
@@ -171,10 +197,11 @@ export const ReportsView: React.FC = () => {
           signer: user,
           projectName,
           branding: tenantBranding,
-          filterSummary: `${typeLabel}${searchPart} · Urut: ${sortLabel}`
+          filterSummary: `${typeLabel}${searchPart} · Urut: ${sortLabel}`,
+          customNotes: config.customNotes
         });
 
-        setGenerationSuccess(`Ekspor PDF internal ${docId} (${filtered.length} transaksi sesuai filter & sortir) berhasil diunduh.`);
+        setGenerationSuccess(`Ekspor PDF internal ${docId} (${filtered.length} transaksi sesuai filter & konfigurasi) berhasil diunduh.`);
       }
     } catch (err: any) {
       console.error('Error generating PDF:', err);
@@ -234,7 +261,7 @@ export const ReportsView: React.FC = () => {
 
       {/* Main Generator Form */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 transition-colors">
-        <form onSubmit={handleGeneratePDF} className="space-y-5">
+        <form onSubmit={handleOpenExportModal} className="space-y-5">
           <div className="border-b border-slate-100 dark:border-slate-800 pb-4">
             <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <Printer className="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -512,6 +539,19 @@ export const ReportsView: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Modal Pengaturan Ekspor PDF (Tokopedia/ERP Style) */}
+      <ExportSettingsModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        targetType={reportType === 'stock' ? 'STOCK_JOURNAL' : 'CASH'}
+        title={`Studio Laporan: ${reportType === 'stock' ? 'Mutasi Stok Barang' : 'Mutasi Kas Proyek'}`}
+        itemCount={matchingCount}
+        initialIncludeFinancials={reportType === 'stock' ? !isViewer : true}
+        onConfirmExport={handleConfirmExport}
+        currentFilterLabel={`Periode: ${startDate} s/d ${endDate} · ${filterType === 'ALL' ? 'Semua Jenis' : filterType === 'MASUK' ? 'Masuk' : 'Keluar'}${searchQuery.trim() ? ` · "${searchQuery.trim()}"` : ''}`}
+        currentSortLabel={`Urut: ${sortOrder === 'DATE_DESC' ? 'Terbaru' : sortOrder === 'DATE_ASC' ? 'Terlama' : sortOrder === 'AMOUNT_DESC' ? 'Terbesar' : 'Terkecil'}`}
+      />
     </div>
   );
 };

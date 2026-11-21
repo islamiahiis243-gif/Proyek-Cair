@@ -21,6 +21,7 @@ import {
   ArrowUpDown
 } from 'lucide-react';
 import { formatRupiah, formatDateTime, generateCashflowPDF } from '../lib/pdfGenerator';
+import { ExportSettingsModal, ExportSettingsConfig } from './ExportSettingsModal';
 
 interface CashflowViewProps {
   isModalOpen: boolean;
@@ -159,11 +160,9 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
     }
   };
 
-  const handleExportCashPDF = async () => {
-    if (sortedCashList.length === 0) {
-      setErrorMessage('Tidak ada transaksi kas di layar untuk diekspor ke PDF.');
-      return;
-    }
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+
+  const handleConfirmExportCash = async (config: ExportSettingsConfig) => {
     try {
       setIsExportingCash(true);
       const docId = `KAS-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -186,14 +185,23 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
         signer: user,
         projectName: tenantBranding.projectName,
         branding: tenantBranding,
-        filterSummary: `${typeLabel}${searchPart} · ${sortLabel}`
+        filterSummary: `${typeLabel}${searchPart} · ${sortLabel}`,
+        customNotes: config.customNotes
       });
-      setNoticeMessage(`PDF Jurnal Kas (${sortedCashList.length} baris sesuai sortir layar) berhasil diunduh.`);
+      setNoticeMessage(`PDF Jurnal Kas (${sortedCashList.length} baris sesuai konfigurasi) berhasil diunduh.`);
     } catch (err: any) {
       setErrorMessage('Gagal mengunduh PDF Kas: ' + (err?.message || 'Kesalahan sistem'));
     } finally {
       setIsExportingCash(false);
     }
+  };
+
+  const handleExportCashPDF = () => {
+    if (sortedCashList.length === 0) {
+      setErrorMessage('Tidak ada transaksi kas di layar untuk diekspor ke PDF.');
+      return;
+    }
+    setIsExportModalOpen(true);
   };
 
   const handleOpenModal = (t: JenisMutasiKas) => {
@@ -1372,6 +1380,19 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
           </form>
         </div>
       )}
+
+      {/* Modal Pengaturan Ekspor PDF (Tokopedia/ERP Style) */}
+      <ExportSettingsModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        targetType="CASH"
+        title="Buku Mutasi Kas & Rekonsiliasi Dana Proyek"
+        itemCount={sortedCashList.length}
+        initialIncludeFinancials={true}
+        onConfirmExport={handleConfirmExportCash}
+        currentFilterLabel={`${filterType === 'ALL' ? 'Semua Jenis' : filterType === 'MASUK' ? 'Kas Masuk (IN)' : 'Kas Keluar (OUT)'}${searchQuery.trim() ? ` · Cari: "${searchQuery.trim()}"` : ''}`}
+        currentSortLabel={`Urut: ${sortField} (${sortDir === 'asc' ? 'Naik' : 'Turun'})`}
+      />
     </div>
   );
 };
