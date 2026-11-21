@@ -99,6 +99,7 @@ export interface MutasiBarang {
   alasan_batal_ganti?: string;
   harga_satuan_beli?: number;
   status_harga?: 'TERCATAT' | 'BELUM_DIKETAHUI' | 'NOTA_MENYUSUL' | 'JATAH_KLIEN';
+  nama_item_aktual?: string;
 }
 
 export type JenisMutasiKas = 'MASUK' | 'KELUAR';
@@ -125,6 +126,7 @@ export interface MutasiKas {
   alasan_batal_ganti?: string;
   harga_satuan_beli?: number;
   status_harga?: 'TERCATAT' | 'BELUM_DIKETAHUI' | 'NOTA_MENYUSUL' | 'JATAH_KLIEN';
+  nama_item_aktual?: string;
 }
 
 export interface DokumenLaporan {
@@ -173,6 +175,7 @@ export interface DokumenLaporan {
   alasan_batal_ganti?: string;
   harga_satuan_beli?: number;
   status_harga?: 'TERCATAT' | 'BELUM_DIKETAHUI' | 'NOTA_MENYUSUL' | 'JATAH_KLIEN';
+  nama_item_aktual?: string;
 }
 
 export interface UserProfile {

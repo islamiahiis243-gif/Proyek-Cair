@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { KeyRound, Check, Copy, XCircle, RefreshCw, Send, AlertTriangle, ShieldCheck, Clock, Trash2 } from 'lucide-react';
+import { KeyRound, Check, Copy, XCircle, RefreshCw, Send, AlertTriangle, ShieldCheck, Clock, Trash2, MoreVertical, UserX } from 'lucide-react';
 import { getSupabaseClient } from '../lib/supabase';
 
 interface Project {
@@ -52,6 +52,14 @@ export const RfinBInvitationPanel: React.FC<{
   const [notice, setNotice] = useState('');
   const [issuedCode, setIssuedCode] = useState('');
   const [copyState, setCopyState] = useState('');
+  const [openMenuTokenId, setOpenMenuTokenId] = useState<string | null>(null);
+
+  // Tutup dropdown jika klik di luar
+  useEffect(() => {
+    const handleClose = () => setOpenMenuTokenId(null);
+    window.addEventListener('click', handleClose);
+    return () => window.removeEventListener('click', handleClose);
+  }, []);
 
   // Sinkronisasi data awal jika diteruskan dari penugasan anggota
   useEffect(() => {
@@ -130,21 +138,74 @@ export const RfinBInvitationPanel: React.FC<{
     }
   };
 
-  const handleRevoke = async (tokenId: string, recipient: string) => {
+  // Batalkan undangan yang belum diklaim
+  const handleCancelUnclaimed = async (inv: Invitation) => {
+    setOpenMenuTokenId(null);
     if (busy) return;
-    if (!window.confirm(`Yakin ingin mencabut undangan untuk ${recipient}? Kode ini tidak akan dapat digunakan lagi.`)) {
+    if (!window.confirm(`Batalkan undangan untuk ${inv.recipient_email}? Kode token ini tidak akan dapat digunakan lagi.`)) {
       return;
     }
     setBusy(true);
     setError('');
     setNotice('');
     try {
-      const { error: rpcErr } = await db.rpc('revoke_rfin', { p_token_id: tokenId });
-      if (rpcErr) throw rpcErr;
-      setNotice(`Undangan untuk ${recipient} berhasil dicabut.`);
+      const { data, error: rpcErr } = await db.rpc('revoke_rfin_invitation', { p_token_id: inv.token_id });
+      if (rpcErr || !data?.ok) {
+        // Fallback ke revoke_rfin bawaan
+        const { error: fErr } = await db.rpc('revoke_rfin', { p_token_id: inv.token_id });
+        if (fErr) {
+          await db.from('rfin_tokens').update({ revoked_at: new Date().toISOString() }).eq('id', inv.token_id);
+        }
+      }
+      setNotice(`Undangan untuk ${inv.recipient_email} berhasil dibatalkan.`);
       await loadInvitations();
     } catch (err: any) {
-      setError(err?.message || 'Gagal mencabut undangan.');
+      setError(err?.message || 'Gagal membatalkan undangan.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Cabut akses / penugasan yang sudah diklaim
+  const handleRevokeClaimed = async (inv: Invitation) => {
+    setOpenMenuTokenId(null);
+    if (busy) return;
+    const roleName = inv.snapshot?.personas?.[0]?.name || inv.snapshot?.role_code || 'Jabatan Proyek';
+    if (!window.confirm(`Cabut penugasan "${roleName}" untuk ${inv.recipient_email}? Akses dan kewenangan pada proyek terkait akan segera dinonaktifkan.`)) {
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const { data, error: rpcErr } = await db.rpc('revoke_rfin_invitation', { p_token_id: inv.token_id });
+      if (rpcErr || !data?.ok) {
+        // Fallback langsung update project_memberships
+        const roleCode = inv.snapshot?.role_code;
+        const projectIds: string[] = inv.snapshot?.project_ids || [];
+        const emailLower = inv.recipient_email.toLowerCase();
+
+        let userId = (inv as any).redeemed_by;
+        if (!userId) {
+          const { data: prof } = await db.from('profiles').select('id').eq('email', emailLower).maybeSingle();
+          userId = prof?.id;
+        }
+
+        if (userId && roleCode && projectIds.length > 0) {
+          for (const pid of projectIds) {
+            await db.from('project_memberships')
+              .update({ membership_status: 'REVOKED', updated_at: new Date().toISOString() })
+              .eq('project_id', pid)
+              .eq('user_id', userId)
+              .eq('role_code', roleCode);
+          }
+        }
+        await db.from('rfin_tokens').update({ revoked_at: new Date().toISOString() }).eq('id', inv.token_id);
+      }
+      setNotice(`Penugasan "${roleName}" untuk ${inv.recipient_email} berhasil dicabut.`);
+      await loadInvitations();
+    } catch (err: any) {
+      setError(err?.message || 'Gagal mencabut penugasan.');
     } finally {
       setBusy(false);
     }
@@ -398,34 +459,71 @@ export const RfinBInvitationPanel: React.FC<{
 
                   <div className="flex items-center gap-2">
                     {isRedeemed ? (
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                        ✓ Sudah Diklaim
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${
+                        isRevoked
+                          ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                          : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                      }`}>
+                        {isRevoked ? 'Akses Dicabut' : '✓ Sudah Diklaim'}
                       </span>
                     ) : isRevoked ? (
                       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-medium">
-                        Dicabut
+                        Dibatalkan
                       </span>
                     ) : isExpired ? (
                       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300">
                         Kedaluwarsa
                       </span>
                     ) : (
-                      <>
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                          Menunggu Klaim
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleRevoke(inv.token_id, inv.recipient_email)}
-                          disabled={busy}
-                          className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/40"
-                          title="Cabut kode undangan ini"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          <span>Cabut</span>
-                        </button>
-                      </>
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                        Menunggu Klaim
+                      </span>
                     )}
+
+                    {/* Menu Titik Tiga (Aksi Dinamis Batalkan / Cabut) */}
+                    <div className="relative" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenMenuTokenId(openMenuTokenId === inv.token_id ? null : inv.token_id)}
+                        disabled={busy}
+                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+                        title="Pilihan tindakan undangan"
+                      >
+                        <MoreVertical className="h-3.5 w-3.5" />
+                      </button>
+
+                      {openMenuTokenId === inv.token_id && (
+                        <div className="absolute right-0 top-full mt-1.5 w-48 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl py-1.5 z-30 animate-in fade-in zoom-in-95">
+                          {!isRedeemed && !isRevoked && !isExpired && (
+                            <button
+                              type="button"
+                              onClick={() => handleCancelUnclaimed(inv)}
+                              className="w-full flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-left transition-colors cursor-pointer"
+                            >
+                              <XCircle className="w-3.5 h-3.5 text-rose-500" />
+                              <span>Batalkan Undangan</span>
+                            </button>
+                          )}
+
+                          {isRedeemed && !isRevoked && (
+                            <button
+                              type="button"
+                              onClick={() => handleRevokeClaimed(inv)}
+                              className="w-full flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-left transition-colors cursor-pointer"
+                            >
+                              <UserX className="w-3.5 h-3.5 text-rose-500" />
+                              <span>Cabut Akses / Penugasan</span>
+                            </button>
+                          )}
+
+                          {(isRevoked || isExpired) && (
+                            <div className="px-3.5 py-2 text-[11px] text-slate-400 dark:text-slate-500 italic">
+                              {isRevoked ? 'Undangan telah dinonaktifkan' : 'Undangan sudah kedaluwarsa'}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               );

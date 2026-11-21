@@ -12,7 +12,9 @@ import {
   CheckCircle2,
   UserCheck,
   Briefcase,
-  Camera
+  Camera,
+  Trash2,
+  XCircle
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { getSupabaseClient, resolveMyActiveContext } from '../lib/supabase';
@@ -81,6 +83,46 @@ export const CompanyConsole: React.FC = () => {
   const [notice, setNotice] = useState('');
   const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
   const [isSavingLogo, setIsSavingLogo] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<{
+    projectId: string;
+    projectName: string;
+    userId: string;
+    memberName: string;
+    memberEmail?: string;
+    roleCode: string;
+    roleDisplayName: string;
+  } | null>(null);
+  const [revokeLoading, setRevokeLoading] = useState(false);
+
+  const handleConfirmRevokeRole = async () => {
+    if (!revokeTarget) return;
+    setRevokeLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      const { data, error: rpcErr } = await db.rpc('revoke_project_member_role', {
+        p_project_id: revokeTarget.projectId,
+        p_user_id: revokeTarget.userId,
+        p_role_code: revokeTarget.roleCode
+      });
+      if (rpcErr || !data?.ok) {
+        // Fallback langsung update project_memberships
+        const { error: fErr } = await db.from('project_memberships')
+          .update({ membership_status: 'REVOKED', updated_at: new Date().toISOString() })
+          .eq('project_id', revokeTarget.projectId)
+          .eq('user_id', revokeTarget.userId)
+          .eq('role_code', revokeTarget.roleCode);
+        if (fErr) throw fErr;
+      }
+      setNotice(`Jabatan ${revokeTarget.roleDisplayName} berhasil dicabut dari ${revokeTarget.memberName}.`);
+      setRevokeTarget(null);
+      await loadProjectCoverage(workspaceId);
+    } catch (err: any) {
+      setError(err?.message || 'Gagal mencabut jabatan.');
+    } finally {
+      setRevokeLoading(false);
+    }
+  };
 
   const handleSaveCompanyLogo = async (dataUrl: string) => {
     setIsSavingLogo(true);
@@ -655,16 +697,28 @@ export const CompanyConsole: React.FC = () => {
                                     <div className="flex flex-wrap gap-1">
                                       {member.roles?.length ? (
                                         member.roles.map(r => (
-                                          <span
+                                          <button
+                                            type="button"
                                             key={r.role_code}
-                                            className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border ${
+                                            onClick={() => setRevokeTarget({
+                                              projectId: project.id,
+                                              projectName: project.name,
+                                              userId: member.user_id,
+                                              memberName: member.full_name,
+                                              memberEmail: member.email,
+                                              roleCode: r.role_code,
+                                              roleDisplayName: r.display_name
+                                            })}
+                                            className={`group inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[10px] font-semibold rounded-full border transition-all cursor-pointer hover:border-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300 ${
                                               r.role_code === 'VIEWER'
                                                 ? 'bg-cyan-50 text-cyan-800 border-cyan-200 dark:bg-cyan-950/50 dark:text-cyan-200 dark:border-cyan-800'
                                                 : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-800'
                                             }`}
+                                            title={`Klik untuk mencabut jabatan ${r.display_name} dari ${member.full_name}`}
                                           >
-                                            {r.display_name}
-                                          </span>
+                                            <span>{r.display_name}</span>
+                                            <span className="text-[9px] text-slate-400 group-hover:text-rose-600 font-bold">✕</span>
+                                          </button>
                                         ))
                                       ) : (
                                         <span className="text-[10px] text-slate-600 dark:text-slate-300 italic">Belum ada jabatan</span>
@@ -1048,6 +1102,68 @@ export const CompanyConsole: React.FC = () => {
         subtitle="Pilih berkas logo resmi dari perangkat atau jepret langsung dari kamera. Pangkas dengan rasio 1:1."
         cropShape="rect"
       />
+
+      {/* Modal Konfirmasi Cabut Jabatan Anggota Tim Proyek */}
+      {revokeTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400 shrink-0">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Cabut Jabatan Anggota Tim
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Konfirmasi penonaktifan peran pada proyek.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 dark:text-slate-400 font-medium">Anggota:</span>
+                <span className="font-bold text-slate-900 dark:text-white">{revokeTarget.memberName}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 dark:text-slate-400 font-medium">Jabatan yang Dicabut:</span>
+                <span className="font-bold text-rose-600 dark:text-rose-400 px-2 py-0.5 rounded bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900">
+                  {revokeTarget.roleDisplayName}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 dark:text-slate-400 font-medium">Proyek:</span>
+                <span className="font-bold text-slate-900 dark:text-white">{revokeTarget.projectName}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
+              Apakah Anda yakin ingin mencabut jabatan ini? Anggota tidak akan lagi memiliki hak akses dan wewenang untuk peran ini pada proyek terkait.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setRevokeTarget(null)}
+                disabled={revokeLoading}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRevokeRole}
+                disabled={revokeLoading}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 cursor-pointer shadow-sm"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>{revokeLoading ? 'Mencabut...' : 'Ya, Cabut Jabatan'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

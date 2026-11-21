@@ -484,7 +484,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         referensi_ganti_id: t.referensi_ganti_id || undefined,
         alasan_batal_ganti: t.alasan_batal_ganti || undefined,
         harga_satuan_beli: t.harga_satuan_beli != null ? Number(t.harga_satuan_beli) : undefined,
-        status_harga: t.status_harga || undefined
+        status_harga: t.status_harga || undefined,
+        nama_item_aktual: t.nama_item_aktual || undefined
       };
     });
 
@@ -632,7 +633,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         referensi_ganti_id: t.referensi_ganti_id || undefined,
         alasan_batal_ganti: t.alasan_batal_ganti || undefined,
         harga_satuan_beli: t.harga_satuan_beli != null ? Number(t.harga_satuan_beli) : undefined,
-        status_harga: t.status_harga || undefined
+        status_harga: t.status_harga || undefined,
+        nama_item_aktual: t.nama_item_aktual || undefined
       };
     });
 
@@ -749,7 +751,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         status_dokumen: 'DITERBITKAN',
         created_by_name: `${user.name} (${activeRole})`,
         harga_satuan_beli: data.harga_satuan_beli != null ? data.harga_satuan_beli : null,
-        status_harga: data.status_harga || null
+        status_harga: data.status_harga || null,
+        nama_item_aktual: data.nama_item_aktual || null
       });
 
       if (error) throw error;

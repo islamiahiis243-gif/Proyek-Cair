@@ -40,6 +40,7 @@ export interface StockWizardAnswers {
   hargaNotaSatuan?: number | null;
   isHargaBelumDiketahui: boolean;
   isNotaMenyusul: boolean;
+  actualItemNameReplacement?: string;
   asalBarang: AsalBarang;
   tokoBebasName: string;
   customInPurpose: string;
@@ -544,6 +545,7 @@ export const createInitialWizardAnswers = (
     hargaNotaSatuan: null,
     isHargaBelumDiketahui: false,
     isNotaMenyusul: false,
+    actualItemNameReplacement: '',
     asalBarang: 'KONTRAKTOR',
     tokoBebasName: '',
     customInPurpose: '',
@@ -712,6 +714,7 @@ export interface ProcessedStockSubmission {
     extraLabel?: string;
     extraValue?: string;
     hargaDisplay?: string;
+    actualItemNameReplacement?: string;
   };
 }
 
@@ -897,7 +900,8 @@ export const buildStockMutationPayload = (
       beban_biaya: calculatedBeban,
       is_custom_item: isCustom,
       harga_satuan_beli: calculatedHargaSatuan,
-      status_harga: calculatedStatusHarga
+      status_harga: calculatedStatusHarga,
+      nama_item_aktual: answers.mutationType === 'MASUK' && answers.actualItemNameReplacement?.trim() ? answers.actualItemNameReplacement.trim() : undefined
     },
     summary: {
       itemName,
@@ -909,7 +913,8 @@ export const buildStockMutationPayload = (
       detailValue,
       extraLabel,
       extraValue,
-      hargaDisplay
+      hargaDisplay,
+      actualItemNameReplacement: answers.mutationType === 'MASUK' && answers.actualItemNameReplacement?.trim() ? answers.actualItemNameReplacement.trim() : undefined
     }
   };
 };

@@ -12,7 +12,8 @@ import {
   Sparkles,
   XCircle,
   AlertTriangle,
-  Receipt
+  Receipt,
+  PackageCheck
 } from 'lucide-react';
 import {
   JenisMutasiBarang,
@@ -850,6 +851,31 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                   </div>
                 );
               })()}
+
+              {/* Nama / Merek Aktual yang Datang (Barang Pengganti karena Stok Toko Kosong) */}
+              {answers.mutationType === 'MASUK' && (
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                      <PackageCheck className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      <span>Nama / Merek Aktual yang Tiba (Barang Pengganti)</span>
+                    </label>
+                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 px-2.5 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">
+                      Opsional
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+                    Tuliskan jika ukuran, merek, atau spesifikasi fisik yang dibeli berbeda dari rencana/kontrak karena ketiadaan stok di toko.
+                  </p>
+                  <input
+                    type="text"
+                    placeholder={`Contoh: ${activeName} (Pengganti merek Holcim / Ukuran tebal 10mm)`}
+                    value={answers.actualItemNameReplacement || ''}
+                    onChange={(e) => setAnswers({ ...answers, actualItemNameReplacement: e.target.value })}
+                    className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 focus:border-blue-500 text-slate-900 dark:text-white rounded-xl text-sm font-medium focus:outline-hidden"
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -1203,6 +1229,16 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                       </div>
                       <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
                         {processed.summary.hargaDisplay}
+                      </div>
+                    </div>
+                  )}
+                  {processed.summary.actualItemNameReplacement && (
+                    <div>
+                      <div className="text-[11px] uppercase font-bold text-slate-600 dark:text-slate-300">
+                        Item Aktual / Pengganti
+                      </div>
+                      <div className="font-bold text-blue-600 dark:text-blue-400">
+                        {processed.summary.actualItemNameReplacement}
                       </div>
                     </div>
                   )}

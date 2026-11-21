@@ -32,7 +32,8 @@ import {
   FileText,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  PackageCheck
 } from 'lucide-react';
 import { formatDateTime, formatRupiah, generateBOQReportPDF, generateStockMutationPDF, generateWarehouseSummaryPDF } from '../lib/pdfGenerator';
 import {
@@ -2399,6 +2400,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                     </span>
                                   )}
                                 </div>
+                                {mut.nama_item_aktual && (
+                                  <div className="mt-1 inline-flex items-center gap-1.5 text-[10px] font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-800">
+                                    <PackageCheck className="w-3 h-3 shrink-0 text-blue-600 dark:text-blue-400" />
+                                    <span>Aktual tiba: <b>{mut.nama_item_aktual}</b></span>
+                                  </div>
+                                )}
                                 {mut.catatan && <div className="text-[11px] text-slate-600 dark:text-slate-300 italic mt-0.5">{mut.catatan}</div>}
                               </td>
                               <td className="py-3 px-3.5 text-right font-mono font-bold tabular-nums whitespace-nowrap">
@@ -2409,6 +2416,11 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                 {(isVoid || isReplaced) && (
                                   <div className="text-[9px] font-bold text-rose-600 dark:text-rose-400 no-underline">
                                     Dinolkan (0 {mut.satuan})
+                                  </div>
+                                )}
+                                {mut.harga_satuan_beli != null && activeRole !== 'Viewer/Pengamat' && (
+                                  <div className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300 font-semibold">
+                                    @ Rp {mut.harga_satuan_beli.toLocaleString('id-ID')}
                                   </div>
                                 )}
                               </td>
