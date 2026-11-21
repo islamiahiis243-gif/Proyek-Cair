@@ -1104,6 +1104,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       const startDate = dates.length > 0 ? new Date(Math.min(...dates)).toISOString().slice(0, 10) : today;
       const endDate = dates.length > 0 ? new Date(Math.max(...dates)).toISOString().slice(0, 10) : today;
 
+      const typeLabel = deferredFilterType === 'ALL' ? 'Semua Jenis' : deferredFilterType;
+      const searchPart = deferredSearchQuery.trim() ? ` · Cari: "${deferredSearchQuery.trim()}"` : '';
+      const sortLabel = `Urut: ${deferredJournalSort.key} (${deferredJournalSort.dir === 'asc' ? 'Naik' : 'Turun'})`;
+
       await generateStockMutationPDF({
         docId,
         startDate,
@@ -1112,7 +1116,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         signer: user,
         projectName: tenantBranding.projectName,
         physicalMaterials,
-        branding: tenantBranding
+        branding: tenantBranding,
+        filterSummary: `${typeLabel}${searchPart} · ${sortLabel}`
       });
       setNoticeMessage(`PDF Jurnal Mutasi (${filteredMutations.length} baris sesuai sortir layar) berhasil diunduh.`);
     } catch (err: any) {

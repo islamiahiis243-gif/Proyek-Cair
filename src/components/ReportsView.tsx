@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   FileText,
@@ -37,9 +37,43 @@ export const ReportsView: React.FC = () => {
     return d.toISOString().split('T')[0];
   });
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [filterType, setFilterType] = useState<'ALL' | 'MASUK' | 'KELUAR'>('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState<'DATE_DESC' | 'DATE_ASC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>('DATE_DESC');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationSuccess, setGenerationSuccess] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
+
+  // Hitung jumlah baris yang cocok secara reaktif untuk preview pengguna
+  const matchingCount = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (reportType === 'stock') {
+      return stockMutations.filter((m) => {
+        const dateOnly = m.tanggal.split('T')[0];
+        const matchDate = dateOnly >= startDate && dateOnly <= endDate;
+        const matchType = filterType === 'ALL' || m.jenis === filterType;
+        const matchSearch =
+          !q ||
+          (m.nama_barang || '').toLowerCase().includes(q) ||
+          (m.tujuan_keperluan || '').toLowerCase().includes(q) ||
+          (m.pic_penerima_penyerah || '').toLowerCase().includes(q) ||
+          (m.nomor_surat_jalan || '').toLowerCase().includes(q);
+        return matchDate && matchType && matchSearch;
+      }).length;
+    } else {
+      return cashMutations.filter((c) => {
+        const dateOnly = c.tanggal.split('T')[0];
+        const matchDate = dateOnly >= startDate && dateOnly <= endDate;
+        const matchType = filterType === 'ALL' || c.jenis === filterType;
+        const matchSearch =
+          !q ||
+          (c.untuk_apa || '').toLowerCase().includes(q) ||
+          (c.pic || '').toLowerCase().includes(q) ||
+          (c.nomor_kuitansi || '').toLowerCase().includes(q);
+        return matchDate && matchType && matchSearch;
+      }).length;
+    }
+  }, [reportType, stockMutations, cashMutations, startDate, endDate, filterType, searchQuery]);
 
   const handleGeneratePDF = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,16 +90,38 @@ export const ReportsView: React.FC = () => {
       const docId = `RPT-EXPORT-${dateTag}-${crypto.randomUUID().slice(0,8).toUpperCase()}`;
       const projectName = activeProject?.name || activeProject?.project_code || 'Proyek aktif';
 
-
       if (reportType === 'cash' && !canReadCash) throw new Error('Permission cash.read pada Project aktif diperlukan.');
+      const q = searchQuery.trim().toLowerCase();
+
       if (reportType === 'stock') {
         const filtered = stockMutations.filter((m) => {
           const dateOnly = m.tanggal.split('T')[0];
-          return dateOnly >= startDate && dateOnly <= endDate;
+          const matchDate = dateOnly >= startDate && dateOnly <= endDate;
+          const matchType = filterType === 'ALL' || m.jenis === filterType;
+          const matchSearch =
+            !q ||
+            (m.nama_barang || '').toLowerCase().includes(q) ||
+            (m.tujuan_keperluan || '').toLowerCase().includes(q) ||
+            (m.pic_penerima_penyerah || '').toLowerCase().includes(q) ||
+            (m.nomor_surat_jalan || '').toLowerCase().includes(q);
+          return matchDate && matchType && matchSearch;
         });
 
-        if (filtered.length === 0) throw new Error('Tidak ada transaksi stok pada periode yang dipilih. Laporan tidak dibuat.');
-        filtered.sort((a,b)=>new Date(a.tanggal).getTime()-new Date(b.tanggal).getTime());
+        if (filtered.length === 0) throw new Error('Tidak ada transaksi stok yang cocok dengan kriteria filter dan rentang tanggal. Laporan tidak dibuat.');
+
+        filtered.sort((a, b) => {
+          if (sortOrder === 'DATE_DESC') return new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime();
+          if (sortOrder === 'DATE_ASC') return new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime();
+          if (sortOrder === 'AMOUNT_DESC') return b.jumlah - a.jumlah;
+          if (sortOrder === 'AMOUNT_ASC') return a.jumlah - b.jumlah;
+          return 0;
+        });
+
+        const sortLabel =
+          sortOrder === 'DATE_DESC' ? 'Terbaru' : sortOrder === 'DATE_ASC' ? 'Terlama' : sortOrder === 'AMOUNT_DESC' ? 'Volume Terbesar' : 'Volume Terkecil';
+        const typeLabel = filterType === 'ALL' ? 'Semua Jenis' : filterType === 'MASUK' ? 'Masuk (IN)' : 'Keluar (OUT)';
+        const searchPart = searchQuery.trim() ? ` · Cari: "${searchQuery.trim()}"` : '';
+
         await generateStockMutationPDF({
           docId,
           startDate,
@@ -75,17 +131,38 @@ export const ReportsView: React.FC = () => {
           projectName,
           physicalMaterials,
           branding: tenantBranding,
+          filterSummary: `${typeLabel}${searchPart} · Urut: ${sortLabel}`
         });
 
-        setGenerationSuccess(`Ekspor PDF internal ${docId} berhasil diunduh. Tidak dibuat dokumen resmi atau QR verifikasi; gunakan Operations Hub → Dokumen untuk alur approval dan Final Signatory.`);
+        setGenerationSuccess(`Ekspor PDF internal ${docId} (${filtered.length} transaksi sesuai filter & sortir) berhasil diunduh.`);
       } else {
         const filtered = cashMutations.filter((c) => {
           const dateOnly = c.tanggal.split('T')[0];
-          return dateOnly >= startDate && dateOnly <= endDate;
+          const matchDate = dateOnly >= startDate && dateOnly <= endDate;
+          const matchType = filterType === 'ALL' || c.jenis === filterType;
+          const matchSearch =
+            !q ||
+            (c.untuk_apa || '').toLowerCase().includes(q) ||
+            (c.pic || '').toLowerCase().includes(q) ||
+            (c.nomor_kuitansi || '').toLowerCase().includes(q);
+          return matchDate && matchType && matchSearch;
         });
 
-        if (filtered.length === 0) throw new Error('Tidak ada transaksi kas pada periode yang dipilih. Laporan tidak dibuat.');
-        filtered.sort((a,b)=>new Date(a.tanggal).getTime()-new Date(b.tanggal).getTime());
+        if (filtered.length === 0) throw new Error('Tidak ada transaksi kas yang cocok dengan kriteria filter dan rentang tanggal. Laporan tidak dibuat.');
+
+        filtered.sort((a, b) => {
+          if (sortOrder === 'DATE_DESC') return new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime();
+          if (sortOrder === 'DATE_ASC') return new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime();
+          if (sortOrder === 'AMOUNT_DESC') return b.jumlah_rp - a.jumlah_rp;
+          if (sortOrder === 'AMOUNT_ASC') return a.jumlah_rp - b.jumlah_rp;
+          return 0;
+        });
+
+        const sortLabel =
+          sortOrder === 'DATE_DESC' ? 'Terbaru' : sortOrder === 'DATE_ASC' ? 'Terlama' : sortOrder === 'AMOUNT_DESC' ? 'Nominal Terbesar' : 'Nominal Terkecil';
+        const typeLabel = filterType === 'ALL' ? 'Semua Jenis' : filterType === 'MASUK' ? 'Kas Masuk (IN)' : 'Kas Keluar (OUT)';
+        const searchPart = searchQuery.trim() ? ` · Cari: "${searchQuery.trim()}"` : '';
+
         await generateCashflowPDF({
           docId,
           startDate,
@@ -94,9 +171,10 @@ export const ReportsView: React.FC = () => {
           signer: user,
           projectName,
           branding: tenantBranding,
+          filterSummary: `${typeLabel}${searchPart} · Urut: ${sortLabel}`
         });
 
-        setGenerationSuccess(`Ekspor PDF internal ${docId} berhasil diunduh. Tidak dibuat dokumen resmi atau QR verifikasi; gunakan Operations Hub → Dokumen untuk alur approval dan Final Signatory.`);
+        setGenerationSuccess(`Ekspor PDF internal ${docId} (${filtered.length} transaksi sesuai filter & sortir) berhasil diunduh.`);
       }
     } catch (err: any) {
       console.error('Error generating PDF:', err);
@@ -264,6 +342,78 @@ export const ReportsView: React.FC = () => {
                 className="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
               />
             </div>
+          </div>
+
+          {/* Filter Jenis Transaksi, Pencarian & Pilihan Urutan Sortir */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Filter Jenis Transaksi
+              </label>
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                {[
+                  { id: 'ALL', label: 'Semua' },
+                  { id: 'MASUK', label: 'Masuk (IN)' },
+                  { id: 'KELUAR', label: 'Keluar (OUT)' }
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setFilterType(t.id as any)}
+                    className={`flex-1 py-1.5 px-2 text-[11px] font-bold rounded-lg transition-colors cursor-pointer ${
+                      filterType === t.id
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Cari Kata Kunci (Opsional)
+              </label>
+              <input
+                type="text"
+                placeholder={reportType === 'stock' ? 'Nama material, PIC, surat jalan...' : 'Peruntukan, PIC, no. kuitansi...'}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Urutan Sortir Laporan PDF
+              </label>
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as any)}
+                className="w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="DATE_DESC">Tanggal: Terbaru ke Terlama</option>
+                <option value="DATE_ASC">Tanggal: Terlama ke Terbaru</option>
+                <option value="AMOUNT_DESC">
+                  {reportType === 'stock' ? 'Volume: Terbesar ke Terkecil' : 'Nominal: Terbesar ke Terkecil'}
+                </option>
+                <option value="AMOUNT_ASC">
+                  {reportType === 'stock' ? 'Volume: Terkecil ke Terbesar' : 'Nominal: Terkecil ke Terbesar'}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          {/* Indikator Baris Cocok */}
+          <div className="flex items-center justify-between p-3 rounded-xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 text-xs text-blue-900 dark:text-blue-200">
+            <span className="font-semibold">
+              Preview Ekspor: Ditemukan <strong className="font-mono text-sm underline">{matchingCount}</strong> transaksi yang cocok dengan filter & sortir aktif.
+            </span>
+            <span className="text-[10px] text-blue-700 dark:text-blue-300">
+              PDF hanya memuat data hasil filter ini.
+            </span>
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300">

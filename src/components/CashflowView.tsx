@@ -16,7 +16,9 @@ import {
   Clock,
   ShieldCheck,
   Eye,
-  History
+  History,
+  FileText,
+  ArrowUpDown
 } from 'lucide-react';
 import { formatRupiah, formatDateTime, generateCashflowPDF } from '../lib/pdfGenerator';
 
@@ -122,6 +124,77 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
       return matchSearch && matchType && matchCat;
     });
   }, [cashMutations, searchQuery, filterType, filterCategory]);
+
+  const [sortField, setSortField] = useState<'tanggal' | 'nominal' | 'untuk_apa'>('tanggal');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [isExportingCash, setIsExportingCash] = useState(false);
+
+  const sortedCashList = useMemo(() => {
+    const list = [...filteredList];
+    list.sort((a, b) => {
+      if (sortField === 'tanggal') {
+        const tA = new Date(a.tanggal).getTime();
+        const tB = new Date(b.tanggal).getTime();
+        return sortDir === 'asc' ? tA - tB : tB - tA;
+      }
+      if (sortField === 'nominal') {
+        return sortDir === 'asc' ? a.jumlah_rp - b.jumlah_rp : b.jumlah_rp - a.jumlah_rp;
+      }
+      if (sortField === 'untuk_apa') {
+        return sortDir === 'asc'
+          ? (a.untuk_apa || '').localeCompare(b.untuk_apa || '')
+          : (b.untuk_apa || '').localeCompare(a.untuk_apa || '');
+      }
+      return 0;
+    });
+    return list;
+  }, [filteredList, sortField, sortDir]);
+
+  const toggleSort = (field: 'tanggal' | 'nominal' | 'untuk_apa') => {
+    if (sortField === field) {
+      setSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
+
+  const handleExportCashPDF = async () => {
+    if (sortedCashList.length === 0) {
+      setErrorMessage('Tidak ada transaksi kas di layar untuk diekspor ke PDF.');
+      return;
+    }
+    try {
+      setIsExportingCash(true);
+      const docId = `KAS-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const dates = sortedCashList
+        .map((c) => (c.tanggal ? new Date(c.tanggal).getTime() : NaN))
+        .filter((t) => !Number.isNaN(t));
+      const today = new Date().toISOString().slice(0, 10);
+      const startDate = dates.length > 0 ? new Date(Math.min(...dates)).toISOString().slice(0, 10) : today;
+      const endDate = dates.length > 0 ? new Date(Math.max(...dates)).toISOString().slice(0, 10) : today;
+
+      const typeLabel = filterType === 'ALL' ? 'Semua Jenis' : filterType === 'MASUK' ? 'Kas Masuk (IN)' : 'Kas Keluar (OUT)';
+      const searchPart = searchQuery.trim() ? ` · Cari: "${searchQuery.trim()}"` : '';
+      const sortLabel = `Urut: ${sortField} (${sortDir === 'asc' ? 'Naik' : 'Turun'})`;
+
+      await generateCashflowPDF({
+        docId,
+        startDate,
+        endDate,
+        cashMutations: sortedCashList,
+        signer: user,
+        projectName: tenantBranding.projectName,
+        branding: tenantBranding,
+        filterSummary: `${typeLabel}${searchPart} · ${sortLabel}`
+      });
+      setNoticeMessage(`PDF Jurnal Kas (${sortedCashList.length} baris sesuai sortir layar) berhasil diunduh.`);
+    } catch (err: any) {
+      setErrorMessage('Gagal mengunduh PDF Kas: ' + (err?.message || 'Kesalahan sistem'));
+    } finally {
+      setIsExportingCash(false);
+    }
+  };
 
   const handleOpenModal = (t: JenisMutasiKas) => {
     if (!rolePermissions.canIssue) {
@@ -526,7 +599,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                   />
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {[
                     { id: 'ALL', label: `Semua (${cashMutations.length})` },
                     { id: 'MASUK', label: `Masuk (${cashMutations.filter((m) => m.jenis === 'MASUK').length})` },
@@ -544,6 +617,17 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                       {tab.label}
                     </button>
                   ))}
+
+                  <button
+                    type="button"
+                    onClick={handleExportCashPDF}
+                    disabled={isExportingCash || sortedCashList.length === 0}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50 shrink-0 ml-1"
+                    title="Ekspor PDF sesuai filter & urutan sortir di layar"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>{isExportingCash ? 'Menyiapkan...' : 'Ekspor PDF Kas'}</span>
+                  </button>
                 </div>
               </div>
 
@@ -554,24 +638,60 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                     <thead>
                       <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold uppercase tracking-wider text-[10px]">
                         <th className="py-3 px-3.5 w-10 text-center">No</th>
-                        <th className="py-3 px-3.5">Tanggal</th>
+                        <th
+                          onClick={() => toggleSort('tanggal')}
+                          className="py-3 px-3.5 cursor-pointer hover:text-blue-500 select-none transition-colors"
+                          title="Klik untuk mengurutkan berdasarkan tanggal"
+                        >
+                          <div className="inline-flex items-center gap-1">
+                            <span>Tanggal</span>
+                            <ArrowUpDown className="w-3 h-3 opacity-60" />
+                            {sortField === 'tanggal' && (
+                              <span className="text-[9px] text-blue-500 font-mono">({sortDir.toUpperCase()})</span>
+                            )}
+                          </div>
+                        </th>
                         <th className="py-3 px-3.5 text-center">Jenis</th>
-                        <th className="py-3 px-3.5">Peruntukan / Keterangan & Jejak Audit</th>
-                        <th className="py-3 px-3.5 text-right">Nominal (Rp)</th>
+                        <th
+                          onClick={() => toggleSort('untuk_apa')}
+                          className="py-3 px-3.5 cursor-pointer hover:text-blue-500 select-none transition-colors"
+                          title="Klik untuk mengurutkan berdasarkan keterangan"
+                        >
+                          <div className="inline-flex items-center gap-1">
+                            <span>Peruntukan / Keterangan & Jejak Audit</span>
+                            <ArrowUpDown className="w-3 h-3 opacity-60" />
+                            {sortField === 'untuk_apa' && (
+                              <span className="text-[9px] text-blue-500 font-mono">({sortDir.toUpperCase()})</span>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => toggleSort('nominal')}
+                          className="py-3 px-3.5 text-right cursor-pointer hover:text-blue-500 select-none transition-colors"
+                          title="Klik untuk mengurutkan berdasarkan nominal"
+                        >
+                          <div className="inline-flex items-center gap-1 justify-end w-full">
+                            <span>Nominal (Rp)</span>
+                            <ArrowUpDown className="w-3 h-3 opacity-60" />
+                            {sortField === 'nominal' && (
+                              <span className="text-[9px] text-blue-500 font-mono">({sortDir.toUpperCase()})</span>
+                            )}
+                          </div>
+                        </th>
                         <th className="py-3 px-3.5">PIC / No. Ref</th>
                         <th className="py-3 px-3.5 text-center">Status Baris Data</th>
                         <th className="py-3 px-3.5 text-center">Koreksi Langsung (Batal / Ganti)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {filteredList.length === 0 ? (
+                      {sortedCashList.length === 0 ? (
                         <tr>
                           <td colSpan={8} className="py-12 text-center text-slate-600 dark:text-slate-300 font-medium">
                             Belum ada riwayat transaksi mutasi kas.
                           </td>
                         </tr>
                       ) : (
-                        filteredList.map((c, idx) => {
+                        sortedCashList.map((c, idx) => {
                           const isVoid = c.is_batal || c.status_dokumen === 'BATAL';
                           const isReplaced = c.is_ganti || c.status_dokumen === 'DIGANTI';
                           const canCorrectRow = rolePermissions.canInitiateBatalGanti || rolePermissions.canInstructBatalGanti;

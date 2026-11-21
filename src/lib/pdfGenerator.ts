@@ -169,6 +169,7 @@ export async function generateStockMutationPDF(params: {
   projectName?: string;
   physicalMaterials?: PhysicalMaterialItem[];
   branding?: TenantBranding;
+  filterSummary?: string;
 }): Promise<DokumenLaporan> {
   const {
     docId,
@@ -178,7 +179,8 @@ export async function generateStockMutationPDF(params: {
     signer,
     projectName,
     physicalMaterials = [],
-    branding: rawBranding
+    branding: rawBranding,
+    filterSummary
   } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
   const providerLabels = { contractorName: b.contractorName, clientName: b.clientName };
@@ -207,7 +209,7 @@ export async function generateStockMutationPDF(params: {
 
   doc.text(`Nomor Registrasi : ${docId}`, 14, 48);
   doc.text(`Periode Laporan  : ${formatDateOnly(startDate)} s/d ${formatDateOnly(endDate)}`, 14, 52);
-  doc.text(`Tanggal Cetak    : ${formatDateOnly(new Date().toISOString())}`, 14, 56);
+  doc.text(`Tanggal Cetak    : ${formatDateOnly(new Date().toISOString())}${filterSummary ? ` | ${filterSummary}` : ''}`, 14, 56);
 
   doc.text(`Proyek : ${b.projectName}`, pageWidth - 14, 48, { align: 'right' });
   doc.text(`Kontraktor : ${b.contractorName}`, pageWidth - 14, 52, { align: 'right' });
@@ -460,8 +462,9 @@ export async function generateCashflowPDF(params: {
   signer: UserProfile;
   projectName?: string;
   branding?: TenantBranding;
+  filterSummary?: string;
 }): Promise<DokumenLaporan> {
-  const { docId, startDate, endDate, cashMutations, signer, projectName, branding: rawBranding } = params;
+  const { docId, startDate, endDate, cashMutations, signer, projectName, branding: rawBranding, filterSummary } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -488,7 +491,7 @@ export async function generateCashflowPDF(params: {
 
   doc.text(`Nomor Registrasi : ${docId}`, 14, 48);
   doc.text(`Periode Laporan  : ${formatDateOnly(startDate)} s/d ${formatDateOnly(endDate)}`, 14, 52);
-  doc.text(`Tanggal Cetak    : ${formatDateOnly(new Date().toISOString())}`, 14, 56);
+  doc.text(`Tanggal Cetak    : ${formatDateOnly(new Date().toISOString())}${filterSummary ? ` | ${filterSummary}` : ''}`, 14, 56);
 
   doc.text(`Proyek : ${b.projectName}`, pageWidth - 14, 48, { align: 'right' });
   doc.text(`Kontraktor : ${b.contractorName}`, pageWidth - 14, 52, { align: 'right' });
