@@ -211,6 +211,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
         projectName: tenantBranding.projectName,
         branding: tenantBranding,
         filterSummary: `${typeLabel}${searchPart} · ${sortLabel}`,
+        customTitle: config.customTitle,
         customNotes: config.customNotes,
         selectedColumns: config.selectedColumns
       });

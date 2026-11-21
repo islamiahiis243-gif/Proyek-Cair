@@ -160,6 +160,7 @@ export const ReportsView: React.FC = () => {
           physicalMaterials,
           branding: tenantBranding,
           filterSummary: `${typeLabel}${searchPart} · Urut: ${sortLabel}`,
+          customTitle: config.customTitle,
           customNotes: config.customNotes,
           selectedColumns: config.selectedColumns
         });
@@ -202,6 +203,7 @@ export const ReportsView: React.FC = () => {
           projectName,
           branding: tenantBranding,
           filterSummary: `${typeLabel}${searchPart} · Urut: ${sortLabel}`,
+          customTitle: config.customTitle,
           customNotes: config.customNotes,
           selectedColumns: config.selectedColumns
         });

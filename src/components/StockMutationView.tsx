@@ -1116,6 +1116,22 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         const docId = `GDG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
         let materialsToExport = [...filteredWarehouseMaterials];
+        if (config.filterScope.providerScope === 'KONTRAKTOR') {
+          materialsToExport = materialsToExport.filter(pm =>
+            (pm.budget_lines || []).some(bl => !isClientProvidedRemark(bl.keterangan, tenantBranding.clientName))
+          );
+        } else if (config.filterScope.providerScope === 'IMK') {
+          materialsToExport = materialsToExport.filter(pm =>
+            (pm.budget_lines || []).some(bl => isClientProvidedRemark(bl.keterangan, tenantBranding.clientName))
+          );
+        }
+
+        if (config.filterScope.onlyRemaining) {
+          materialsToExport = materialsToExport.filter(pm =>
+            Math.max(0, (pm.total_qty_boq || 0) - (pm.total_qty_masuk || 0)) > 0
+          );
+        }
+
         if (config.filterScope.statusScope === 'HAS_STOCK') {
           materialsToExport = materialsToExport.filter(pm => pm.stok_fisik > 0);
         } else if (config.filterScope.statusScope === 'HAS_ARRIVED') {
@@ -1145,6 +1161,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           materials: materialsToExport,
           projectName: tenantBranding.projectName,
           filterSummary: `${exportModalState.currentFilterLabel} · ${exportModalState.currentSortLabel}`,
+          customTitle: config.customTitle,
           customNotes: config.customNotes,
           signer: user || undefined,
           stockMutations,
@@ -1176,6 +1193,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           itemsToExport = itemsToExport.filter(it => it.status_pemenuhan === 'Dalam pemenuhan');
         } else if (config.filterScope.statusScope === 'BELUM_TIBA') {
           itemsToExport = itemsToExport.filter(it => it.status_pemenuhan === 'Belum dipenuhi');
+        } else if (config.filterScope.statusScope === 'HAS_ARRIVED') {
+          itemsToExport = itemsToExport.filter(it => it.qty_masuk_total > 0);
         }
 
         if (config.filterScope.onlyRemaining) {
@@ -1204,6 +1223,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           filterSummary: `${exportModalState.currentFilterLabel} · ${exportModalState.currentSortLabel}`,
           branding: tenantBranding,
           hideFinancials: activeRole === 'Viewer/Pengamat' ? true : !config.includeFinancials,
+          customTitle: config.customTitle,
           customNotes: config.customNotes,
           selectedColumns: config.selectedColumns
         });
@@ -1220,6 +1240,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         const docId = `JRN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
         let mutationsToExport = [...filteredMutations];
+        if (config.filterScope.providerScope === 'KONTRAKTOR') {
+          mutationsToExport = mutationsToExport.filter(m => m.owner_type === 'KONTRAKTOR' || !isClientProvidedRemark(m.source_name, tenantBranding.clientName));
+        } else if (config.filterScope.providerScope === 'IMK') {
+          mutationsToExport = mutationsToExport.filter(m => m.owner_type === 'IMK' || m.owner_type === 'KLIEN' || isClientProvidedRemark(m.source_name, tenantBranding.clientName));
+        }
+
         if (config.filterScope.transactionType === 'MASUK') {
           mutationsToExport = mutationsToExport.filter(m => m.jenis === 'MASUK');
         } else if (config.filterScope.transactionType === 'KELUAR') {
@@ -1258,6 +1284,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           physicalMaterials,
           branding: tenantBranding,
           filterSummary: `${exportModalState.currentFilterLabel} · ${exportModalState.currentSortLabel}`,
+          customTitle: config.customTitle,
           customNotes: config.customNotes,
           selectedColumns: config.selectedColumns
         });

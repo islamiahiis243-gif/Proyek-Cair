@@ -170,6 +170,7 @@ export async function generateStockMutationPDF(params: {
   physicalMaterials?: PhysicalMaterialItem[];
   branding?: TenantBranding;
   filterSummary?: string;
+  customTitle?: string;
   customNotes?: string;
   selectedColumns?: string[];
 }): Promise<DokumenLaporan> {
@@ -183,6 +184,7 @@ export async function generateStockMutationPDF(params: {
     physicalMaterials = [],
     branding: rawBranding,
     filterSummary,
+    customTitle,
     customNotes,
     selectedColumns
   } = params;
@@ -204,7 +206,7 @@ export async function generateStockMutationPDF(params: {
   doc.setTextColor(15, 23, 42);
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  doc.text('BERITA ACARA & REKAPITULASI MUTASI BARANG', 14, 42);
+  doc.text(customTitle || 'BERITA ACARA & REKAPITULASI MUTASI BARANG', 14, 42);
 
   // Metadata Laporan
   doc.setFontSize(8);
@@ -490,10 +492,11 @@ export async function generateCashflowPDF(params: {
   projectName?: string;
   branding?: TenantBranding;
   filterSummary?: string;
+  customTitle?: string;
   customNotes?: string;
   selectedColumns?: string[];
 }): Promise<DokumenLaporan> {
-  const { docId, startDate, endDate, cashMutations, signer, projectName, branding: rawBranding, filterSummary, customNotes, selectedColumns } = params;
+  const { docId, startDate, endDate, cashMutations, signer, projectName, branding: rawBranding, filterSummary, customTitle, customNotes, selectedColumns } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -511,7 +514,7 @@ export async function generateCashflowPDF(params: {
   doc.setTextColor(15, 23, 42);
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  doc.text('BUKU KAS & LAPORAN ARUS DANA PROYEK', 14, 42);
+  doc.text(customTitle || 'BUKU KAS & LAPORAN ARUS DANA PROYEK', 14, 42);
 
   // Metadata
   doc.setFontSize(8);
@@ -744,6 +747,7 @@ export async function generateBOQReportPDF(params: {
   filterSummary?: string;
   branding?: TenantBranding;
   hideFinancials?: boolean;
+  customTitle?: string;
   customNotes?: string;
   selectedColumns?: string[];
 }): Promise<DokumenLaporan> {
@@ -756,6 +760,7 @@ export async function generateBOQReportPDF(params: {
     filterSummary,
     branding: rawBranding,
     hideFinancials = false,
+    customTitle,
     customNotes,
     selectedColumns
   } = params;
@@ -776,7 +781,7 @@ export async function generateBOQReportPDF(params: {
   doc.setTextColor(15, 23, 42);
   doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
-  doc.text('BILL OF QUANTITY (BOQ) & KONTROL PEMENUHAN MATERIAL', 14, 40);
+  doc.text(customTitle || 'BILL OF QUANTITY (BOQ) & KONTROL PEMENUHAN MATERIAL', 14, 40);
 
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
@@ -1107,6 +1112,7 @@ export async function generateWarehouseSummaryPDF(params: {
   materials: PhysicalMaterialItem[];
   projectName?: string;
   filterSummary?: string;
+  customTitle?: string;
   customNotes?: string;
   signer?: UserProfile;
   stockMutations?: MutasiBarang[];
@@ -1118,6 +1124,7 @@ export async function generateWarehouseSummaryPDF(params: {
     materials,
     projectName,
     filterSummary,
+    customTitle,
     customNotes,
     signer,
     stockMutations = [],
@@ -1141,7 +1148,7 @@ export async function generateWarehouseSummaryPDF(params: {
   doc.setTextColor(15, 23, 42);
   doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
-  doc.text('REKAPITULASI GUDANG MATERIAL ("SATUKAN MASUK")', 14, 40);
+  doc.text(customTitle || 'REKAPITULASI GUDANG MATERIAL ("SATUKAN MASUK")', 14, 40);
 
   const discrepancyList = materials.map((pm) => summarizeMaterialIncomingDiscrepancy(pm, stockMutations, providerLabels));
   const mismatchMatCount = discrepancyList.filter((d) => d.hasMismatch).length;
