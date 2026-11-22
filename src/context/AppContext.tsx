@@ -164,7 +164,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeProjectId, setActiveProjectIdState] = useState(() => localStorage.getItem('udu_active_project') || '');
   const [user, setUser] = useState<UserProfile>(() => getStoredUser());
   const [supabaseConfig] = useState<SupabaseConfig>(() => getStoredConfig());
-  const [currentView, setCurrentViewRaw] = useState('dashboard');
+  const [currentView, setCurrentViewRaw] = useState('landing');
   const setCurrentView = useCallback((view: string) => {
     startTransition(() => {
       setCurrentViewRaw(view);
@@ -175,7 +175,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [dataError, setDataError] = useState<string | null>(null);
   const [cashAccess, setCashAccess] = useState(false);
 
-  // App Mode & Impersonate State (Default aman selalu PERSONAL)
+  // App Mode & Impersonate State (Default aman selalu PERSONAL ala filosofi Coretax)
   const [appMode, setAppModeState] = useState<AppMode>(() => {
     try {
       const saved = localStorage.getItem(APP_MODE_KEY);
@@ -205,8 +205,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setAppMode = (mode: AppMode) => {
     setAppModeState(mode);
     localStorage.setItem(APP_MODE_KEY, mode);
-    // Set default view on mode switch
-    setCurrentView('dashboard');
+    // Set default view: PERSONAL default ke landing (katalog & beranda), mode lain ke dashboard
+    if (mode === 'PERSONAL') {
+      setCurrentView('landing');
+    } else {
+      setCurrentView('dashboard');
+    }
   };
 
   const setActiveRole = (role: ImpersonateRole) => {
@@ -1266,6 +1270,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       await signOutSupabase();
     } finally {
+      localStorage.removeItem(APP_MODE_KEY);
+      localStorage.removeItem(ACTIVE_ROLE_KEY);
+      setAppModeState('PERSONAL');
+      setCurrentView('landing');
       setUser({ ...DEFAULT_USER, id: '', email: '' });
     }
   };

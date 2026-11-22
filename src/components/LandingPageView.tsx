@@ -27,19 +27,52 @@ import {
   Info,
   HelpCircle,
   Clock,
-  Briefcase
+  Briefcase,
+  User
 } from 'lucide-react';
 import { formatRupiah } from '../lib/pdfGenerator';
 
 export const LandingPageView: React.FC = () => {
   const {
+    user,
     setCurrentView,
     appMode,
+    setAppMode,
     activeRole,
+    setActiveRole,
     activeCompany,
+    setActiveCompany,
     activeProject,
+    activeContext,
+    setActiveProjectId,
+    setActiveWorkspaceId,
     documents
   } = useApp();
+
+  // Helper Peralihan Peran Coretax: Masuk ke Penugasan Proyek
+  const handleSwitchToProject = (proj: any) => {
+    if (proj.company_id && proj.company_name) {
+      setActiveCompany({
+        id: proj.company_id,
+        name: proj.company_name,
+        npwp: proj.company_npwp || activeCompany.npwp
+      });
+    }
+    if (proj.workspace_id) {
+      setActiveWorkspaceId(proj.workspace_id);
+    }
+    if (proj.id) {
+      setActiveProjectId(proj.id);
+    }
+    setAppMode('IMPERSONATE');
+    setCurrentView('dashboard');
+  };
+
+  // Helper Peralihan Peran Coretax: Kembali ke Ruang Personal
+  const handleSwitchToPersonal = () => {
+    setAppMode('PERSONAL');
+    setCurrentView('landing');
+  };
 
   // State Filter Modul (Odoo-Style App Catalog)
   const [moduleFilter, setModuleFilter] = useState<'ALL' | 'ACTIVE' | 'UPCOMING'>('ALL');
@@ -244,7 +277,104 @@ export const LandingPageView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-12 pb-16">
+    <div className="space-y-8 pb-16">
+      {/* 0. KARTU SAMBUTAN & STATUS PENUGASAN (FILOSOFI CORETAX: PERSONAL USER FIRST) */}
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs transition-colors">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-linear-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center font-bold text-base shadow-md shadow-blue-500/20 shrink-0">
+              {user.name ? user.name.slice(0, 2).toUpperCase() : 'PS'}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-base font-bold text-slate-900 dark:text-white">
+                  Selamat Datang, {user.name || 'Pengguna'}!
+                </span>
+                {appMode === 'PERSONAL' ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                    <User className="w-3 h-3" />
+                    <span>Ruang Personal (Akun Pribadi)</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                    <Briefcase className="w-3 h-3" />
+                    <span>Penugasan Lapangan: {activeRole}</span>
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                {appMode === 'PERSONAL'
+                  ? 'Anda sedang berada di Beranda Utama Personal. Pilih modul yang ingin dipelajari, aktifkan kunci lisensi RFIN, atau beralih ke penugasan proyek lapangan yang Anda miliki.'
+                  : `Anda sedang bertugas aktif di proyek ${activeProject?.name || activeCompany.name || 'Proyek Lapangan'}. Semua transaksi operasional akan tercatat sah atas nama Anda.`}
+              </p>
+            </div>
+          </div>
+
+          {/* Tombol Aksi Cepat Sesuai Status Coretax */}
+          <div className="flex items-center gap-2 flex-wrap self-start lg:self-auto shrink-0">
+            {appMode === 'PERSONAL' ? (
+              <>
+                {activeContext?.projects && activeContext.projects.length > 0 ? (
+                  <button
+                    onClick={() => handleSwitchToProject(activeContext.projects[0])}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-sm transition-all hover:translate-y-[-1px] cursor-pointer"
+                  >
+                    <Building2 className="w-4 h-4 text-blue-200" />
+                    <span>Masuk ke Proyek: {(activeContext.projects[0].name || 'Proyek').slice(0, 20)}...</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setCurrentView('rfin-b-input')}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-xs font-semibold hover:bg-amber-100 transition-colors cursor-pointer"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>Aktivasi Kunci RFIN-B</span>
+                  </button>
+                )}
+              </>
+            ) : (
+              <button
+                onClick={handleSwitchToPersonal}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-colors cursor-pointer border border-slate-200 dark:border-slate-700"
+              >
+                <User className="w-3.5 h-3.5 text-blue-500" />
+                <span>Beralih Kembali ke Akun Personal</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Jika di mode Personal dan ada penugasan resmi */}
+        {appMode === 'PERSONAL' && activeContext?.projects && activeContext.projects.length > 0 && (
+          <div className="mt-4 pt-3.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 flex-wrap">
+            <div className="text-[11px] text-slate-600 dark:text-slate-400 font-medium flex items-center gap-2">
+              <span className="font-bold text-slate-700 dark:text-slate-300">Penugasan Badan Usaha Anda:</span>
+              <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[10px]">
+                {activeCompany.name || 'CV. MENARA MEGAH'} · {activeProject?.name || activeContext.projects[0].name}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentView('rfin-b-input')}
+                className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+              >
+                <KeyRound className="w-3 h-3" />
+                <span>+ Masukkan Kunci Proyek Lain</span>
+              </button>
+              <span className="text-slate-300 dark:text-slate-700">·</span>
+              <button
+                onClick={() => setCurrentView('rfin-a-request')}
+                className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+              >
+                <Building2 className="w-3 h-3" />
+                <span>Daftarkan Badan Usaha Baru (RFIN-A)</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* 1. HERO SECTION */}
       <section className="relative overflow-hidden rounded-3xl bg-linear-to-br from-slate-900 via-slate-900 to-blue-950 border border-slate-800 p-6 sm:p-10 lg:p-14 text-white shadow-2xl">
         <div className="absolute top-0 right-0 -mt-12 -mr-12 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
