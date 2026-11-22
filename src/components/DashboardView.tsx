@@ -182,43 +182,59 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </p>
         </div>
 
-        {/* Quick Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
-          {stockWriteAccess && <>
-          <button
-            onClick={() => onOpenStockModal('MASUK')}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            <ArrowDownLeft className="w-3.5 h-3.5 text-blue-200" />
-            <span>+ Stok Masuk</span>
-          </button>
+        {/* Quick Action Buttons & Banner Rata Kanan */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
+            {stockWriteAccess && <>
+            <button
+              onClick={() => onOpenStockModal('MASUK')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <ArrowDownLeft className="w-3.5 h-3.5 text-blue-200" />
+              <span>+ Stok Masuk</span>
+            </button>
 
-          <button
-            onClick={() => onOpenStockModal('KELUAR')}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors border border-slate-200 dark:border-slate-700"
-          >
-            <ArrowUpRight className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-            <span>- Stok Keluar</span>
-          </button>
-          </>}
+            <button
+              onClick={() => onOpenStockModal('KELUAR')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors border border-slate-200 dark:border-slate-700"
+            >
+              <ArrowUpRight className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+              <span>- Stok Keluar</span>
+            </button>
+            </>}
 
-          {cashWriteAccess && <>
-          <button
-            onClick={() => onOpenCashModal('MASUK')}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg transition-colors border border-emerald-200 dark:border-emerald-800"
-          >
-            <ArrowDownLeft className="w-3.5 h-3.5" />
-            <span>+ Kas Masuk</span>
-          </button>
+            {cashWriteAccess && <>
+            <button
+              onClick={() => onOpenCashModal('MASUK')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg transition-colors border border-emerald-200 dark:border-emerald-800"
+            >
+              <ArrowDownLeft className="w-3.5 h-3.5" />
+              <span>+ Kas Masuk</span>
+            </button>
 
-          <button
-            onClick={() => onOpenCashModal('KELUAR')}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 rounded-lg transition-colors border border-rose-200 dark:border-rose-800"
-          >
-            <ArrowUpRight className="w-3.5 h-3.5" />
-            <span>- Kas Keluar</span>
-          </button>
-          </>}
+            <button
+              onClick={() => onOpenCashModal('KELUAR')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 rounded-lg transition-colors border border-rose-200 dark:border-rose-800"
+            >
+              <ArrowUpRight className="w-3.5 h-3.5" />
+              <span>- Kas Keluar</span>
+            </button>
+            </>}
+          </div>
+
+          {/* Banner Rata Kanan: words_PNG2 */}
+          <div className="flex items-center justify-end self-center shrink-0">
+            <img
+              src="/words_PNG2.png"
+              alt="Proyek Cair"
+              className="h-10 sm:h-12 lg:h-14 w-auto max-w-[150px] sm:max-w-[200px] lg:max-w-[240px] object-contain drop-shadow-md dark:block hidden"
+            />
+            <img
+              src="/words_light.png"
+              alt="Proyek Cair"
+              className="h-10 sm:h-12 lg:h-14 w-auto max-w-[150px] sm:max-w-[200px] lg:max-w-[240px] object-contain drop-shadow-md dark:hidden block"
+            />
+          </div>
         </div>
       </div>
 

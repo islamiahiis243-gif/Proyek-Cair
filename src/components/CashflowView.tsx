@@ -542,25 +542,42 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handleOpenModal('MASUK')}
-                disabled={!rolePermissions.canIssue}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-40 transition-colors shadow-sm"
-                title={rolePermissions.canIssue ? 'Catat Kas Masuk' : 'Hanya Clerk yang dapat mencatat transaksi baru'}
-              >
-                <ArrowDownLeft className="w-4 h-4" />
-                <span>+ Kas Masuk (IN)</span>
-              </button>
-              <button
-                onClick={() => handleOpenModal('KELUAR')}
-                disabled={!rolePermissions.canIssue}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-rose-600 rounded-xl hover:bg-rose-700 disabled:opacity-40 transition-colors shadow-sm"
-                title={rolePermissions.canIssue ? 'Catat Kas Keluar' : 'Hanya Clerk yang dapat mencatat transaksi baru'}
-              >
-                <ArrowUpRight className="w-4 h-4" />
-                <span>- Kas Keluar (OUT)</span>
-              </button>
+            {/* Tombol Terbitkan + Banner Rata Kanan */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 shrink-0">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleOpenModal('MASUK')}
+                  disabled={!rolePermissions.canIssue}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-40 transition-colors shadow-sm"
+                  title={rolePermissions.canIssue ? 'Catat Kas Masuk' : 'Hanya Clerk yang dapat mencatat transaksi baru'}
+                >
+                  <ArrowDownLeft className="w-4 h-4" />
+                  <span>+ Kas Masuk (IN)</span>
+                </button>
+                <button
+                  onClick={() => handleOpenModal('KELUAR')}
+                  disabled={!rolePermissions.canIssue}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-rose-600 rounded-xl hover:bg-rose-700 disabled:opacity-40 transition-colors shadow-sm"
+                  title={rolePermissions.canIssue ? 'Catat Kas Keluar' : 'Hanya Clerk yang dapat mencatat transaksi baru'}
+                >
+                  <ArrowUpRight className="w-4 h-4" />
+                  <span>- Kas Keluar (OUT)</span>
+                </button>
+              </div>
+
+              {/* Banner Rata Kanan: words_PNG2 */}
+              <div className="flex items-center justify-end self-center shrink-0">
+                <img
+                  src="/words_PNG2.png"
+                  alt="Proyek Cair"
+                  className="h-10 sm:h-12 lg:h-14 w-auto max-w-[150px] sm:max-w-[200px] lg:max-w-[240px] object-contain drop-shadow-md dark:block hidden"
+                />
+                <img
+                  src="/words_light.png"
+                  alt="Proyek Cair"
+                  className="h-10 sm:h-12 lg:h-14 w-auto max-w-[150px] sm:max-w-[200px] lg:max-w-[240px] object-contain drop-shadow-md dark:hidden block"
+                />
+              </div>
             </div>
           </div>
 

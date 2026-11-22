@@ -60,15 +60,31 @@ export const RfinBInputView: React.FC = () => {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
-            <KeyRound className="h-6 w-6" />
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
+              <KeyRound className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-slate-900 dark:text-white">Aktivasi Kode Undangan (RFIN-B)</h1>
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
+                Masukkan kode RFIN-B yang Anda terima dari Company Super Admin (CSA) untuk mengaktifkan Jabatan resmi Anda pada proyek perusahaan.
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white">Aktivasi Kode Undangan (RFIN-B)</h1>
-            <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
-              Masukkan kode RFIN-B yang Anda terima dari Company Super Admin (CSA) untuk mengaktifkan Jabatan resmi Anda pada proyek perusahaan.
-            </p>
+
+          {/* Banner Rata Kanan: words_PNG2 */}
+          <div className="flex items-center justify-end self-center shrink-0">
+            <img
+              src="/words_PNG2.png"
+              alt="Proyek Cair"
+              className="h-12 sm:h-14 lg:h-16 w-auto max-w-[180px] sm:max-w-[240px] lg:max-w-[280px] object-contain drop-shadow-md dark:block hidden"
+            />
+            <img
+              src="/words_light.png"
+              alt="Proyek Cair"
+              className="h-12 sm:h-14 lg:h-16 w-auto max-w-[180px] sm:max-w-[240px] lg:max-w-[280px] object-contain drop-shadow-md dark:hidden block"
+            />
           </div>
         </div>
       </div>

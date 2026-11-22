@@ -80,7 +80,30 @@ export const InventoryView:React.FC<InventoryViewProps>=({onQuickMutate,canMutat
  return <div className="space-y-5">
   {!canReadInventory&&<div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">Permission inventory.read tidak tersedia. Master BOQ tetap dapat dilihat, tetapi saldo, status stok, dan histori mutasi disembunyikan.</div>}
   <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-   <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><h1 className="text-xl font-bold text-slate-900 dark:text-white">Master BOQ & Kontrol Stok</h1><p className="mt-1 text-xs text-slate-500">Qty dan UOM kontrak bersumber dari Master BOQ yang diimpor. Saldo fisik hanya berasal dari ledger mutasi.</p></div><div className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">{items.length} baris master dari database</div></div>
+   <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+    <div>
+      <h1 className="text-xl font-bold text-slate-900 dark:text-white">Master BOQ & Kontrol Stok</h1>
+      <p className="mt-1 text-xs text-slate-500">Qty dan UOM kontrak bersumber dari Master BOQ yang diimpor. Saldo fisik hanya berasal dari ledger mutasi.</p>
+    </div>
+    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 shrink-0">
+      <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+        {items.length} baris master dari database
+      </div>
+      {/* Banner Rata Kanan: words_PNG2 */}
+      <div className="flex items-center justify-end self-center shrink-0">
+        <img
+          src="/words_PNG2.png"
+          alt="Proyek Cair"
+          className="h-10 sm:h-12 w-auto max-w-[150px] sm:max-w-[200px] object-contain drop-shadow-md dark:block hidden"
+        />
+        <img
+          src="/words_light.png"
+          alt="Proyek Cair"
+          className="h-10 sm:h-12 w-auto max-w-[150px] sm:max-w-[200px] object-contain drop-shadow-md dark:hidden block"
+        />
+      </div>
+    </div>
+   </div>
    <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
     <div className="relative flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cari kode BOQ, uraian, kategori..." className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"/></div>
     <div className="flex gap-1">{[{id:'ALL',label:'Semua BOQ'},{id:'STOCK',label:'Material stok'},{id:'SERVICE',label:'Jasa / non-stok'}].map(x=><button key={x.id} onClick={()=>setScope(x.id as any)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${scope===x.id?'bg-blue-600 text-white':'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>{x.label}</button>)}</div>

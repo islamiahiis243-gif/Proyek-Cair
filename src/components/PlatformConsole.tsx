@@ -358,14 +358,30 @@ Platform Super Admin (PSA) - Proyek Cair`;
             <p className="text-xs text-slate-500">Control plane global · PSA only</p>
           </div>
         </div>
-        <button
-          disabled={loading}
-          onClick={() => void muat()}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-          Segarkan
-        </button>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 shrink-0">
+          <button
+            disabled={loading}
+            onClick={() => void muat()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Segarkan
+          </button>
+
+          {/* Banner Rata Kanan: words_PNG2 */}
+          <div className="flex items-center justify-end self-center shrink-0">
+            <img
+              src="/words_PNG2.png"
+              alt="Proyek Cair"
+              className="h-10 sm:h-12 w-auto max-w-[140px] sm:max-w-[180px] object-contain drop-shadow-md dark:block hidden"
+            />
+            <img
+              src="/words_light.png"
+              alt="Proyek Cair"
+              className="h-10 sm:h-12 w-auto max-w-[140px] sm:max-w-[180px] object-contain drop-shadow-md dark:hidden block"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Pesan error/notice */}

@@ -356,19 +356,35 @@ export const ReportsView: React.FC = () => {
           </p>
         </div>
 
-        {/* Profil & Badget Pengguna */}
-        <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
-          <div className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-            <BadgeCheck className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-            <span className="font-bold">{user.name}</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-extrabold">
-              {activeRole}
-            </span>
+        {/* Profil & Badget Pengguna + Banner Rata Kanan */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 shrink-0 self-start md:self-auto">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <BadgeCheck className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+              <span className="font-bold">{user.name}</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-extrabold">
+                {activeRole}
+              </span>
+            </div>
+
+            <div className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/60 text-xs font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
+              <Building2 className="w-3.5 h-3.5" />
+              <span>{tenantBranding.contractorName}</span>
+            </div>
           </div>
 
-          <div className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/60 text-xs font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
-            <Building2 className="w-3.5 h-3.5" />
-            <span>{tenantBranding.contractorName}</span>
+          {/* Banner Rata Kanan: words_PNG2 */}
+          <div className="flex items-center justify-end self-center shrink-0">
+            <img
+              src="/words_PNG2.png"
+              alt="Proyek Cair"
+              className="h-10 sm:h-12 lg:h-14 w-auto max-w-[150px] sm:max-w-[200px] lg:max-w-[240px] object-contain drop-shadow-md dark:block hidden"
+            />
+            <img
+              src="/words_light.png"
+              alt="Proyek Cair"
+              className="h-10 sm:h-12 lg:h-14 w-auto max-w-[150px] sm:max-w-[200px] lg:max-w-[240px] object-contain drop-shadow-md dark:hidden block"
+            />
           </div>
         </div>
       </div>

@@ -483,15 +483,31 @@ export const CompanyConsole: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => void refresh()}
-            disabled={loading || busy}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-sm"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin text-blue-600' : ''}`} />
-            Segarkan Data
-          </button>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 shrink-0">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void refresh()}
+              disabled={loading || busy}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-sm"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <span>Segarkan</span>
+            </button>
+          </div>
+
+          {/* Banner Rata Kanan: words_PNG2 */}
+          <div className="flex items-center justify-end self-center shrink-0">
+            <img
+              src="/words_PNG2.png"
+              alt="Proyek Cair"
+              className="h-10 sm:h-12 w-auto max-w-[140px] sm:max-w-[180px] object-contain drop-shadow-md dark:block hidden"
+            />
+            <img
+              src="/words_light.png"
+              alt="Proyek Cair"
+              className="h-10 sm:h-12 w-auto max-w-[140px] sm:max-w-[180px] object-contain drop-shadow-md dark:hidden block"
+            />
+          </div>
         </div>
       </div>
 

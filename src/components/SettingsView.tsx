@@ -172,7 +172,7 @@ export const SettingsView: React.FC = () => {
     <div className="mx-auto max-w-4xl space-y-6 pb-12">
       {/* Header Utama Pengaturan */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 shadow-xs transition-colors">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
           <div>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
               <User className="w-3.5 h-3.5" />
@@ -184,6 +184,20 @@ export const SettingsView: React.FC = () => {
             <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
               Kelola identitas pribadi, foto profil, tema warna, bahasa, serta preferensi aplikasi Proyek Cair Anda.
             </p>
+          </div>
+
+          {/* Banner Rata Kanan: words_PNG2 */}
+          <div className="flex items-center justify-end self-center shrink-0">
+            <img
+              src="/words_PNG2.png"
+              alt="Proyek Cair"
+              className="h-12 sm:h-14 lg:h-16 w-auto max-w-[180px] sm:max-w-[240px] lg:max-w-[280px] object-contain drop-shadow-md dark:block hidden"
+            />
+            <img
+              src="/words_light.png"
+              alt="Proyek Cair"
+              className="h-12 sm:h-14 lg:h-16 w-auto max-w-[180px] sm:max-w-[240px] lg:max-w-[280px] object-contain drop-shadow-md dark:hidden block"
+            />
           </div>
         </div>
       </div>
