@@ -17,10 +17,7 @@ import {
   Eye,
   Bell,
   Mail,
-  Sparkles,
-  Home,
-  HomeIcon,
-  LucideHome
+  Sparkles
 } from 'lucide-react';
 import { formatRupiah } from '../lib/pdfGenerator';
 import { getSupabaseClient } from '../lib/supabase';
@@ -224,35 +221,23 @@ export const Header: React.FC = () => {
 
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between gap-3 px-3 py-2.5 sm:px-6 bg-slate-900 border-b border-slate-800 text-white transition-colors">
-      {/* Brand & Logo */}
+      {/* Brand & Logo: Maskot Transparan + Banner Resmi (Klik mengarah ke Beranda) */}
       <div className="flex items-center gap-3 shrink-0">
         <button
-          onClick={() => setCurrentView('dashboard')}
-          className="flex items-center gap-2.5 text-left focus:outline-none group"
-          title="Ke Dasbor Utama"
+          onClick={() => setCurrentView('landing')}
+          className="flex items-center gap-2 sm:gap-2.5 text-left focus:outline-none group cursor-pointer"
+          title="Ke Beranda Proyek Cair"
         >
           <img
-            src="/android-chrome-192x192.png"
-            alt="Logo Proyek Cair"
-            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border border-blue-500/30 group-hover:border-blue-400 shadow-sm transition-all"
+            src="/mascot_3d.png"
+            alt="Maskot Proyek Cair"
+            className="w-9 h-9 sm:w-10 sm:h-10 object-contain drop-shadow transition-transform group-hover:scale-105 shrink-0"
           />
-          <div className="hidden sm:block">
-            <div className="text-sm font-bold tracking-tight text-white group-hover:text-blue-400 transition-colors leading-none">
-              Proyek Cair
-            </div>
-            <div className="text-[10px] text-slate-400 mt-0.5 leading-none font-medium">
-              Manajemen Proyek & Keuangan
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => setCurrentView('landing')}
-          className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-medium transition-colors cursor-pointer"
-          title="Buka Ekosistem Modul & Skema Lisensi"
-        >
-          <LucideHome className="w-3.5 h-3.5 text-amber-400" />
-          <span>Beranda</span>
+          <img
+            src="/words_PNG2.png"
+            alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
+            className="h-7 sm:h-8 w-auto object-contain opacity-95 group-hover:opacity-100 transition-opacity shrink-0"
+          />
         </button>
 
         {appMode !== 'PERSONAL' && (
