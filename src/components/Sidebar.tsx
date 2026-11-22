@@ -93,7 +93,7 @@ export const Sidebar: React.FC = () => {
     themeAccent = 'emerald';
     navItems = [
       { id: 'dashboard', label: 'Dasbor Personal', icon: LayoutDashboard },
-      { id: 'landing', label: 'Beranda & Lisensi', icon: HomeIcon },
+      { id: 'landing', label: 'Beranda Modul & Lisensi', icon: HomeIcon },
       { id: 'rfin-b-input', label: 'Aktivasi RFIN-B', icon: KeyRound },
       { id: 'rfin-a-request', label: 'Pengajuan RFIN-A', icon: Building2 },
       { id: 'reports', label: 'Studio Laporan PDF', icon: FileText },
