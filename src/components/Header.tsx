@@ -16,7 +16,8 @@ import {
   FolderKanban,
   Eye,
   Bell,
-  Mail
+  Mail,
+  Sparkles
 } from 'lucide-react';
 import { formatRupiah } from '../lib/pdfGenerator';
 import { getSupabaseClient } from '../lib/supabase';
@@ -240,6 +241,15 @@ export const Header: React.FC = () => {
               Manajemen Proyek & Keuangan
             </div>
           </div>
+        </button>
+
+        <button
+          onClick={() => setCurrentView('landing')}
+          className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-medium transition-colors cursor-pointer"
+          title="Buka Ekosistem Modul & Skema Lisensi"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+          <span>Katalog Modul</span>
         </button>
       </div>
 

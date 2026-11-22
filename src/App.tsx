@@ -15,6 +15,7 @@ import { CompanyConsole } from './components/CompanyConsole';
 import { NotificationBanner } from './components/NotificationBanner';
 import { ReportsView } from './components/ReportsView';
 import { VerificationPortal } from './components/VerificationPortal';
+import { LandingPageView } from './components/LandingPageView';
 import { AuthGate } from './components/AuthGate';
 import { ItemBarang, JenisMutasiBarang, JenisMutasiKas } from './types';
 
@@ -46,14 +47,17 @@ const MainApp: React.FC = () => {
           {/* Kotak Notifikasi / Undangan Resmi In-House */}
           <NotificationBanner />
 
+          {/* Landing Page & Monetisasi Modular (Dapat Diakses dari Mana Saja) */}
+          {currentView === 'landing' && <LandingPageView />}
+
           {/* Mode PSA */}
-          {appMode === 'PSA' && <PlatformConsole />}
+          {currentView !== 'landing' && appMode === 'PSA' && <PlatformConsole />}
 
           {/* Mode CSA */}
-          {appMode === 'CSA' && <CompanyConsole />}
+          {currentView !== 'landing' && appMode === 'CSA' && <CompanyConsole />}
 
           {/* Mode Personal */}
-          {appMode === 'PERSONAL' && (
+          {currentView !== 'landing' && appMode === 'PERSONAL' && (
             <>
               {currentView === 'dashboard' && <PersonalDashboardView />}
               {currentView === 'rfin-a-request' && <RfinARequestView />}
@@ -65,7 +69,7 @@ const MainApp: React.FC = () => {
           )}
 
           {/* Mode Impersonate (Operasional 2 Modul Inti: Mutasi Barang & Mutasi Dana) */}
-          {appMode === 'IMPERSONATE' && (
+          {currentView !== 'landing' && appMode === 'IMPERSONATE' && (
             <>
               {currentView === 'dashboard' && <DashboardView onOpenStockModal={handleOpenStockModal} onOpenCashModal={handleOpenCashModal} />}
               {currentView === 'rfin-b-input' && <RfinBInputView />}
