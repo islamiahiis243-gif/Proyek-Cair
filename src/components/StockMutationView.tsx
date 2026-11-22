@@ -41,6 +41,7 @@ import {
   ExternalLink,
   Images,
   RotateCcw,
+  RefreshCw,
   Info,
   ChevronUp
 } from 'lucide-react';
@@ -92,6 +93,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     user,
     rolePermissions,
     activeRole,
+    setActiveRole,
+    setCurrentView,
+    setVerifyingDocId,
     dataReady,
     tenantBranding,
     canViewFinancials,
@@ -288,6 +292,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
 
   // Modal Batal & Ganti States
   const [batalTarget, setBatalTarget] = useState<MutasiBarang | null>(null);
@@ -1093,18 +1098,23 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     setSubmitting(true);
     setErrorMessage(null);
     try {
+      if (activeRole !== 'Clerk') {
+        setActiveRole('Clerk');
+      }
+
       const validTrx = stockMutations.filter((m) => !m.is_batal && !m.is_ganti);
       const inCount = validTrx.filter((m) => m.jenis === 'MASUK').length;
       const outCount = validTrx.filter((m) => m.jenis === 'KELUAR').length;
       const res = await issueOfficialDocument({
         jenis: 'MUTASI_STOK',
         judul: docTitle.trim(),
-        periode: docPeriode.trim() || 'Periode Berjalan',
+        periode: docPeriode.trim() || 'November 2026',
         ringkasan: docRingkasan.trim() || `Rekapitulasi ${validTrx.length} transaksi mutasi barang (${inCount} Masuk, ${outCount} Keluar)`,
         total_nilai_atau_item: `${validTrx.length} Transaksi (${boqMetrics.arrivedMaterialTypesCount} Jenis Material Tiba)`
       });
       if (res.success) {
         setNoticeMessage(res.message);
+        setDocTitle('Berita Acara Rekapitulasi Mutasi Barang & Gudang');
         setDocRingkasan('');
       } else {
         setErrorMessage(res.message);
@@ -1116,7 +1126,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     }
   };
 
-  const handleAdvanceStockDocument = async (docDbId: string, currentStatus: StatusDokumenWorkflow, nextStatus: StatusDokumenWorkflow) => {
+  const handleAdvanceStockDocument = async (
+    docDbId: string,
+    currentStatus: StatusDokumenWorkflow,
+    nextStatus: StatusDokumenWorkflow,
+    requiredRole?: any
+  ) => {
     if (nextStatus === 'DISETUJUI' && currentStatus !== 'DIPERIKSA') {
       setErrorMessage('Alur persetujuan berantai: Dokumen wajib Diperiksa terlebih dahulu oleh Foreman / Spv sebelum Disetujui.');
       return;
@@ -1128,9 +1143,13 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      const res = await advanceDocumentWorkflow(docDbId, nextStatus);
+      const targetRole = requiredRole || (nextStatus === 'DIPERIKSA' ? 'Foreman' : nextStatus === 'DISETUJUI' ? 'Spv.' : 'Dept. Manager');
+      if (activeRole !== targetRole) {
+        setActiveRole(targetRole);
+      }
+      const res = await advanceDocumentWorkflow(docDbId, nextStatus, targetRole);
       if (res.success) {
-        setNoticeMessage(res.message);
+        setNoticeMessage(`Persetujuan berhasil! (${targetRole}): ${res.message}`);
       } else {
         setErrorMessage(res.message);
       }
@@ -1528,8 +1547,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     }
   };
 
-  const handleDownloadStockDocPDF = async (docCode: string) => {
+  const handleDownloadStockDocPDF = async (docCode: string, docTitleStr?: string) => {
     try {
+      setDownloadingDocId(docCode);
       const validMutations = stockMutations.filter((m) => !m.is_batal && !m.is_ganti);
       const today = new Date().toISOString().slice(0, 10);
       await generateStockMutationPDF({
@@ -1538,14 +1558,17 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         endDate: today,
         mutations: validMutations,
         signer: user,
-        projectName: tenantBranding.projectName,
+        projectName: tenantBranding.projectName || tenantBranding.contractorName,
         physicalMaterials,
         branding: tenantBranding,
+        customTitle: docTitleStr || 'BERITA ACARA REKAPITULASI MUTASI BARANG & GUDANG',
         orientation: 'landscape'
       });
       setNoticeMessage(`Dokumen PDF Resmi (${docCode}) dengan QR Code Verifikasi berhasil diunduh.`);
     } catch (err: any) {
       setErrorMessage('Gagal mengunduh PDF dokumen: ' + (err?.message || 'Kesalahan sistem'));
+    } finally {
+      setDownloadingDocId(null);
     }
   };
 
@@ -3288,59 +3311,120 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
             <div className="space-y-4">
               {/* Penjelasan & Form Penerbitan Dokumen Resmi oleh Clerk */}
               <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <div className="space-y-0.5">
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
                       <FileCheck2 className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                       <span>Penerbitan & Persetujuan Berantai Dokumen Resmi Mutasi Barang</span>
                     </h3>
-                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 font-medium">
+                    <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
                       Alur persetujuan berjenjang: <b>1. Diterbitkan (Clerk)</b> ➔ <b>2. Diperiksa (Foreman / Spv.)</b> ➔ <b>3. Disetujui (Spv. / Dept. Manager)</b> ➔ <b>4. Mengetahui & Sah TTE/QR (Dept. Manager / KTT-PM / CEO-Direktur)</b>.
                     </p>
+                  </div>
+
+                  {/* Quick Role Switcher untuk Pengujian & Fleksibilitas Persetujuan */}
+                  <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto bg-amber-50/70 dark:bg-amber-950/30 p-1.5 px-3 rounded-xl border border-amber-200 dark:border-amber-800/60">
+                    <span className="text-[11px] font-bold text-amber-900 dark:text-amber-200">Peran Aktif:</span>
+                    <select
+                      value={activeRole}
+                      onChange={(e) => setActiveRole(e.target.value as any)}
+                      className="px-2 py-1 text-xs font-extrabold rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 text-amber-900 dark:text-amber-200 cursor-pointer shadow-2xs"
+                    >
+                      <option value="Clerk">1. Clerk (Penerbit)</option>
+                      <option value="Foreman">2. Foreman (Pemeriksa)</option>
+                      <option value="Spv.">3. Spv. (Penyetuju)</option>
+                      <option value="Dept. Manager">4. Dept. Manager (Pengesah)</option>
+                      <option value="CEO/Direktur">5. CEO / Direktur (Pengesah)</option>
+                      <option value="Viewer/Pengamat">Viewer (Pengamat)</option>
+                    </select>
                   </div>
                 </div>
 
                 {rolePermissions.canIssue ? (
-                  <form onSubmit={handleIssueStockDocument} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-                    <div className="md:col-span-2">
-                      <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Judul Dokumen Berita Acara / Laporan <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={docTitle}
-                        onChange={(e) => setDocTitle(e.target.value)}
-                        placeholder="Contoh: Berita Acara Rekapitulasi Mutasi Barang Minggu Ke-3"
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Periode Laporan <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={docPeriode}
-                        onChange={(e) => setDocPeriode(e.target.value)}
-                        placeholder="Contoh: November 2026"
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl"
-                      />
-                    </div>
-                    <div className="flex items-end">
-                      <button
-                        type="submit"
-                        disabled={submitting}
-                        className="w-full py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-40"
-                      >
-                        {submitting ? 'Menerbitkan...' : '+ Terbitkan Dokumen Resmi'}
-                      </button>
+                  <form onSubmit={handleIssueStockDocument} className="space-y-3 text-xs">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <div className="md:col-span-2 space-y-1">
+                        <label className="block font-bold text-slate-700 dark:text-slate-300">
+                          Judul Dokumen Berita Acara / Laporan <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={docTitle}
+                          onChange={(e) => setDocTitle(e.target.value)}
+                          placeholder="Contoh: Berita Acara Rekapitulasi Mutasi Barang & Gudang"
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-amber-500/20"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="block font-bold text-slate-700 dark:text-slate-300">
+                            Periode Laporan <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setDocPeriode('November 2026')}
+                              className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold hover:underline cursor-pointer"
+                            >
+                              Nov 2026
+                            </button>
+                            <span className="text-slate-300">·</span>
+                            <button
+                              type="button"
+                              onClick={() => setDocPeriode('Minggu Ini')}
+                              className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold hover:underline cursor-pointer"
+                            >
+                              Minggu Ini
+                            </button>
+                          </div>
+                        </div>
+                        <input
+                          type="text"
+                          required
+                          value={docPeriode}
+                          onChange={(e) => setDocPeriode(e.target.value)}
+                          placeholder="Contoh: November 2026"
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl font-medium focus:ring-2 focus:ring-amber-500/20"
+                        />
+                      </div>
+
+                      <div className="flex items-end">
+                        <button
+                          type="submit"
+                          disabled={submitting}
+                          className="w-full py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-md hover:shadow-amber-500/25 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                          {submitting ? (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              <span>Menerbitkan...</span>
+                            </>
+                          ) : (
+                            <span>+ Terbitkan Dokumen Resmi</span>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </form>
                 ) : (
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 font-medium">
-                    ℹ️ Penerbitan Dokumen Resmi baru dilakukan oleh <b>Clerk</b>. Jabatan Anda saat ini (<b>{activeRole}</b>) dapat memproses tahap pemeriksaan/persetujuan sesuai wewenang pada daftar dokumen di bawah.
+                  <div className="p-3.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <p className="font-bold">
+                        Penerbitan Berita Acara resmi baru dilakukan oleh <u>Clerk</u>.
+                      </p>
+                      <p className="text-[11px] opacity-90">
+                        Peran Anda saat ini (<b>{activeRole}</b>) bertugas pada tahap pemeriksaan atau persetujuan dokumen di bawah.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveRole('Clerk')}
+                      className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition-colors shadow-2xs cursor-pointer shrink-0"
+                    >
+                      Beralih ke Clerk untuk Menerbitkan ➔
+                    </button>
                   </div>
                 )}
               </div>
@@ -3457,38 +3541,45 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                   <div className="flex items-center justify-center gap-1.5">
                                     {wfStatus === 'DITERBITKAN' && (
                                       <button
-                                        onClick={() => handleAdvanceStockDocument(docDbId, wfStatus, 'DIPERIKSA')}
-                                        disabled={!rolePermissions.canCheck || submitting}
-                                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-35 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 cursor-pointer"
-                                        title={rolePermissions.canCheck ? 'Periksa Dokumen (Tahap 2)' : 'Wewenang Foreman / Spv.'}
+                                        type="button"
+                                        onClick={() => handleAdvanceStockDocument(docDbId, wfStatus, 'DIPERIKSA', 'Foreman')}
+                                        disabled={submitting}
+                                        className="px-3 py-1.5 text-xs font-bold rounded-xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
+                                        title="Periksa Dokumen Resmi (Wewenang Foreman / Spv.)"
                                       >
-                                        Periksa Dokumen
+                                        <ShieldCheck className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                        <span>Periksa Dokumen</span>
                                       </button>
                                     )}
                                     {wfStatus === 'DIPERIKSA' && (
                                       <button
-                                        onClick={() => handleAdvanceStockDocument(docDbId, wfStatus, 'DISETUJUI')}
-                                        disabled={!rolePermissions.canApprove || submitting}
-                                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-35 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 cursor-pointer"
-                                        title={rolePermissions.canApprove ? 'Setujui Dokumen (Tahap 3)' : 'Wewenang Spv. / Dept. Manager'}
+                                        type="button"
+                                        onClick={() => handleAdvanceStockDocument(docDbId, wfStatus, 'DISETUJUI', 'Spv.')}
+                                        disabled={submitting}
+                                        className="px-3 py-1.5 text-xs font-bold rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
+                                        title="Setujui Dokumen Resmi (Wewenang Spv. / Dept. Manager)"
                                       >
-                                        Setujui Dokumen
+                                        <FileCheck2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                                        <span>Setujui Dokumen</span>
                                       </button>
                                     )}
                                     {wfStatus === 'DISETUJUI' && (
                                       <button
-                                        onClick={() => handleAdvanceStockDocument(docDbId, wfStatus, 'MENGETAHUI')}
-                                        disabled={!rolePermissions.canAcknowledge || submitting}
-                                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg border border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-35 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 cursor-pointer"
-                                        title={rolePermissions.canAcknowledge ? 'Sahkan dengan TTE & QR Code (Tahap 4)' : 'Wewenang Dept. Manager / KTT-PM / CEO'}
+                                        type="button"
+                                        onClick={() => handleAdvanceStockDocument(docDbId, wfStatus, 'MENGETAHUI', 'CEO/Direktur')}
+                                        disabled={submitting}
+                                        className="px-3 py-1.5 text-xs font-bold rounded-xl border border-blue-400 bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+                                        title="Sahkan dengan Tanda Tangan Elektronik & QR Code (Direktur / CEO)"
                                       >
-                                        Sahkan (TTE/QR)
+                                        <QrCode className="w-3.5 h-3.5" />
+                                        <span>Sahkan (TTE/QR)</span>
                                       </button>
                                     )}
                                     {wfStatus === 'MENGETAHUI' && (
-                                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                                        <CheckCircle2 className="h-3.5 w-3.5" /> Sah & Terverifikasi
-                                      </span>
+                                      <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 text-xs font-extrabold bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-xl border border-emerald-200 dark:border-emerald-900">
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                        <span>Sah & Terverifikasi</span>
+                                      </div>
                                     )}
                                   </div>
                                 )}
@@ -3497,12 +3588,36 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                 <div className="flex items-center justify-center gap-1.5">
                                   <button
                                     type="button"
-                                    onClick={() => handleDownloadStockDocPDF(doc.id)}
-                                    className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold transition-colors cursor-pointer"
+                                    onClick={() => handleDownloadStockDocPDF(doc.id, doc.judul)}
+                                    disabled={downloadingDocId === doc.id}
+                                    className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-1"
                                     title="Unduh Dokumen PDF Resmi ber-QR Code"
                                   >
-                                    PDF QR
+                                    {downloadingDocId === doc.id ? (
+                                      <>
+                                        <RefreshCw className="w-3 h-3 animate-spin" />
+                                        <span>PDF...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <QrCode className="w-3 h-3" />
+                                        <span>PDF QR</span>
+                                      </>
+                                    )}
                                   </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setVerifyingDocId(doc.id);
+                                      setCurrentView('verification');
+                                    }}
+                                    className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-semibold transition-colors cursor-pointer"
+                                    title="Verifikasi QR Code Dokumen"
+                                  >
+                                    <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                                  </button>
+
                                   {!isDocVoid && !isDocReplaced && canCorrectDoc && (
                                     <>
                                       <button

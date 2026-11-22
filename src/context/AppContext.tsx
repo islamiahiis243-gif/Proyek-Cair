@@ -98,7 +98,11 @@ interface AppContextType {
     ringkasan: string;
     total_nilai_atau_item: string;
   }) => Promise<{ success: boolean; message: string }>;
-  advanceDocumentWorkflow: (dbId: string, nextStatus: StatusDokumenWorkflow) => Promise<{ success: boolean; message: string }>;
+  advanceDocumentWorkflow: (
+    dbId: string,
+    nextStatus: StatusDokumenWorkflow,
+    customActorRole?: ImpersonateRole
+  ) => Promise<{ success: boolean; message: string }>;
   batalOfficialDocument: (dbId: string, reason: string) => Promise<{ success: boolean; message: string }>;
   gantiOfficialDocument: (
     dbId: string,
@@ -1122,20 +1126,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const advanceDocumentWorkflow = async (docDbId: string, nextStatus: StatusDokumenWorkflow) => {
+  const advanceDocumentWorkflow = async (
+    docDbId: string,
+    nextStatus: StatusDokumenWorkflow,
+    customActorRole?: ImpersonateRole
+  ) => {
     try {
       const client = getSupabaseClient();
-      const actorTag = `${user.name} (${activeRole}) · ${new Date().toLocaleString('id-ID')}`;
+      const effectiveRole = customActorRole || activeRole;
+      const effectivePerms = getRolePermissions(effectiveRole);
+      const actorTag = `${user.name} (${effectiveRole}) · ${new Date().toLocaleString('id-ID')}`;
       const payload: any = { status_dokumen: nextStatus };
 
       if (nextStatus === 'DIPERIKSA') {
-        if (!rolePermissions.canCheck) throw new Error('Jabatan Anda tidak memiliki wewenang untuk Memeriksa (Tahap 2) dokumen ini.');
+        if (!effectivePerms.canCheck) throw new Error('Jabatan Anda tidak memiliki wewenang untuk Memeriksa (Tahap 2) dokumen ini.');
         payload.diperiksa_oleh = actorTag;
       } else if (nextStatus === 'DISETUJUI') {
-        if (!rolePermissions.canApprove) throw new Error('Jabatan Anda tidak memiliki wewenang untuk Menyetujui (Tahap 3) dokumen ini.');
+        if (!effectivePerms.canApprove) throw new Error('Jabatan Anda tidak memiliki wewenang untuk Menyetujui (Tahap 3) dokumen ini.');
         payload.disetujui_oleh = actorTag;
       } else if (nextStatus === 'MENGETAHUI') {
-        if (!rolePermissions.canAcknowledge) throw new Error('Jabatan Anda tidak memiliki wewenang untuk Mengesahkan TTE/QR (Tahap 4) dokumen ini.');
+        if (!effectivePerms.canAcknowledge) throw new Error('Jabatan Anda tidak memiliki wewenang untuk Mengesahkan TTE/QR (Tahap 4) dokumen ini.');
         payload.mengetahui_oleh = actorTag;
         payload.status = 'SIGNED';
         payload.tte_qr_code = `TTE-DOC-${activeCompany.npwp}-${docDbId.slice(0, 8).toUpperCase()}-${Date.now()}`;
