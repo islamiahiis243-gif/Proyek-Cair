@@ -273,7 +273,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div
             onClick={() => setCurrentView('stock-mutations')}
             className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:border-cyan-400 dark:hover:border-cyan-600 cursor-pointer group"
-            title="Klik untuk membuka Modul Mutasi Barang & Pemantauan BOQ"
+            title="Klik untuk membuka Mutasi Barang & Pemantauan BOQ"
           >
             <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
               <span className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 flex items-center gap-1">
@@ -299,7 +299,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div
             onClick={() => setCurrentView('stock-mutations')}
             className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:border-blue-400 dark:hover:border-blue-600 cursor-pointer group"
-            title="Klik untuk membuka Modul Mutasi Barang & Pemantauan BOQ"
+            title="Klik untuk membuka Mutasi Barang & Pemantauan BOQ"
           >
             <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
               <span className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1">

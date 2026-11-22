@@ -107,12 +107,12 @@ export const Sidebar: React.FC = () => {
       { id: 'rfin-b-input', label: 'Aktivasi RFIN-B', icon: KeyRound },
       {
         id: 'stock-mutations',
-        label: 'Modul Mutasi Barang',
+        label: 'Mutasi Barang',
         icon: Boxes,
         badge: outOfStockCount > 0 ? `${outOfStockCount} Kosong` : null
       },
       ...(activeRole !== 'Viewer/Pengamat'
-        ? [{ id: 'cashflow' as const, label: 'Modul Mutasi Dana', icon: WalletCards }]
+        ? [{ id: 'cashflow' as const, label: 'Mutasi Dana', icon: WalletCards }]
         : []),
       { id: 'reports', label: 'Studio Laporan PDF', icon: FileText }
     ];

@@ -1625,10 +1625,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-                Modul Mutasi Barang & Pemantauan BOQ
+                Mutasi Barang
               </h1>
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
-                Pencatatan masuk/keluar material untuk pemantauan realisasi kontrak BOQ. Jejak audit abadi tanpa fitur hapus.
+                Mutasi Barang & Pemantauan BOQ
               </p>
             </div>
 

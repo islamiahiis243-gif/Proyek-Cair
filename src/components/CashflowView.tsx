@@ -535,10 +535,10 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-                Modul Mutasi Dana (Arus Kas Proyek)
+                Mutasi Dana
               </h1>
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
-                Pencatatan kas masuk & kas keluar. Koreksi baris langsung (Batal/Ganti) tanpa hapus, dan persetujuan berantai khusus Dokumen Resmi.
+                Pencatatan Mutasi Kas
               </p>
             </div>
 
