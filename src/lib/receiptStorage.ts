@@ -246,26 +246,35 @@ export async function createProjectReceipt(receipt: Partial<ProjectReceipt>): Pr
   }
 }
 
+// Helper untuk cek validitas UUID
+const isUUID = (str?: string | null): boolean => {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+};
+
 /**
  * Metode GANTI Nota:
- * 1. Menerbitkan nota baru pengganti
- * 2. Menandai nota lama sebagai DIGANTI (is_ganti = true)
+ * 1. Menerbitkan nota baru pengganti di tabel project_receipts
+ * 2. Menandai nota lama sebagai DIGANTI (is_ganti = true) jika tercatat di project_receipts
  * 3. Mengalihkan seluruh mutasi barang yang tertaut ke nota lama agar otomatis tertaut ke nota baru
  */
 export async function supersedeProjectReceipt(
   oldReceiptId: string,
   newReceiptData: Partial<ProjectReceipt>,
   reason: string,
-  currentUser?: { id?: string; name?: string }
+  currentUser?: { id?: string; name?: string },
+  targetMutationIds?: string[]
 ): Promise<ProjectReceipt | null> {
   try {
     const client = getSupabaseClient();
     if (!client) return null;
 
-    // 1. Buat Nota Baru
+    const oldIsUuid = isUUID(oldReceiptId);
+
+    // 1. Buat Nota Baru di tabel project_receipts
     const newReceipt = await createProjectReceipt({
       ...newReceiptData,
-      referensi_ganti_id: oldReceiptId,
+      referensi_ganti_id: oldIsUuid ? oldReceiptId : undefined,
       alasan_batal_ganti: reason,
       created_by: currentUser?.id,
       created_by_name: currentUser?.name
@@ -273,30 +282,49 @@ export async function supersedeProjectReceipt(
 
     if (!newReceipt) return null;
 
-    // 2. Tandai Nota Lama sebagai DIGANTI
-    await client
-      .from('project_receipts')
-      .update({
-        is_ganti: true,
-        status_verifikasi: 'DIGANTI',
-        referensi_ganti_id: newReceipt.id,
-        alasan_batal_ganti: reason,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', oldReceiptId);
+    // 2. Tandai Nota Lama sebagai DIGANTI jika ID-nya merupakan UUID project_receipts sah
+    if (oldIsUuid) {
+      await client
+        .from('project_receipts')
+        .update({
+          is_ganti: true,
+          status_verifikasi: 'DIGANTI',
+          referensi_ganti_id: newReceipt.id,
+          alasan_batal_ganti: reason,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', oldReceiptId);
 
-    // 3. Otomatis alihkan seluruh mutasi barang yang tertaut ke oldReceiptId agar tertaut ke newReceipt.id
-    await client
-      .from('inventory_transactions')
-      .update({
-        receipt_id: newReceipt.id,
-        reference_no: newReceipt.reference_no,
-        nama_toko: newReceipt.nama_toko,
-        tanggal_nota: newReceipt.tanggal_nota,
-        total_nota_fisik: newReceipt.total_nota_fisik,
-        lampiran_nota_urls: newReceipt.lampiran_nota_urls
-      })
-      .eq('receipt_id', oldReceiptId);
+      // Otomatis alihkan seluruh mutasi barang yang tertaut ke oldReceiptId agar tertaut ke newReceipt.id
+      await client
+        .from('inventory_transactions')
+        .update({
+          receipt_id: newReceipt.id,
+          reference_no: newReceipt.reference_no,
+          nama_toko: newReceipt.nama_toko,
+          tanggal_nota: newReceipt.tanggal_nota,
+          total_nota_fisik: newReceipt.total_nota_fisik,
+          lampiran_nota_urls: newReceipt.lampiran_nota_urls,
+          status_harga: 'ADA_HARGA'
+        })
+        .eq('receipt_id', oldReceiptId);
+    }
+
+    // 3. Jika ada mutasi target eksplisit (misal data legacy atau mutasi tertentu)
+    if (targetMutationIds && targetMutationIds.length > 0) {
+      await client
+        .from('inventory_transactions')
+        .update({
+          receipt_id: newReceipt.id,
+          reference_no: newReceipt.reference_no,
+          nama_toko: newReceipt.nama_toko,
+          tanggal_nota: newReceipt.tanggal_nota,
+          total_nota_fisik: newReceipt.total_nota_fisik,
+          lampiran_nota_urls: newReceipt.lampiran_nota_urls,
+          status_harga: 'ADA_HARGA'
+        })
+        .in('id', targetMutationIds);
+    }
 
     return newReceipt;
   } catch (err) {
@@ -307,45 +335,67 @@ export async function supersedeProjectReceipt(
 
 /**
  * Metode BATAL Nota:
- * 1. Menandai nota sebagai BATAL (is_batal = true, status_verifikasi = 'BATAL')
+ * 1. Menandai nota sebagai BATAL (is_batal = true, status_verifikasi = 'BATAL') di project_receipts
  * 2. Melepaskan tautan mutasi barang kembali ke status NOTA_MENYUSUL (tanpa nota sah)
  */
 export async function voidProjectReceipt(
   receiptId: string,
   reason: string,
-  _currentUser?: { id?: string; name?: string }
+  _currentUser?: { id?: string; name?: string },
+  targetMutationIds?: string[]
 ): Promise<boolean> {
   try {
     const client = getSupabaseClient();
     if (!client) return false;
 
-    // 1. Tandai Nota sebagai BATAL
-    const { error: voidErr } = await client
-      .from('project_receipts')
-      .update({
-        is_batal: true,
-        status_verifikasi: 'BATAL',
-        alasan_batal_ganti: reason,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', receiptId);
+    // 1. Jika receiptId merupakan UUID sah project_receipts, tandai BATAL
+    if (isUUID(receiptId)) {
+      const { error: voidErr } = await client
+        .from('project_receipts')
+        .update({
+          is_batal: true,
+          status_verifikasi: 'BATAL',
+          alasan_batal_ganti: reason,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', receiptId);
 
-    if (voidErr) {
-      console.error('Gagal membatalkan nota:', voidErr);
-      return false;
+      if (voidErr) {
+        console.error('Gagal membatalkan nota di project_receipts:', voidErr);
+        return false;
+      }
+
+      // Lepaskan tautan nota pada mutasi barang yang tertaut ke receipt_id ini
+      await client
+        .from('inventory_transactions')
+        .update({
+          receipt_id: null,
+          reference_no: null,
+          total_nota_fisik: null,
+          lampiran_nota_urls: [],
+          status_harga: 'NOTA_MENYUSUL'
+        })
+        .eq('receipt_id', receiptId);
     }
 
-    // 2. Lepaskan tautan nota pada mutasi barang (kembali menjadi NOTA_MENYUSUL)
-    await client
-      .from('inventory_transactions')
-      .update({
-        receipt_id: null,
-        reference_no: null,
-        total_nota_fisik: null,
-        lampiran_nota_urls: [],
-        status_harga: 'NOTA_MENYUSUL'
-      })
-      .eq('receipt_id', receiptId);
+    // 2. Lepaskan juga jika ada daftar mutasi eksplisit (misal data legacy)
+    if (targetMutationIds && targetMutationIds.length > 0) {
+      const { error: mutErr } = await client
+        .from('inventory_transactions')
+        .update({
+          receipt_id: null,
+          reference_no: null,
+          total_nota_fisik: null,
+          lampiran_nota_urls: [],
+          status_harga: 'NOTA_MENYUSUL'
+        })
+        .in('id', targetMutationIds);
+
+      if (mutErr) {
+        console.error('Gagal melepaskan mutasi target:', mutErr);
+        return false;
+      }
+    }
 
     return true;
   } catch (err) {
@@ -427,8 +477,10 @@ export function buildProjectReceiptAlbum(
     const rNo = (m.nomor_nota || m.nomor_surat_jalan || '').trim();
     const sName = (m.nama_toko || m.source_name || '').trim();
     const urls = Array.isArray(m.lampiran_nota_urls) ? m.lampiran_nota_urls.filter(Boolean) : [];
-    const isExplicitStore = sName && !sName.toLowerCase().includes('klien') && !sName.toLowerCase().includes('kontraktor');
-    const isValidReceipt = (rNo && rNo !== '-' && rNo !== 'null') || urls.length > 0 || isExplicitStore;
+    const hasValidDocNo = Boolean(rNo && rNo !== '-' && rNo !== 'null' && rNo !== 'undefined');
+    const hasAttachments = urls.length > 0;
+    // Hanya mutasi yang benar-benar memiliki bukti berkas nota fisik atau nomor nota sah yang layak masuk album berkas
+    const isValidReceipt = hasAttachments || hasValidDocNo;
 
     if (!isValidReceipt) return;
 

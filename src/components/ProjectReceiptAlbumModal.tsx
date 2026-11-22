@@ -197,6 +197,7 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
       }
 
       const oldId = replacingReceipt.receiptId || replacingReceipt.id;
+      const targetMutationIds = (replacingReceipt.rawMutations || []).map((m) => m.id);
       const result = await supersedeProjectReceipt(
         oldId,
         {
@@ -210,7 +211,8 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
           status_verifikasi: 'TERCATAT'
         },
         replaceReason.trim(),
-        currentUser
+        currentUser,
+        targetMutationIds
       );
 
       if (result) {
@@ -243,7 +245,8 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
       setFeedbackError(null);
 
       const targetId = voidingReceipt.receiptId || voidingReceipt.id;
-      const success = await voidProjectReceipt(targetId, voidReason.trim(), currentUser);
+      const targetMutationIds = (voidingReceipt.rawMutations || []).map((m) => m.id);
+      const success = await voidProjectReceipt(targetId, voidReason.trim(), currentUser, targetMutationIds);
 
       if (success) {
         setFeedbackNotice(`Nota No. ${voidingReceipt.receiptNo} berhasil dibatalkan. Tautan mutasi barang terkait telah dikembalikan ke status NOTA MENYUSUL.`);
@@ -868,6 +871,14 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
                 </div>
               </div>
 
+              {/* Kotak Error Inline Jika Ada */}
+              {feedbackError && (
+                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs font-semibold flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{feedbackError}</span>
+                </div>
+              )}
+
               {/* Tombol Aksi Simpan */}
               <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
                 <button
@@ -883,8 +894,17 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
                   disabled={isSubmittingReplace}
                   className="px-5 py-2 text-xs font-bold rounded-xl bg-amber-600 hover:bg-amber-700 text-white shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
-                  <FileEdit className="w-3.5 h-3.5" />
-                  <span>{isSubmittingReplace ? 'Menyimpan Penggantian...' : 'Terapkan Penggantian Nota Sah'}</span>
+                  {isSubmittingReplace ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Menyimpan Penggantian...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileEdit className="w-3.5 h-3.5" />
+                      <span>Terapkan Penggantian Nota Sah</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -923,6 +943,14 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
               </ul>
             </div>
 
+            {/* Kotak Error Inline Jika Terjadi Masalah */}
+            {feedbackError && (
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs font-semibold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{feedbackError}</span>
+              </div>
+            )}
+
             <form onSubmit={handleSubmitVoid} className="space-y-3">
               <div className="space-y-1">
                 <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
@@ -952,8 +980,17 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
                   disabled={isSubmittingVoid}
                   className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
-                  <Ban className="w-3.5 h-3.5" />
-                  <span>{isSubmittingVoid ? 'Membatalkan...' : 'Ya, Batalkan Nota'}</span>
+                  {isSubmittingVoid ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Membatalkan...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Ban className="w-3.5 h-3.5" />
+                      <span>Ya, Batalkan Nota</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
