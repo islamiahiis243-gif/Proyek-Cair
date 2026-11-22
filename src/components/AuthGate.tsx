@@ -8,8 +8,7 @@ import {
   Lock,
   Mail,
   Building2,
-  ArrowRight,
-  Sparkles
+  ArrowRight
 } from 'lucide-react';
 
 export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -311,32 +310,26 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
           <div className="absolute top-0 left-1/2 -translate-x-1/2 -mt-10 w-72 h-72 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
           <div className="absolute bottom-0 right-0 -mb-10 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
 
-          {/* Bagian Atas: Header Logo & Maskot 3D */}
+          {/* Bagian Atas: Banner Logo Resmi & Maskot 3D 1:1 */}
           <div className="relative z-10 space-y-6">
-            <div className="flex items-center gap-3">
+            {/* Banner Resmi (words_PNG2.png) */}
+            <div className="w-full flex items-center justify-start">
               <img
-                src="/mascot_3d.png"
-                alt="Logo Maskot 3D Proyek Cair"
-                className="w-14 h-14 sm:w-16 sm:h-16 object-contain drop-shadow-[0_10px_20px_rgba(37,99,235,0.35)] shrink-0"
+                src="/words_PNG2.png"
+                alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
+                className="w-full max-w-[280px] sm:max-w-[320px] h-auto object-contain drop-shadow-xl"
               />
-              <div>
-                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                  <Sparkles className="w-2.5 h-2.5 text-amber-400" />
-                  <span>Platform Resmi Operasional</span>
-                </div>
-                <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white mt-0.5">
-                  Proyek Cair
-                </h2>
-              </div>
             </div>
 
-            {/* Banner Ilustrasi 3D Besar (Hanya Tampil di Layar Desktop/Tablet) */}
-            <div className="hidden lg:flex items-center justify-center py-4">
-              <img
-                src="/mascot_3d.png"
-                alt="Ilustrasi Konstruksi 3D Proyek Cair"
-                className="w-48 h-48 object-contain drop-shadow-[0_20px_35px_rgba(245,158,11,0.25)] hover:scale-105 transition-transform duration-500"
-              />
+            {/* Container Maskot 3D: Rasio 1:1, Auto Shrink to Fit */}
+            <div className="w-full flex items-center justify-center py-2">
+              <div className="w-full max-w-[220px] sm:max-w-[260px] aspect-square flex items-center justify-center">
+                <img
+                  src="/mascot_3d.png"
+                  alt="Maskot Proyek Cair"
+                  className="w-full h-full object-contain drop-shadow-[0_15px_30px_rgba(37,99,235,0.3)] hover:scale-105 transition-transform duration-500"
+                />
+              </div>
             </div>
 
             {/* Tagline Promosi Utama */}
