@@ -249,7 +249,7 @@ export const Header: React.FC = () => {
           title="Buka Ekosistem Modul & Skema Lisensi"
         >
           <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>Katalog Modul</span>
+          <span>Beranda</span>
         </button>
 
         {appMode !== 'PERSONAL' && (

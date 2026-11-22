@@ -16,7 +16,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
-  type LucideIcon
+  type LucideIcon,
+  HomeIcon
 } from 'lucide-react';
 
 interface NavItem {
@@ -92,7 +93,7 @@ export const Sidebar: React.FC = () => {
     themeAccent = 'emerald';
     navItems = [
       { id: 'dashboard', label: 'Dasbor Personal', icon: LayoutDashboard },
-      { id: 'landing', label: 'Katalog Modul & Lisensi', icon: Sparkles },
+      { id: 'landing', label: 'Beranda & Lisensi', icon: HomeIcon },
       { id: 'rfin-b-input', label: 'Aktivasi RFIN-B', icon: KeyRound },
       { id: 'rfin-a-request', label: 'Pengajuan RFIN-A', icon: Building2 },
       { id: 'reports', label: 'Studio Laporan PDF', icon: FileText },
@@ -106,7 +107,7 @@ export const Sidebar: React.FC = () => {
     themeAccent = activeRole === 'Viewer/Pengamat' ? 'cyan' : 'amber';
     navItems = [
       { id: 'dashboard', label: 'Dasbor & Analitik', icon: LayoutDashboard },
-      { id: 'landing', label: 'Katalog Modul & Lisensi', icon: Sparkles },
+      { id: 'landing', label: 'Beranda Modul & Lisensi', icon: HomeIcon },
       { id: 'rfin-b-input', label: 'Aktivasi RFIN-B', icon: KeyRound },
       {
         id: 'stock-mutations',
