@@ -33,10 +33,18 @@ export const PersonalDashboardView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
-            <span className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60">
-              Personal Workspace Aktif
-            </span>
+          {/* Banner Rata Kanan: words_PNG2 (dan words_light untuk mode terang) */}
+          <div className="flex items-center justify-end self-start md:self-auto shrink-0">
+            <img
+              src="/words_PNG2.png"
+              alt="Proyek Cair"
+              className="h-8 sm:h-10 w-auto max-w-[180px] sm:max-w-[220px] object-contain drop-shadow-sm dark:block hidden"
+            />
+            <img
+              src="/words_light.png"
+              alt="Proyek Cair"
+              className="h-8 sm:h-10 w-auto max-w-[180px] sm:max-w-[220px] object-contain drop-shadow-sm dark:hidden block"
+            />
           </div>
         </div>
       </div>
