@@ -12,6 +12,7 @@ import {
   User,
   Hexagon,
   Eye,
+  FileText,
   ChevronLeft,
   ChevronRight,
   type LucideIcon
@@ -92,6 +93,7 @@ export const Sidebar: React.FC = () => {
       { id: 'dashboard', label: 'Dasbor Personal', icon: LayoutDashboard },
       { id: 'rfin-b-input', label: 'Aktivasi RFIN-B', icon: KeyRound },
       { id: 'rfin-a-request', label: 'Pengajuan RFIN-A', icon: Building2 },
+      { id: 'reports', label: 'Studio Laporan PDF', icon: FileText },
       { id: 'settings', label: 'Pengaturan Akun & Aplikasi', icon: Settings }
     ];
   } else {
@@ -111,7 +113,8 @@ export const Sidebar: React.FC = () => {
       },
       ...(activeRole !== 'Viewer/Pengamat'
         ? [{ id: 'cashflow' as const, label: 'Modul Mutasi Dana', icon: WalletCards }]
-        : [])
+        : []),
+      { id: 'reports', label: 'Studio Laporan PDF', icon: FileText }
     ];
   }
 

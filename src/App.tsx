@@ -13,6 +13,8 @@ import { RfinBInputView } from './components/RfinBInputView';
 import { PlatformConsole } from './components/PlatformConsole';
 import { CompanyConsole } from './components/CompanyConsole';
 import { NotificationBanner } from './components/NotificationBanner';
+import { ReportsView } from './components/ReportsView';
+import { VerificationPortal } from './components/VerificationPortal';
 import { AuthGate } from './components/AuthGate';
 import { ItemBarang, JenisMutasiBarang, JenisMutasiKas } from './types';
 
@@ -56,6 +58,8 @@ const MainApp: React.FC = () => {
               {currentView === 'dashboard' && <PersonalDashboardView />}
               {currentView === 'rfin-a-request' && <RfinARequestView />}
               {currentView === 'rfin-b-input' && <RfinBInputView />}
+              {currentView === 'reports' && <ReportsView />}
+              {currentView === 'verification' && <VerificationPortal />}
               {currentView === 'settings' && <SettingsView />}
             </>
           )}
@@ -91,6 +95,8 @@ const MainApp: React.FC = () => {
                   preselectedType={preselectedStockType}
                 />
               )}
+              {currentView === 'reports' && <ReportsView />}
+              {currentView === 'verification' && <VerificationPortal />}
               {/* Di Mode Impersonate tidak ada Settings; jika diarahkan ke settings, tampilkan dashboard */}
               {currentView === 'settings' && <DashboardView onOpenStockModal={handleOpenStockModal} onOpenCashModal={handleOpenCashModal} />}
             </>

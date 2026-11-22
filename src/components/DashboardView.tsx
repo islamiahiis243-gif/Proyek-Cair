@@ -657,22 +657,29 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Quick Export PDF Banner */}
-      <div className="bg-slate-900 text-white rounded-xl p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-blue-400" />
-            <h3 className="text-sm font-bold">Cetak Laporan Otomatis & QR Code Validasi</h3>
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 border border-indigo-900/60 shadow-xl relative overflow-hidden">
+        <div className="space-y-1.5 relative z-10">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0 border border-blue-400/30">
+              <FileText className="w-4 h-4 text-blue-400" />
+            </div>
+            <h3 className="text-sm sm:text-base font-extrabold tracking-tight">
+              Cetak Laporan Otomatis & QR Code Validasi
+            </h3>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+              PDF Siap Cetak
+            </span>
           </div>
-          <p className="mt-1 text-xs text-slate-300 max-w-xl">
-            Buat PDF dari transaksi nyata, dengan QR registrasi dan checksum snapshot data. Fitur ini bukan tanda tangan digital.
+          <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+            Hasilkan dokumen laporan resmi dan rekapitulasi kerja berformat PDF langsung dari transaksi riil proyek, lengkap dengan QR code registrasi validasi, checksum snapshot integritas data, dan kop perusahaan.
           </p>
         </div>
         <button
           onClick={() => setCurrentView('reports')}
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm shrink-0"
+          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-all shadow-md hover:shadow-blue-500/25 shrink-0 cursor-pointer relative z-10"
         >
           <ShieldCheck className="w-4 h-4" />
-          <span>Buka Studio Laporan PDF</span>
+          <span>Buka Studio Laporan PDF ➔</span>
         </button>
       </div>
     </div>
