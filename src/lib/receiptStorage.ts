@@ -1,5 +1,5 @@
 import { getSupabaseClient } from './supabase';
-import { SupplierStore } from '../types';
+import { SupplierStore, MutasiBarang, ProjectReceiptAlbumItem } from '../types';
 
 /**
  * Kompresi gambar nota di sisi peramban sebelum diunggah (Hemat Kuota & Cepat di Lapangan)
@@ -180,4 +180,73 @@ export async function saveSupplierStore(store: {
   } catch (err) {
     console.warn('Gagal menyimpan toko suplier baru:', err);
   }
+}
+
+/**
+ * Membangun Album Nota Fisik Proyek dari riwayat mutasi
+ * Mengelompokkan seluruh transaksi berdasarkan identitas nota (Nomor Nota & Nama Toko).
+ */
+export function buildProjectReceiptAlbum(mutations: MutasiBarang[]): ProjectReceiptAlbumItem[] {
+  const map = new Map<string, ProjectReceiptAlbumItem>();
+
+  (mutations || []).forEach((m) => {
+    // Lewati mutasi yang batal permanen (kecuali jika diganti)
+    if (m.is_batal && !m.is_ganti) return;
+
+    const rNo = (m.nomor_nota || m.nomor_surat_jalan || '').trim();
+    const sName = (m.nama_toko || m.source_name || '').trim();
+    const urls = Array.isArray(m.lampiran_nota_urls) ? m.lampiran_nota_urls.filter(Boolean) : [];
+
+    // Valid jika memiliki nomor nota resmi ATAU memiliki lampiran berkas ATAU memiliki nama toko suplier
+    const isExplicitStore = sName && !sName.toLowerCase().includes('klien') && !sName.toLowerCase().includes('kontraktor');
+    const isValidReceipt = (rNo && rNo !== '-' && rNo !== 'null') || urls.length > 0 || isExplicitStore;
+
+    if (!isValidReceipt) return;
+
+    const key = `${rNo.toLowerCase() || 'tanpa-no'}|${sName.toLowerCase() || 'toko-umum'}`;
+
+    if (!map.has(key)) {
+      map.set(key, {
+        id: key,
+        receiptNo: rNo && rNo !== '-' ? rNo : 'Tanpa No. Seri',
+        storeName: sName || 'Toko / Suplier Belanja',
+        storeContact: m.toko_kontak,
+        receiptDate: m.tanggal_nota || m.tanggal,
+        totalPhysicalAmount: m.total_nota_fisik || (m.harga_satuan_beli ? m.harga_satuan_beli * m.jumlah : 0),
+        attachmentUrls: [...urls],
+        linkedMutationsCount: !m.is_ganti ? 1 : 0,
+        sampleItemNames: m.nama_barang ? [m.nama_barang] : [],
+        rawMutations: [m]
+      });
+    } else {
+      const item = map.get(key)!;
+      item.rawMutations.push(m);
+      if (!m.is_ganti) {
+        item.linkedMutationsCount += 1;
+      }
+      if (m.nama_barang && !item.sampleItemNames.includes(m.nama_barang) && item.sampleItemNames.length < 5) {
+        item.sampleItemNames.push(m.nama_barang);
+      }
+      if (m.total_nota_fisik && m.total_nota_fisik > item.totalPhysicalAmount) {
+        item.totalPhysicalAmount = m.total_nota_fisik;
+      }
+      if (m.toko_kontak && !item.storeContact) {
+        item.storeContact = m.toko_kontak;
+      }
+      if (m.tanggal_nota && !item.receiptDate) {
+        item.receiptDate = m.tanggal_nota;
+      }
+      urls.forEach((u) => {
+        if (!item.attachmentUrls.includes(u)) {
+          item.attachmentUrls.push(u);
+        }
+      });
+    }
+  });
+
+  return Array.from(map.values()).sort((a, b) => {
+    const timeA = a.receiptDate ? new Date(a.receiptDate).getTime() : 0;
+    const timeB = b.receiptDate ? new Date(b.receiptDate).getTime() : 0;
+    return timeB - timeA;
+  });
 }

@@ -38,7 +38,8 @@ import {
   Paperclip,
   CheckSquare,
   Square,
-  ExternalLink
+  ExternalLink,
+  Images
 } from 'lucide-react';
 import { formatDateTime, formatRupiah, generateBOQReportPDF, generateStockMutationPDF, generateWarehouseSummaryPDF } from '../lib/pdfGenerator';
 import {
@@ -53,6 +54,8 @@ import { StockMutationWizardModal } from './StockMutationWizardModal';
 import { ExportSettingsModal, ExportTargetType, ExportSettingsConfig } from './ExportSettingsModal';
 import { BatchReceiptModal } from './BatchReceiptModal';
 import { ReceiptViewerModal } from './ReceiptViewerModal';
+import { ProjectReceiptAlbumModal } from './ProjectReceiptAlbumModal';
+import { buildProjectReceiptAlbum } from '../lib/receiptStorage';
 
 interface StockMutationViewProps {
   isModalOpen: boolean;
@@ -101,6 +104,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   // State Navigasi Audit Trail & Sorot Baris
   const [highlightedMutationId, setHighlightedMutationId] = useState<string | null>(null);
   const [auditDetailMutation, setAuditDetailMutation] = useState<MutasiBarang | null>(null);
+
+  // State Album Berkas Nota Proyek
+  const [isProjectAlbumOpen, setIsProjectAlbumOpen] = useState<boolean>(false);
+  const projectAlbumItems = useMemo(() => {
+    return buildProjectReceiptAlbum(stockMutations);
+  }, [stockMutations]);
 
   const providerLabels = useMemo(
     () => ({
@@ -2461,6 +2470,20 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     <FileText className="w-3.5 h-3.5" />
                     <span>{isExportingJournal ? 'Menyiapkan...' : 'Ekspor PDF'}</span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsProjectAlbumOpen(true)}
+                    title="Buka Album Galeri Seluruh Berkas Nota Resmi Proyek"
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Images className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Album Nota</span>
+                    {projectAlbumItems.length > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-extrabold">
+                        {projectAlbumItems.length}
+                      </span>
+                    )}
+                  </button>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -3385,12 +3408,34 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         onClose={() => setIsBatchReceiptModalOpen(false)}
         targetMutations={batchReceiptTargets}
         availablePendingMutations={stockMutations.filter((m) => m.jenis === 'MASUK' && !m.is_batal && !m.is_ganti)}
+        allStockMutations={stockMutations}
         currentUser={user}
         projectId={tenantBranding.projectId || '2506245e-ff3f-4313-b821-920ab368a5df'}
         onSuccess={async (count, receiptNo) => {
           await refreshData();
           setSelectedMutationIds([]);
           setNoticeMessage(`Berhasil menyelaraskan ${count} item dengan Nota Toko No. ${receiptNo} melalui metode penggantian sah tanpa hapus data.`);
+        }}
+      />
+
+      {/* Modal Album Galeri Berkas Nota Resmi Proyek */}
+      <ProjectReceiptAlbumModal
+        isOpen={isProjectAlbumOpen}
+        onClose={() => setIsProjectAlbumOpen(false)}
+        albumItems={projectAlbumItems}
+        onOpenReceiptViewer={(primary, related) => {
+          setViewerPrimaryMutation(primary);
+          setViewerRelatedMutations(related);
+          setIsReceiptViewerOpen(true);
+        }}
+        onSelectForLinking={(nota) => {
+          setIsProjectAlbumOpen(false);
+          // Jika ada item mutasi masuk yang aktif, buka BatchReceiptModal langsung ke nota ini
+          const pendingIn = stockMutations.filter((m) => m.jenis === 'MASUK' && !m.is_batal && !m.is_ganti);
+          if (pendingIn.length > 0) {
+            setBatchReceiptTargets([pendingIn[0]]);
+            setIsBatchReceiptModalOpen(true);
+          }
         }}
       />
 

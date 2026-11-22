@@ -248,3 +248,16 @@ export interface TenantBranding {
   directorName: string;
   directorEmail: string;
 }
+
+export interface ProjectReceiptAlbumItem {
+  id: string;
+  receiptNo: string;
+  storeName: string;
+  storeContact?: string;
+  receiptDate?: string;
+  totalPhysicalAmount: number;
+  attachmentUrls: string[];
+  linkedMutationsCount: number;
+  sampleItemNames: string[];
+  rawMutations: MutasiBarang[];
+}
