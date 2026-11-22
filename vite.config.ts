@@ -16,7 +16,7 @@ export default defineConfig(() => {
       },
     },
     build: {
-      chunkSizeWarningLimit: 500,
+      chunkSizeWarningLimit: 1000,
       rollupOptions: {
         output: {
           manualChunks(id) {
@@ -46,6 +46,21 @@ export default defineConfig(() => {
                 return 'vendor-react';
               }
               return 'vendor-misc';
+            }
+            if (id.includes('StockMutationView')) {
+              return 'view-stock-mutation';
+            }
+            if (id.includes('CashflowView')) {
+              return 'view-cashflow';
+            }
+            if (id.includes('LandingPageView')) {
+              return 'view-landing';
+            }
+            if (id.includes('ReportsView')) {
+              return 'view-reports';
+            }
+            if (id.includes('PlatformConsole') || id.includes('CompanyConsole')) {
+              return 'view-consoles';
             }
           },
         },
