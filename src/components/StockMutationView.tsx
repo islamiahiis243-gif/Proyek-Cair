@@ -80,6 +80,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     physicalMaterials,
     stockMutations,
     documents,
+    projectReceipts,
+    refreshProjectReceipts,
     addStockMutation,
     batalStockMutation,
     gantiStockMutation,
@@ -111,8 +113,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   // State Album Berkas Nota Proyek
   const [isProjectAlbumOpen, setIsProjectAlbumOpen] = useState<boolean>(false);
   const projectAlbumItems = useMemo(() => {
-    return buildProjectReceiptAlbum(stockMutations);
-  }, [stockMutations]);
+    return buildProjectReceiptAlbum(stockMutations, projectReceipts);
+  }, [stockMutations, projectReceipts]);
 
   const providerLabels = useMemo(
     () => ({
@@ -3689,6 +3691,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         isOpen={isProjectAlbumOpen}
         onClose={() => setIsProjectAlbumOpen(false)}
         albumItems={projectAlbumItems}
+        currentUser={user}
+        projectId={tenantBranding.projectId || '2506245e-ff3f-4313-b821-920ab368a5df'}
         onOpenReceiptViewer={(primary, related) => {
           setViewerPrimaryMutation(primary);
           setViewerRelatedMutations(related);
@@ -3702,6 +3706,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
             setBatchReceiptTargets([pendingIn[0]]);
             setIsBatchReceiptModalOpen(true);
           }
+        }}
+        onDataChanged={async () => {
+          await refreshData();
+          await refreshProjectReceipts();
         }}
       />
 

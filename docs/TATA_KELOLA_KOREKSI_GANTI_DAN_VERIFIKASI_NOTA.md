@@ -95,3 +95,55 @@ Sesuai kaidah aplikasi: **Kerumitan ditangani oleh sistem di latar belakang, tam
 3. **Efek ke Ekspor PDF & Berita Acara**:
    - Baris yang diganti ditampilkan dengan gaya redup (*muted style*) atau disaring hanya menampilkan baris aktif final (sesuai opsi filter ekspor).
    - Kotak ringkasan KPI dan baris total kaki tabel (*footer*) otomatis memperhitungkan nilai belanja riil dari baris baru yang telah ber-nota resmi.
+
+---
+
+## 6. Perbedaan Tegas & Baku antara "BATAL" vs "GANTI" pada Nota Resmi
+
+Dalam konteks tata kelola nota toko dan album berkas fisik proyek, tindakan **BATAL** dan **GANTI** memiliki tujuan, sifat hukum audit, dan konsekuensi operasional yang **berbeda secara fundamental**:
+
+| Parameter Pembeda | Aksi: BATAL NOTA (*Void / Cancel*) | Aksi: GANTI NOTA (*Supersede / Replace*) |
+| :--- | :--- | :--- |
+| **Definisi & Esensi** | Nota fisik dinyatakan **gugur permanen / tidak sah** dan transaksi belanja tidak dilanjutkan. | Nota fisik lama **dialihkan ke versi pembaruan yang lebih valid** (estafet kelanjutan data). |
+| **Kasus Penggunaan Riil** | - Pesanan dibatalkan supplier & dana dikembalikan penuh.<br/>- Bon fiktif / salah toko total yang bukan milik proyek.<br/>- Salah upload bon kuitansi belanja pribadi pekerja. | - Foto bon pertama buram/gelap, difoto ulang dengan resolusi tajam.<br/>- Kasir toko merevisi nomor nota karena salah ketik.<br/>- Penambahan lembar halaman 2 & 3 (faktur pajak/surat jalan toko).<br/>- Penyesuaian diskon susulan yang tertera di faktur resmi. |
+| **Status Dokumen Nota Lama** | Diberi tanda `is_batal = true`, `status_verifikasi = 'BATAL'`. | Diberi tanda `is_ganti = true`, `status_verifikasi = 'DIGANTI'`. |
+| **Keberadaan Dokumen Pengganti** | **TIDAK ADA**. `referensi_ganti_id = NULL`. Rantai berhenti di sini. | **WAJIB ADA**. `referensi_ganti_id = [UUID Nota Baru]`, dan nota baru mencatat ID nota lama. |
+| **Konsekuensi ke Item Barang yang Terhubung** | **Tautan nota diputus**. Item barang dikembalikan ke status `NOTA_MENYUSUL` / tanpa bukti bon (harus dicari/dibuatkan nota sah lain). | **Otomatis dialihkan (*Auto-Remap*)**. Seluruh item mutasi yang tadinya menempel di nota lama otomatis menempel ke nota baru tanpa perlu input ulang. |
+| **Konsekuensi Finansial Kas & Laporan** | Nilai nominal nota dinolkan 100% dan tidak diakui dalam audit belanja. | Nominal nota lama dinolkan, nilai nominal nota baru yang sah yang diakui dalam laporan keuangan. |
+
+---
+
+## 7. Arsitektur Entitas Mandiri `project_receipts` & Interaksi Album Mobile
+
+Untuk mewujudkan interaksi dinamis layaknya galeri foto di smartphone (bisa digeser/scroll horizontal, buka lembar, zoom, serta aksi batal/ganti langsung dari album), sistem mengimplementasikan entitas database mandiri `project_receipts`.
+
+### A. Skema Relasi Master-Detail
+```
+[project_receipts] (1 Nota Fisik Toko)
+        │
+        ├── 1:N ──> [inventory_transactions] (N Item Barang di dalam Nota)
+        └── 1:N ──> [storage.objects] (N Lembar Foto Bukti Fisik / PDF)
+```
+
+1. **Tabel `project_receipts`**:
+   - `id`: UUID (Primary Key).
+   - `project_id`: ID Proyek aktif.
+   - `reference_no`: Nomor seri / faktur nota toko.
+   - `nama_toko`: Nama toko/distributor penyedia.
+   - `tanggal_nota`: Tanggal cetak di bon toko.
+   - `total_nota_fisik`: Grand total rupiah tercetak di bawah bon.
+   - `lampiran_nota_urls`: Array URL foto bon fisik (bisa multi-lembar 1, 2, 3..).
+   - `is_batal`, `is_ganti`, `referensi_ganti_id`, `alasan_batal_ganti`: Audit log CRU Tanpa Hapus.
+2. **Tabel `inventory_transactions`**:
+   - Memiliki foreign key `receipt_id` yang menunjuk ke `project_receipts.id`.
+   - Tidak lagi menduplikasi teks nama toko dan array file di setiap baris item, melainkan mewarisi relasi dari nota induk.
+
+### B. Fitur & Interaksi Album Ala Mobile Phone
+1. **Carousel & Swipe Gestures (Sentuhan Halus)**:
+   - Pengguna dapat menggeser layar (*touch swipe*) untuk berpindah lembar foto dalam 1 nota, atau berpindah antar kartu nota toko.
+2. **Pinch-to-Zoom & Fullscreen Inspection**:
+   - Membesarkan foto hingga 300% untuk memeriksa cap basah, paraf kasir, dan rincian harga eceran barang.
+3. **Menu Aksi Cepat per Lembar Nota di Album**:
+   - **`[ 🔗 Tautkan Item ]`**: Menghubungkan mutasi yang belum ber-nota ke nota ini.
+   - **`[ 🔄 Ganti / Foto Ulang ]`**: Membuka alur GANTI nota resmi (foto lama disimpan, foto baru diterapkan).
+   - **`[ 🚫 Batalkan Nota ]`**: Membatalkan nota jika transaksi toko gugur (dengan konfirmasi & input alasan audit).

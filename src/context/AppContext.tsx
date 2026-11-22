@@ -14,7 +14,8 @@ import {
   PhysicalMaterialItem,
   PhysicalBudgetLine,
   BebanBiaya,
-  TenantBranding
+  TenantBranding,
+  ProjectReceipt
 } from '../types';
 import {
   getStoredConfig,
@@ -72,6 +73,8 @@ interface AppContextType {
   stockMutations: MutasiBarang[];
   cashMutations: MutasiKas[];
   documents: DokumenLaporan[];
+  projectReceipts: ProjectReceipt[];
+  refreshProjectReceipts: () => Promise<void>;
   user: UserProfile;
   supabaseConfig: SupabaseConfig;
   currentView: string;
@@ -288,6 +291,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [stockMutations, setStockMutations] = useState<MutasiBarang[]>([]);
   const [cashMutations, setCashMutations] = useState<MutasiKas[]>([]);
   const [documents, setDocuments] = useState<DokumenLaporan[]>([]);
+  const [projectReceipts, setProjectReceipts] = useState<ProjectReceipt[]>([]);
 
   const cashWriteAccess = appMode === 'IMPERSONATE'
     ? rolePermissions.canIssue
@@ -379,21 +383,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setStockMutations([]);
       setCashMutations([]);
       setDocuments([]);
+      setProjectReceipts([]);
       setDataReady(true);
       setDataError(null);
       return;
     }
 
     const client = getSupabaseClient();
-    const [boqRes, sectionsRes, stockRes, cashRes, docsRes, reversalsRes, clientRelRes] = await Promise.all([
+    const [boqRes, sectionsRes, stockRes, cashRes, docsRes, reversalsRes, clientRelRes, receiptsRes] = await Promise.all([
       client.from('boq_items').select('*').eq('project_id', selectedProject.id).eq('is_active', true).order('source_row'),
       client.from('boq_sections').select('*').eq('project_id', selectedProject.id).eq('is_active', true).order('sort_order'),
       client.from('inventory_transactions').select('*').eq('project_id', selectedProject.id).order('occurred_at', { ascending: true }).order('created_at', { ascending: true }),
       client.from('cash_transactions').select('*').eq('project_id', selectedProject.id).order('occurred_at', { ascending: true }).order('created_at', { ascending: true }),
       client.from('documents').select('*').eq('project_id', selectedProject.id).in('document_type', ['MUTASI_KAS', 'MUTASI_STOK']).order('created_at', { ascending: false }),
       client.from('inventory_transaction_reversals').select('original_transaction_id'),
-      client.from('project_client_relationships').select('client_name, relationship_type').eq('project_id', selectedProject.id).order('created_at', { ascending: true })
+      client.from('project_client_relationships').select('client_name, relationship_type').eq('project_id', selectedProject.id).order('created_at', { ascending: true }),
+      client.from('project_receipts').select('*').eq('project_id', selectedProject.id).order('created_at', { ascending: false })
     ]);
+
+    setProjectReceipts(receiptsRes.data || []);
 
     const mainClientRow =
       (clientRelRes.data || []).find((r: any) => r.relationship_type === 'MAIN_CLIENT') ||
@@ -507,7 +515,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         nama_toko: t.nama_toko || t.source_name || undefined,
         toko_kontak: t.toko_kontak || undefined,
         total_nota_fisik: t.total_nota_fisik != null ? Number(t.total_nota_fisik) : undefined,
-        lampiran_nota_urls: Array.isArray(t.lampiran_nota_urls) ? t.lampiran_nota_urls : []
+        lampiran_nota_urls: Array.isArray(t.lampiran_nota_urls) ? t.lampiran_nota_urls : [],
+        receipt_id: t.receipt_id || undefined
       };
     });
 
@@ -692,7 +701,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         nama_toko: t.nama_toko || t.source_name || undefined,
         toko_kontak: t.toko_kontak || undefined,
         total_nota_fisik: t.total_nota_fisik != null ? Number(t.total_nota_fisik) : undefined,
-        lampiran_nota_urls: Array.isArray(t.lampiran_nota_urls) ? t.lampiran_nota_urls : []
+        lampiran_nota_urls: Array.isArray(t.lampiran_nota_urls) ? t.lampiran_nota_urls : [],
+        receipt_id: t.receipt_id || undefined
       };
     });
 
@@ -762,6 +772,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setDataError(null);
     setDataReady(true);
   };
+
+  const refreshProjectReceipts = useCallback(async () => {
+    if (!activeProjectId) return;
+    const client = getSupabaseClient();
+    if (!client) return;
+    const { data } = await client
+      .from('project_receipts')
+      .select('*')
+      .eq('project_id', activeProjectId)
+      .order('created_at', { ascending: false });
+    setProjectReceipts(data || []);
+  }, [activeProjectId]);
 
   useEffect(() => {
     if (!user.id) return;
@@ -1338,6 +1360,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         stockMutations,
         cashMutations,
         documents,
+        projectReceipts,
+        refreshProjectReceipts,
         user,
         supabaseConfig,
         currentView,

@@ -28,7 +28,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { MutasiBarang, SupplierStore, UserProfile, ProjectReceiptAlbumItem } from '../types';
-import { uploadReceiptFile, fetchSupplierStores, saveSupplierStore, buildProjectReceiptAlbum } from '../lib/receiptStorage';
+import { uploadReceiptFile, fetchSupplierStores, saveSupplierStore, buildProjectReceiptAlbum, createProjectReceipt } from '../lib/receiptStorage';
 import { getSupabaseClient } from '../lib/supabase';
 import { formatDateTime } from '../lib/pdfGenerator';
 
@@ -340,6 +340,28 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
 
       const nowIso = new Date().toISOString();
 
+      // Dapatkan atau buat entitas Master Nota di tabel project_receipts
+      let activeReceiptId: string | null = null;
+      if (flowStep === 'FORM_LINKED' && selectedAlbumReceipt?.receiptId) {
+        activeReceiptId = selectedAlbumReceipt.receiptId;
+      } else if (isValidUuid(targetProjectId)) {
+        const createdReceipt = await createProjectReceipt({
+          project_id: targetProjectId,
+          reference_no: cleanReceiptNo,
+          nama_toko: cleanStoreName,
+          toko_kontak: storeContact.trim() || undefined,
+          tanggal_nota: receiptDate ? receiptDate : nowIso.slice(0, 10),
+          total_nota_fisik: parsedPhysicalTotal > 0 ? parsedPhysicalTotal : calculatedAccumulatedTotal,
+          lampiran_nota_urls: finalAttachmentUrls,
+          status_verifikasi: 'TERCATAT',
+          created_by: currentUser.id,
+          created_by_name: currentUser.name || 'Clerk'
+        });
+        if (createdReceipt) {
+          activeReceiptId = createdReceipt.id;
+        }
+      }
+
       // 2. Proses tiap item: Terbitkan Baris Baru DULU, lalu Nonaktifkan Baris Lama (is_ganti = true)
       for (const row of itemRows) {
         const oldMutation = allSourceMutations.find((m) => m.id === row.mutationId);
@@ -358,6 +380,7 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
             id: newRowId,
             project_id: targetProjectId,
             workspace_id: targetWorkspaceId,
+            receipt_id: activeReceiptId,
             item_id: oldMutation.barang_id,
             transaction_type: 'MASUK',
             quantity: row.qty,

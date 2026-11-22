@@ -112,6 +112,7 @@ export interface MutasiBarang {
   toko_kontak?: string;
   total_nota_fisik?: number;
   lampiran_nota_urls?: string[];
+  receipt_id?: string;
 }
 
 export interface SupplierStore {
@@ -155,6 +156,7 @@ export interface MutasiKas {
   toko_kontak?: string;
   total_nota_fisik?: number;
   lampiran_nota_urls?: string[];
+  receipt_id?: string;
 }
 
 export interface DokumenLaporan {
@@ -210,6 +212,7 @@ export interface DokumenLaporan {
   toko_kontak?: string;
   total_nota_fisik?: number;
   lampiran_nota_urls?: string[];
+  receipt_id?: string;
 }
 
 export interface UserProfile {
@@ -249,8 +252,30 @@ export interface TenantBranding {
   directorEmail: string;
 }
 
+export interface ProjectReceipt {
+  id: string;
+  project_id: string;
+  reference_no: string;
+  nama_toko: string;
+  toko_kontak?: string;
+  tanggal_nota: string;
+  total_nota_fisik?: number;
+  lampiran_nota_urls?: string[];
+  notes?: string;
+  status_verifikasi?: 'TERCATAT' | 'TERVERIFIKASI' | 'BATAL' | 'DIGANTI';
+  is_batal?: boolean;
+  is_ganti?: boolean;
+  referensi_ganti_id?: string;
+  alasan_batal_ganti?: string;
+  created_by?: string;
+  created_by_name?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface ProjectReceiptAlbumItem {
   id: string;
+  receiptId?: string;
   receiptNo: string;
   storeName: string;
   storeContact?: string;
@@ -260,4 +285,10 @@ export interface ProjectReceiptAlbumItem {
   linkedMutationsCount: number;
   sampleItemNames: string[];
   rawMutations: MutasiBarang[];
+  is_batal?: boolean;
+  is_ganti?: boolean;
+  referensi_ganti_id?: string;
+  alasan_batal_ganti?: string;
+  status_verifikasi?: string;
+  created_at?: string;
 }
