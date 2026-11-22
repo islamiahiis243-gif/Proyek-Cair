@@ -560,17 +560,24 @@ const PricingCalculatorSection: React.FC<PricingCalculatorSectionProps> = React.
       style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 600px' }}
       className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 sm:p-8 lg:p-10 shadow-sm space-y-8"
     >
-      <div>
-        <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1">
-          <KeyRound className="w-4 h-4" />
-          <span>Skema Lisensi Fleksibel & Terjangkau (Pay-Per-Project)</span>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+          <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1">
+            <KeyRound className="w-4 h-4" />
+            <span>Skema Lisensi Fleksibel & Terjangkau (Pay-Per-Project)</span>
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
+            Bayar Hanya Saat Ada Proyek, Tanpa Beban Langganan Mengikat
+          </h2>
+          <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
+            Kontraktor Indonesia bekerja berdasarkan siklus proyek dan termin. Kunci aktivasi <b>RFIN-B</b> dibayar sekali per proyek dan berlaku penuh hingga masa retensi/serah terima tuntas. Biaya ini sah dimasukkan ke dalam pos overhead operasional RAP proyek.
+          </p>
         </div>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
-          Bayar Hanya Saat Ada Proyek, Tanpa Beban Langganan Mengikat
-        </h2>
-        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-3xl leading-relaxed">
-          Kontraktor Indonesia bekerja berdasarkan siklus proyek dan termin. Kunci aktivasi <b>RFIN-B</b> dibayar sekali per proyek dan berlaku penuh hingga masa retensi/serah terima tuntas. Biaya ini sah dimasukkan ke dalam pos overhead operasional RAP proyek.
-        </p>
+        <img
+          src="/mascot_3d.png"
+          alt="Maskot Lisensi Proyek Cair"
+          className="w-20 h-20 sm:w-24 sm:h-24 object-contain shrink-0 drop-shadow-md hidden md:block"
+        />
       </div>
 
       {/* Kalkulator Simulasi Interaktif */}

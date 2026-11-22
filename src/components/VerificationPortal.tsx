@@ -140,7 +140,19 @@ export const VerificationPortal: React.FC = () => {
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden transition-colors">
           {/* Certificate Header Banner */}
           <div className="bg-slate-900 dark:bg-slate-950 text-white p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-slate-800">
-            <div className="space-y-2">
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <img
+                  src="/mascot_3d.png"
+                  alt="Proyek Cair"
+                  className="w-10 h-10 object-contain drop-shadow-md shrink-0"
+                />
+                <img
+                  src="/words_light.png"
+                  alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
+                  className="h-7 w-auto max-w-[200px] object-contain shrink-0"
+                />
+              </div>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                 <span>{integrityStatus==='checking'?'MEMERIKSA CHECKSUM':integrityStatus==='valid'&&!lifecycleActive?'CHECKSUM COCOK · DOKUMEN TIDAK BERLAKU':integrityStatus==='valid'?'CHECKSUM DATA COCOK':integrityStatus==='invalid'?'CHECKSUM TIDAK COCOK':'CHECKSUM BELUM TERSEDIA'}</span>
