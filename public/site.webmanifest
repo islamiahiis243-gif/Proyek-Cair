@@ -1,6 +1,6 @@
 {
   "name": "Proyek Cair",
-  "short_name": "Proyek Cair",
+  "short_name": "Website",
   "icons": [
     {
       "src": "/android-chrome-192x192.png",
@@ -13,7 +13,7 @@
       "type": "image/png"
     }
   ],
-  "theme_color": "#ffffff",
+  "theme_color": "#13055c",
   "background_color": "#ffffff",
   "display": "standalone"
 }

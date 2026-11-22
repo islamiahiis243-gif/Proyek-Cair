@@ -241,7 +241,7 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
           <img
             src="/android-chrome-512x512.png"
             alt="Logo Proyek Cair"
-            className="h-16 w-16 rounded-xl bg-white object-contain p-1"
+            className="h-16 w-16 rounded-2xl border border-blue-500/40 object-cover shadow-lg shadow-blue-500/20"
           />
           <div>
             <div className="text-xs font-bold tracking-[.25em] text-blue-400">PLATFORM MANAJEMEN PROYEK</div>

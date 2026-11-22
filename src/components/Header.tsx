@@ -231,7 +231,7 @@ export const Header: React.FC = () => {
           <img
             src="/android-chrome-192x192.png"
             alt="Logo Proyek Cair"
-            className="w-9 h-9 rounded-lg object-contain bg-slate-800 p-0.5 border border-slate-700 group-hover:border-blue-500 transition-colors"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border border-blue-500/30 group-hover:border-blue-400 shadow-sm transition-all"
           />
           <div className="hidden sm:block">
             <div className="text-sm font-bold tracking-tight text-white group-hover:text-blue-400 transition-colors leading-none">

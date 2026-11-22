@@ -376,73 +376,105 @@ export const LandingPageView: React.FC = () => {
       </section>
 
       {/* 1. HERO SECTION */}
-      <section className="relative overflow-hidden rounded-3xl bg-linear-to-br from-slate-900 via-slate-900 to-blue-950 border border-slate-800 p-6 sm:p-10 lg:p-14 text-white shadow-2xl">
+      <section className="relative overflow-hidden rounded-3xl bg-linear-to-br from-slate-900 via-slate-900 to-blue-950 border border-slate-800 p-6 sm:p-10 lg:p-12 text-white shadow-2xl">
         <div className="absolute top-0 right-0 -mt-12 -mr-12 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 left-0 -mb-12 -ml-12 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="relative z-10 max-w-4xl space-y-6">
-          {/* Badge Pengumuman */}
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-400/30 text-blue-300 text-xs font-semibold backdrop-blur-xs">
-            <Sparkles className="w-4 h-4 text-amber-400" />
-            <span>Ekosistem Modular Proyek Indonesia · Standar Audit Anti-Manipulasi</span>
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8">
+          {/* Kolom Kiri: Teks & Aksi */}
+          <div className="flex-1 space-y-6">
+            {/* Badge Pengumuman */}
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-400/30 text-blue-300 text-xs font-semibold backdrop-blur-xs">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span>Ekosistem Modular Proyek Indonesia · Standar Audit Anti-Manipulasi</span>
+            </div>
+
+            {/* Headline Utama */}
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white leading-tight">
+              Kendalikan Arus Material & Keuangan Proyek{' '}
+              <span className="text-transparent bg-clip-text bg-linear-to-r from-blue-400 via-teal-300 to-emerald-400">
+                Tanpa Celah Kebocoran.
+              </span>
+            </h1>
+
+            {/* Subheadline */}
+            <p className="text-sm sm:text-base text-slate-300 max-w-2xl leading-relaxed">
+              Platform operasional konstruksi berbasis buku besar abadi (<i>Immutable Ledger</i>). 
+              Selaraskan nota fisik toko, pantau realisasi BOQ secara presisi, dan sahkan berita acara 
+              tanda tangan digital (TTE/QR) 4 jenjang dalam satu layar yang mudah bagi siapa saja.
+            </p>
+
+            {/* Aksi Cepat (Call to Action) */}
+            <div className="pt-2 flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => setCurrentView('dashboard')}
+                className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold shadow-lg shadow-blue-600/30 transition-all hover:translate-y-[-1px] cursor-pointer"
+              >
+                <span>Buka Dasbor Operasional</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={() => setCurrentView('rfin-b-input')}
+                className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm font-semibold transition-colors cursor-pointer"
+              >
+                <KeyRound className="w-4 h-4 text-amber-400" />
+                <span>Aktivasi Kunci Proyek (RFIN-B)</span>
+              </button>
+
+              <button
+                onClick={() => setCurrentView('verification')}
+                className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-sm font-medium transition-colors cursor-pointer"
+              >
+                <QrCode className="w-4 h-4 text-cyan-400" />
+                <span>Verifikasi Dokumen QR</span>
+              </button>
+            </div>
           </div>
 
-          {/* Headline Utama */}
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white leading-tight">
-            Kendalikan Arus Material & Keuangan Proyek{' '}
-            <span className="text-transparent bg-clip-text bg-linear-to-r from-blue-400 via-teal-300 to-emerald-400">
-              Tanpa Celah Kebocoran.
-            </span>
-          </h1>
-
-          {/* Subheadline */}
-          <p className="text-sm sm:text-base text-slate-300 max-w-2xl leading-relaxed">
-            Platform operasional konstruksi berbasis buku besar abadi (<i>Immutable Ledger</i>). 
-            Selaraskan nota fisik toko, pantau realisasi BOQ secara presisi, dan sahkan berita acara 
-            tanda tangan digital (TTE/QR) 4 jenjang dalam satu layar yang mudah bagi siapa saja.
-          </p>
-
-          {/* Aksi Cepat (Call to Action) */}
-          <div className="pt-2 flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => setCurrentView('dashboard')}
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold shadow-lg shadow-blue-600/30 transition-all hover:translate-y-[-1px] cursor-pointer"
-            >
-              <span>Buka Dasbor Operasional</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={() => setCurrentView('rfin-b-input')}
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm font-semibold transition-colors cursor-pointer"
-            >
-              <KeyRound className="w-4 h-4 text-amber-400" />
-              <span>Aktivasi Kunci Proyek (RFIN-B)</span>
-            </button>
-
-            <button
-              onClick={() => setCurrentView('verification')}
-              className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-sm font-medium transition-colors cursor-pointer"
-            >
-              <QrCode className="w-4 h-4 text-cyan-400" />
-              <span>Verifikasi Dokumen QR</span>
-            </button>
+          {/* Kolom Kanan: Banner Branding Resmi (words.png) & Logo 3D Baru */}
+          <div className="w-full lg:w-[420px] shrink-0 flex flex-col items-center">
+            <div className="w-full relative rounded-2xl overflow-hidden border border-blue-400/40 bg-slate-950/80 p-3 sm:p-4 shadow-2xl shadow-blue-500/20 backdrop-blur-xl group hover:border-blue-400/70 transition-all duration-300">
+              <div className="absolute inset-0 bg-linear-to-tr from-blue-600/15 via-transparent to-cyan-500/15 pointer-events-none" />
+              <img
+                src="/words.png"
+                alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
+                className="w-full h-auto object-contain rounded-xl drop-shadow-lg group-hover:scale-[1.01] transition-transform duration-300"
+              />
+              <div className="mt-3.5 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 px-1">
+                <div className="flex items-center gap-2.5">
+                  <img
+                    src="/android-chrome-192x192.png"
+                    alt="Logo Proyek Cair Baru"
+                    className="w-7 h-7 rounded-lg object-cover border border-blue-400/40 bg-slate-900 shadow-xs"
+                  />
+                  <div>
+                    <span className="font-bold text-slate-200 block leading-tight">Proyek Cair OS</span>
+                    <span className="text-[10px] text-slate-400 block leading-tight">Platform Konstruksi Modular</span>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-emerald-400 bg-emerald-950/60 px-2.5 py-1 rounded-full border border-emerald-800/60 font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Sistem Siap Operasi
+                </span>
+              </div>
+            </div>
           </div>
+        </div>
 
-          {/* Nilai Inti Ringkas (3 Nilai Utama) */}
-          <div className="pt-6 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-            <div className="flex items-center gap-2.5 text-slate-300">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span><b>Tata Kelola CRU:</b> Batal & Ganti tanpa hapus data</span>
-            </div>
-            <div className="flex items-center gap-2.5 text-slate-300">
-              <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-              <span><b>Multi-POV:</b> Clerk, Spv, hingga Viewer Klien</span>
-            </div>
-            <div className="flex items-center gap-2.5 text-slate-300">
-              <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
-              <span><b>Pay-per-Project:</b> Masuk overhead resmi RAP</span>
-            </div>
+        {/* Nilai Inti Ringkas (3 Nilai Utama) */}
+        <div className="mt-8 pt-6 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+          <div className="flex items-center gap-2.5 text-slate-300">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span><b>Tata Kelola CRU:</b> Batal & Ganti tanpa hapus data</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-slate-300">
+            <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
+            <span><b>Multi-POV:</b> Clerk, Spv, hingga Viewer Klien</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-slate-300">
+            <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
+            <span><b>Pay-per-Project:</b> Masuk overhead resmi RAP</span>
           </div>
         </div>
       </section>
