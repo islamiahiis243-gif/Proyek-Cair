@@ -1,16 +1,101 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { getSupabaseClient, saveStoredUser, resolveMyActiveContext } from '../lib/supabase';
 import {
   ShieldCheck,
   Receipt,
   QrCode,
-  CheckCircle2,
   Lock,
   Mail,
   Building2,
   ArrowRight
 } from 'lucide-react';
 
+/* =========================================================================
+   PANEL BRANDING KIRI (ISOLASI REACT.MEMO - ZERO LATENCY PADA INPUT KEYUP)
+   ========================================================================= */
+const AuthBrandingPanel: React.FC = React.memo(() => {
+  return (
+    <div className="lg:col-span-5 relative flex flex-col justify-between p-6 sm:p-8 lg:p-10 bg-linear-to-br from-slate-900 via-blue-950/70 to-slate-950 border-b lg:border-b-0 lg:border-r border-slate-800 overflow-hidden">
+      {/* Ambient Lighting Glow di Balik Maskot */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 -mt-10 w-72 h-72 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-0 right-0 -mb-10 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+      {/* Bagian Atas: Banner Logo Resmi & Maskot 3D 1:1 */}
+      <div className="relative z-10 space-y-6">
+        {/* Banner Resmi (words_PNG2.png) */}
+        <div className="w-full flex items-center justify-start">
+          <img
+            src="/words_PNG2.png"
+            alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
+            loading="eager"
+            decoding="async"
+            width={320}
+            height={120}
+            className="w-full max-w-[280px] sm:max-w-[320px] h-auto object-contain drop-shadow-xl"
+          />
+        </div>
+
+        {/* Container Maskot 3D: Rasio 1:1, Auto Shrink to Fit */}
+        <div className="w-full flex items-center justify-center py-2">
+          <div className="w-full max-w-[220px] sm:max-w-[260px] aspect-square flex items-center justify-center">
+            <img
+              src="/mascot_3d.png"
+              alt="Maskot Proyek Cair"
+              loading="eager"
+              decoding="async"
+              width={260}
+              height={260}
+              className="w-full h-full object-contain drop-shadow-[0_15px_30px_rgba(37,99,235,0.3)] hover:scale-105 transition-transform duration-500"
+            />
+          </div>
+        </div>
+
+        {/* Tagline Promosi Utama */}
+        <div className="space-y-2">
+          <h3 className="text-base sm:text-lg font-bold text-white leading-snug">
+            Kendalikan Arus Material & Keuangan Proyek{' '}
+            <span className="text-transparent bg-clip-text bg-linear-to-r from-blue-400 via-cyan-300 to-emerald-400">
+              Tanpa Celah Kebocoran.
+            </span>
+          </h3>
+          <p className="text-xs text-slate-300 leading-relaxed font-medium">
+            Satu identitas terintegrasi untuk:
+          </p>
+        </div>
+
+        {/* 3 Keunggulan Utama */}
+        <div className="space-y-2.5 pt-1 text-xs">
+          <div className="flex items-start gap-2.5 text-slate-300">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <span><b>Buku Besar Abadi:</b> Tata kelola CRU Batal & Ganti tanpa hapus data.</span>
+          </div>
+          <div className="flex items-start gap-2.5 text-slate-300">
+            <Receipt className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+            <span><b>Album Nota Fisik:</b> Deteksi belanja fiktif & selisih harga toko.</span>
+          </div>
+          <div className="flex items-start gap-2.5 text-slate-300">
+            <QrCode className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <span><b>TTE Digital Berjenjang:</b> Validasi checksum SHA-256 anti-pemalsuan.</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Bagian Bawah: Badge Hak Cipta & Standar Keamanan */}
+      <div className="relative z-10 pt-6 mt-6 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
+        <span>© Proyek Cair Ecosystem</span>
+        <span className="inline-flex items-center gap-1 text-slate-400">
+          <Lock className="w-3 h-3 text-emerald-400" />
+          <span>Enkripsi TLS & RLS</span>
+        </span>
+      </div>
+    </div>
+  );
+});
+AuthBrandingPanel.displayName = 'AuthBrandingPanel';
+
+/* =========================================================================
+   KOMPONEN UTAMA AUTENTIKASI (AUTH GATE)
+   ========================================================================= */
 export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [ready, setReady] = useState(false);
   const [authed, setAuthed] = useState(false);
@@ -302,75 +387,8 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
     <div className="min-h-screen flex items-center justify-center bg-slate-950 p-3 sm:p-6 lg:p-10 text-slate-100 selection:bg-blue-500 selection:text-white">
       {/* KARTU UTAMA DENGAN DUA KOLOM PROMOSI & LOGIN */}
       <div className="w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl grid grid-cols-1 lg:grid-cols-12">
-        {/* =========================================================================
-            KOLOM KIRI: BRANDING & 3D VISUAL SHOWCASE (SELALU TERINGAT)
-           ========================================================================= */}
-        <div className="lg:col-span-5 relative flex flex-col justify-between p-6 sm:p-8 lg:p-10 bg-linear-to-br from-slate-900 via-blue-950/70 to-slate-950 border-b lg:border-b-0 lg:border-r border-slate-800 overflow-hidden">
-          {/* Ambient Lighting Glow di Balik Maskot */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 -mt-10 w-72 h-72 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 right-0 -mb-10 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-
-          {/* Bagian Atas: Banner Logo Resmi & Maskot 3D 1:1 */}
-          <div className="relative z-10 space-y-6">
-            {/* Banner Resmi (words_PNG2.png) */}
-            <div className="w-full flex items-center justify-start">
-              <img
-                src="/words_PNG2.png"
-                alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
-                className="w-full max-w-[280px] sm:max-w-[320px] h-auto object-contain drop-shadow-xl"
-              />
-            </div>
-
-            {/* Container Maskot 3D: Rasio 1:1, Auto Shrink to Fit */}
-            <div className="w-full flex items-center justify-center py-2">
-              <div className="w-full max-w-[220px] sm:max-w-[260px] aspect-square flex items-center justify-center">
-                <img
-                  src="/mascot_3d.png"
-                  alt="Maskot Proyek Cair"
-                  className="w-full h-full object-contain drop-shadow-[0_15px_30px_rgba(37,99,235,0.3)] hover:scale-105 transition-transform duration-500"
-                />
-              </div>
-            </div>
-
-            {/* Tagline Promosi Utama */}
-            <div className="space-y-2">
-              <h3 className="text-base sm:text-lg font-bold text-white leading-snug">
-                Kendalikan Arus Material & Keuangan Proyek{' '}
-                <span className="text-transparent bg-clip-text bg-linear-to-r from-blue-400 via-cyan-300 to-emerald-400">
-                  Tanpa Celah Kebocoran.
-                </span>
-              </h3>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Satu identitas terintegrasi untuk pembukuan nota fisik toko, pemantauan BOQ presisi, dan legalitas tanda tangan elektronik (TTE/QR).
-              </p>
-            </div>
-
-            {/* 3 Keunggulan Utama */}
-            <div className="space-y-2.5 pt-2 text-xs">
-              <div className="flex items-start gap-2.5 text-slate-300">
-                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span><b>Buku Besar Abadi:</b> Tata kelola CRU Batal & Ganti tanpa hapus data.</span>
-              </div>
-              <div className="flex items-start gap-2.5 text-slate-300">
-                <Receipt className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
-                <span><b>Album Nota Fisik:</b> Deteksi belanja fiktif & selisih harga toko.</span>
-              </div>
-              <div className="flex items-start gap-2.5 text-slate-300">
-                <QrCode className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <span><b>TTE Digital Berjenjang:</b> Validasi checksum SHA-256 anti-pemalsuan.</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Bagian Bawah: Badge Hak Cipta & Standar Keamanan */}
-          <div className="relative z-10 pt-6 mt-6 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
-            <span>© Proyek Cair Ecosystem</span>
-            <span className="inline-flex items-center gap-1 text-slate-400">
-              <Lock className="w-3 h-3 text-emerald-400" />
-              <span>Enkripsi TLS & RLS</span>
-            </span>
-          </div>
-        </div>
+        {/* KOLOM KIRI: BRANDING TERISOLASI MEMOIZED (ZERO RE-RENDER SAAT TYPING) */}
+        <AuthBrandingPanel />
 
         {/* =========================================================================
             KOLOM KANAN: FORMULIR AUTENTIKASI (CLEAN, INTUITIF & RESPONSIF)
@@ -562,7 +580,7 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
               <span className="h-px flex-1 bg-slate-800" />
             </div>
 
-            {/* Tombol Masuk Google & Portal Recovery Custodian */}
+            {/* Tombol Masuk Google (Portal Custodian Telah Dihapus Sesuai Permintaan) */}
             <div className="space-y-2">
               <button
                 type="button"
@@ -590,13 +608,6 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
                 </svg>
                 <span>Lanjutkan dengan Google</span>
               </button>
-
-              <a
-                href="/recovery-custodian"
-                className="block w-full rounded-xl border border-cyan-800/70 hover:bg-cyan-950/40 px-4 py-2 text-center text-xs font-semibold text-cyan-300 transition-colors"
-              >
-                Portal Pemulihan Akses (Recovery Custodian)
-              </a>
             </div>
 
             {/* Alih Mode Sign In / Sign Up */}
