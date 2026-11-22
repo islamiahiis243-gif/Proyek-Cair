@@ -132,18 +132,18 @@ export const Sidebar: React.FC = () => {
         <div className="flex items-center justify-between gap-2">
           {/* Info Mode (Hanya saat expanded di desktop, atau selalu di mobile) */}
           <div
-            className={`min-w-0 flex-1 flex items-center gap-2.5 rounded-xl border p-2.5 ${
+            className={`min-w-0 flex-1 flex items-center gap-2.5 rounded-xl p-2.5 ${
               isCollapsed ? 'justify-center md:p-2' : ''
             } ${
               themeAccent === 'amber'
-                ? 'border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20'
+                ? 'bg-amber-50/50 dark:bg-amber-950/20'
                 : themeAccent === 'cyan'
-                ? 'border-cyan-500/30 bg-cyan-50/50 dark:bg-cyan-950/20'
+                ? 'bg-cyan-50/50 dark:bg-cyan-950/20'
                 : themeAccent === 'purple'
-                ? 'border-purple-500/30 bg-purple-50/50 dark:bg-purple-950/20'
+                ? 'bg-purple-50/50 dark:bg-purple-950/20'
                 : themeAccent === 'emerald'
-                ? 'border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20'
-                : 'border-blue-500/30 bg-blue-50/50 dark:bg-blue-950/20'
+                ? 'bg-emerald-50/50 dark:bg-emerald-950/20'
+                : 'bg-blue-50/50 dark:bg-blue-950/20'
             }`}
             title={`${modeTitle} (${modeSubtitle})`}
           >
