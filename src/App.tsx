@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -135,6 +136,7 @@ export default function App() {
     <AuthGate>
       <AppProvider>
         <MainApp />
+        <Analytics />
       </AppProvider>
     </AuthGate>
   );
