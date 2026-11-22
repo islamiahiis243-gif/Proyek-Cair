@@ -399,10 +399,10 @@ export const LandingPageView: React.FC = () => {
             </p>
           </div>
 
-          {/* Kolom Kanan: Banner Branding Resmi (words_PNG.png) */}
+          {/* Kolom Kanan: Banner Branding Resmi (words_PNG2.png) */}
           <div className="w-full lg:w-[420px] shrink-0 flex items-center justify-center">
             <img
-              src="/words_PNG.png"
+              src="/words_PNG2.png"
               alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
               className="w-full max-w-[380px] lg:max-w-none h-auto object-contain drop-shadow-2xl"
             />
