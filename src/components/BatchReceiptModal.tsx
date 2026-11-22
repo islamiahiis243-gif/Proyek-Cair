@@ -20,7 +20,12 @@ import {
   Search,
   Link2,
   Eye,
-  Paperclip
+  Paperclip,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+  RefreshCw,
+  ExternalLink
 } from 'lucide-react';
 import { MutasiBarang, SupplierStore, UserProfile, ProjectReceiptAlbumItem } from '../types';
 import { uploadReceiptFile, fetchSupplierStores, saveSupplierStore, buildProjectReceiptAlbum } from '../lib/receiptStorage';
@@ -63,6 +68,13 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
   const [flowStep, setFlowStep] = useState<ReceiptFlowStep>('QUESTION');
   const [selectedAlbumReceipt, setSelectedAlbumReceipt] = useState<ProjectReceiptAlbumItem | null>(null);
   const [albumSearchQuery, setAlbumSearchQuery] = useState<string>('');
+
+  // State Pratinjau Pembesaran Nota & Konfirmasi Penautan
+  const [inspectingReceipt, setInspectingReceipt] = useState<ProjectReceiptAlbumItem | null>(null);
+  const [inspectingFileIndex, setInspectingFileIndex] = useState<number>(0);
+  const [inspectingImgZoom, setInspectingImgZoom] = useState<number>(1);
+  const [inspectingImgRotate, setInspectingImgRotate] = useState<number>(0);
+  const [isConfirmingLink, setIsConfirmingLink] = useState<boolean>(false);
 
   // State Data Nota Header
   const [storeName, setStoreName] = useState<string>('');
@@ -160,8 +172,17 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
     }
   }, [isOpen, targetMutations, projectId, albumItems.length]);
 
-  // Handle Pilih Nota dari Album Proyek (Smart Link)
-  const handleSelectFromAlbum = (nota: ProjectReceiptAlbumItem) => {
+  // Buka Pratinjau Membesar Nota dari Album ("Klik langsung membesar")
+  const handleOpenInspectReceipt = (nota: ProjectReceiptAlbumItem) => {
+    setInspectingReceipt(nota);
+    setInspectingFileIndex(0);
+    setInspectingImgZoom(1);
+    setInspectingImgRotate(0);
+    setIsConfirmingLink(false);
+  };
+
+  // Konfirmasi & Tautkan Nota ke Form ("Keluar konfirmasi terlebih dahulu")
+  const handleConfirmLinkReceipt = (nota: ProjectReceiptAlbumItem) => {
     setSelectedAlbumReceipt(nota);
     setStoreName(nota.storeName);
     setStoreContact(nota.storeContact || '');
@@ -171,6 +192,8 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
     setSelectedFiles([]); // Nol upload baru
     setFilePreviews([]);
     setErrorMessage('');
+    setIsConfirmingLink(false);
+    setInspectingReceipt(null);
     setFlowStep('FORM_LINKED');
   };
 
@@ -594,8 +617,9 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
                   return (
                     <div
                       key={nota.id}
-                      onClick={() => handleSelectFromAlbum(nota)}
+                      onClick={() => handleOpenInspectReceipt(nota)}
                       className="group rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-850 hover:border-indigo-500 dark:hover:border-indigo-400 hover:shadow-xl transition-all p-3.5 flex flex-col justify-between cursor-pointer space-y-3"
+                      title="Klik untuk memperbesar & memeriksa berkas fisik nota sebelum menautkan"
                     >
                       <div className="space-y-2">
                         <div className="flex items-start justify-between gap-2">
@@ -642,6 +666,13 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
                               <span>{nota.attachmentUrls.length} Lembar</span>
                             </span>
                           )}
+
+                          <div className="absolute inset-0 bg-indigo-950/0 group-hover:bg-indigo-950/30 transition-colors flex items-center justify-center">
+                            <span className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1 rounded-lg bg-slate-900/85 text-white text-[10px] font-bold backdrop-blur-xs flex items-center gap-1 shadow-md">
+                              <Eye className="w-3 h-3" />
+                              <span>Klik Memperbesar</span>
+                            </span>
+                          </div>
                         </div>
 
                         {/* Ringkasan Tanggal & Nominal */}
@@ -665,10 +696,14 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
 
                       <button
                         type="button"
-                        className="w-full py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-600 hover:text-white text-indigo-700 dark:text-indigo-300 font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-2xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenInspectReceipt(nota);
+                        }}
+                        className="w-full py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-600 hover:text-white text-indigo-700 dark:text-indigo-300 font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                       >
-                        <Link2 className="w-3.5 h-3.5" />
-                        <span>Pilih & Tautkan ke Nota Ini</span>
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Periksa & Tautkan Nota</span>
                       </button>
                     </div>
                   );
@@ -1134,6 +1169,349 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* MODAL PRATINJAU MEMBESAR NOTA (Zoomable Preview & Inspect) */}
+      {inspectingReceipt && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-5xl max-h-[92vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
+            {/* Header Modal Inspeksi */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/60">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 flex items-center justify-center shrink-0 shadow-inner">
+                  <Eye className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                      Inspeksi Berkas Nota: {inspectingReceipt.storeName}
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                      No. {inspectingReceipt.receiptNo}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Periksa kejelasan foto nota fisik sebelum memutuskan menghubungkan item mutasi ke nota ini.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setInspectingReceipt(null);
+                  setIsConfirmingLink(false);
+                }}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Konten Utama: Preview Foto & Panel Informasi */}
+            <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
+              {/* Kolom Kiri: Penampil Gambar / PDF dengan Kontrol Zoom */}
+              <div className="lg:col-span-8 p-4 flex flex-col bg-slate-950/5 dark:bg-slate-950/60 min-h-[350px] lg:min-h-[500px]">
+                {/* Toolbar Zoom & Rotasi */}
+                <div className="flex items-center justify-between gap-2 pb-3 mb-2 border-b border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setInspectingImgZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))}
+                      className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-50 flex items-center gap-1 cursor-pointer"
+                      title="Perbesar Tampilan (+)"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5" />
+                      <span>Perbesar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInspectingImgZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
+                      className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-50 flex items-center gap-1 cursor-pointer"
+                      title="Perkecil Tampilan (-)"
+                    >
+                      <ZoomOut className="w-3.5 h-3.5" />
+                      <span>Perkecil</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInspectingImgRotate((r) => (r + 90) % 360)}
+                      className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-50 flex items-center gap-1 cursor-pointer"
+                      title="Putar 90 Derajat"
+                    >
+                      <RotateCw className="w-3.5 h-3.5" />
+                      <span>Putar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInspectingImgZoom(1);
+                        setInspectingImgRotate(0);
+                      }}
+                      className="p-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 text-xs cursor-pointer"
+                      title="Reset Tampilan"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="text-[11px] font-mono font-semibold text-slate-500 ml-1">
+                      {Math.round(inspectingImgZoom * 100)}%
+                    </span>
+                  </div>
+
+                  {inspectingReceipt.attachmentUrls.length > 0 && (
+                    <a
+                      href={inspectingReceipt.attachmentUrls[inspectingFileIndex] || inspectingReceipt.attachmentUrls[0]}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                    >
+                      <span>Buka Tab Baru</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                </div>
+
+                {/* Lembar Berkas Preview */}
+                {(() => {
+                  const urls = inspectingReceipt.attachmentUrls || [];
+                  const hasFiles = urls.length > 0;
+                  const activeUrl = hasFiles ? (urls[inspectingFileIndex] || urls[0]) : '';
+                  const isPdf = activeUrl.toLowerCase().includes('.pdf') || activeUrl.startsWith('data:application/pdf');
+
+                  return (
+                    <div className="flex-1 flex flex-col justify-between">
+                      <div className="flex-1 flex items-center justify-center p-3 rounded-xl bg-slate-900/90 dark:bg-black/80 overflow-auto max-h-[58vh]">
+                        {hasFiles ? (
+                          isPdf ? (
+                            <div className="w-full h-[52vh] flex flex-col items-center justify-center gap-3 bg-white dark:bg-slate-850 rounded-lg p-4">
+                              <FileText className="w-16 h-16 text-rose-500" />
+                              <div className="text-center">
+                                <div className="text-sm font-bold text-slate-800 dark:text-white">
+                                  Berkas PDF Nota Resmi
+                                </div>
+                                <div className="text-xs text-slate-500 mt-1">
+                                  Dokumen lampiran tersimpan dalam format PDF.
+                                </div>
+                              </div>
+                              <a
+                                href={activeUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5 shadow-md"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                                <span>Buka & Lihat Berkas PDF Lengkap</span>
+                              </a>
+                            </div>
+                          ) : (
+                            <div className="transition-transform duration-150 ease-out origin-center flex items-center justify-center">
+                              <img
+                                src={activeUrl}
+                                alt={`Nota ${inspectingReceipt.receiptNo}`}
+                                style={{
+                                  transform: `scale(${inspectingImgZoom}) rotate(${inspectingImgRotate}deg)`,
+                                  maxHeight: '52vh',
+                                  maxWidth: '100%',
+                                  objectFit: 'contain'
+                                }}
+                                className="rounded shadow-xl select-none"
+                              />
+                            </div>
+                          )
+                        ) : (
+                          <div className="flex flex-col items-center justify-center gap-2 p-6 text-slate-400 text-center">
+                            <Receipt className="w-16 h-16 stroke-[1.2]" />
+                            <div className="text-sm font-bold text-slate-300">
+                              Berkas Nota Fisik Belum Diunggah
+                            </div>
+                            <p className="text-xs max-w-sm text-slate-400">
+                              Nota ini memiliki rekaman data toko dan nomor faktur, namun belum memiliki pindaian foto berkas fisik.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Pagination Jika Multi Lembar */}
+                      {urls.length > 1 && (
+                        <div className="flex items-center justify-center gap-2 pt-3">
+                          {urls.map((url, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                setInspectingFileIndex(idx);
+                                setInspectingImgZoom(1);
+                                setInspectingImgRotate(0);
+                              }}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                inspectingFileIndex === idx
+                                  ? 'bg-indigo-600 text-white shadow-xs'
+                                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                              }`}
+                            >
+                              Lembar #{idx + 1}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Kolom Kanan: Rincian Nota & Tombol Hubungkan */}
+              <div className="lg:col-span-4 p-5 flex flex-col justify-between space-y-4 bg-white dark:bg-slate-900">
+                <div className="space-y-4">
+                  {/* Ringkasan Data Nota Toko */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                      Rincian Nota Toko Terpilih:
+                    </span>
+                    <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 space-y-2">
+                      <div>
+                        <div className="text-[10px] text-slate-500">Nama Toko / Suplier</div>
+                        <div className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <Building2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                          <span>{inspectingReceipt.storeName}</span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                        <div>
+                          <div className="text-[10px] text-slate-500">No. Seri Faktur</div>
+                          <div className="text-xs font-mono font-bold text-slate-800 dark:text-slate-200">
+                            {inspectingReceipt.receiptNo}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-slate-500">Tanggal Nota</div>
+                          <div className="text-xs font-mono font-bold text-slate-800 dark:text-slate-200">
+                            {inspectingReceipt.receiptDate ? formatDateTime(inspectingReceipt.receiptDate).split(',')[0] : '-'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                        <div className="text-[10px] text-slate-500">Grand Total di Nota Fisik</div>
+                        <div className="text-base font-black text-emerald-600 dark:text-emerald-400">
+                          Rp {inspectingReceipt.totalPhysicalAmount.toLocaleString('id-ID')}
+                        </div>
+                      </div>
+
+                      {inspectingReceipt.sampleItemNames.length > 0 && (
+                        <div className="pt-1 border-t border-slate-200/60 dark:border-slate-700/60 text-[10px] text-slate-500">
+                          <b>Contoh item pada nota ini:</b> {inspectingReceipt.sampleItemNames.join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Informasi Item yang Akan Dihubungkan */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                      Item yang Akan Ditautkan:
+                    </span>
+                    <div className="p-3 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/80 space-y-1.5">
+                      <div className="text-xs font-bold text-indigo-950 dark:text-indigo-200 flex items-center justify-between">
+                        <span>{itemRows.length} Pos Material Terpilih</span>
+                        <span className="text-[10px] px-2 py-0.2 rounded-full bg-indigo-200/80 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 font-extrabold">
+                          Siap Terhubung
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-indigo-800 dark:text-indigo-300 line-clamp-3">
+                        {itemRows.map((r) => r.originalName || r.actualName).join(', ')}
+                      </div>
+                      <div className="text-[10px] text-indigo-600 dark:text-indigo-400 pt-1 border-t border-indigo-200/60 dark:border-indigo-800/60">
+                        💡 Nol duplikasi upload — berkas foto dari album ini akan langsung diasosiasikan secara resmi.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tombol Aksi */}
+                <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setIsConfirmingLink(true)}
+                    className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-all shadow-md hover:shadow-indigo-500/25 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Link2 className="w-4 h-4" />
+                    <span>Hubungkan {itemRows.length} Item ke Nota Ini</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInspectingReceipt(null);
+                      setIsConfirmingLink(false);
+                    }}
+                    className="w-full py-2 px-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer"
+                  >
+                    Kembali ke Album Nota
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DIALOG KONFIRMASI PENAUTAN (Muncul Sebelum Form Terapkan) */}
+      {isConfirmingLink && inspectingReceipt && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-in zoom-in-95 duration-150">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-100 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto shadow-inner">
+              <Link2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                Konfirmasi Penautan Nota Toko
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                Apakah Anda yakin ingin menautkan <b>{itemRows.length} item mutasi</b> ini ke nota toko resmi berikut?
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Toko / Suplier:</span>
+                <span className="font-bold text-slate-900 dark:text-white">{inspectingReceipt.storeName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Nomor Faktur:</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white">{inspectingReceipt.receiptNo}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Total Nilai Bon:</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                  Rp {inspectingReceipt.totalPhysicalAmount.toLocaleString('id-ID')}
+                </span>
+              </div>
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-700 text-[11px] text-slate-500">
+                <b>Material Terpilih:</b> {itemRows.map((r) => r.originalName || r.actualName).join(', ')}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setIsConfirmingLink(false)}
+                className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs transition-colors cursor-pointer"
+              >
+                Batal / Periksa Lagi
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmLinkReceipt(inspectingReceipt)}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-colors shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span>Ya, Tautkan Sekarang</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
