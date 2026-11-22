@@ -39,7 +39,10 @@ import {
   CheckSquare,
   Square,
   ExternalLink,
-  Images
+  Images,
+  RotateCcw,
+  Info,
+  ChevronUp
 } from 'lucide-react';
 import { formatDateTime, formatRupiah, generateBOQReportPDF, generateStockMutationPDF, generateWarehouseSummaryPDF } from '../lib/pdfGenerator';
 import {
@@ -123,6 +126,42 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const [filterType, setFilterType] = useState<'ALL' | 'MASUK' | 'KELUAR' | 'BEDA_PENYEDIA' | 'PROYEK_BOQ' | 'PERMINTAAN_KLIEN' | 'BONUS_KLIEN' | 'OPERASIONAL'>('ALL');
   const deferredFilterType = useDeferredValue(filterType);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+
+  // Rekapitulasi metrik transaksi mutasi untuk kartu filter interaktif
+  const mutationStats = useMemo(() => {
+    let masuk = 0;
+    let keluar = 0;
+    let boq = 0;
+    let klien = 0;
+    let bonus = 0;
+    let ops = 0;
+
+    stockMutations.forEach((m) => {
+      if (m.jenis === 'MASUK') masuk++;
+      else if (m.jenis === 'KELUAR') keluar++;
+
+      if (m.beban_biaya === 'PROYEK_BOQ' || m.beban_biaya === 'KONTRAKTOR') boq++;
+      else if (m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN') klien++;
+      else if (m.beban_biaya === 'BONUS_KLIEN') bonus++;
+      else if (m.beban_biaya === 'OPERASIONAL') ops++;
+    });
+
+    return { masuk, keluar, boq, klien, bonus, ops };
+  }, [stockMutations]);
+
+  const activeFilterLabel = useMemo(() => {
+    switch (filterType) {
+      case 'MASUK': return 'Material Masuk';
+      case 'KELUAR': return 'Material Keluar';
+      case 'BEDA_PENYEDIA': return 'Beda Penyedia / Talangan';
+      case 'PROYEK_BOQ': return 'Proyek BOQ';
+      case 'PERMINTAAN_KLIEN': return 'Minta Klien';
+      case 'BONUS_KLIEN': return 'Bonus Klien';
+      case 'OPERASIONAL': return 'Operasional';
+      default: return 'Semua Mutasi';
+    }
+  }, [filterType]);
 
   // 4 POV Terpisah Sesuai Kesepakatan:
   // 1) WAREHOUSE_SUMMARY ("Satukan Masuk" - 1 baris per nama material fisik)
@@ -2392,41 +2431,279 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           ===================================================================== */}
           {activeTab === 'MUTATION_HISTORY' && (
             <div className="space-y-4">
-              {/* Matriks Panduan Tata Kelola Barang (BOQ vs Kustom Non-BOQ) */}
-              <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    <span>Matriks Panduan Tata Kelola Barang & Koreksi Data (CRU Tanpa Hapus)</span>
+              {/* KARTU METRIK & FILTER INTERAKTIF (Menggantikan Teks Statis Sebelumnya) */}
+              <div className="space-y-3">
+                {/* Bar Info & Toggle Panduan Tata Kelola */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                    <span className="text-xs font-extrabold text-slate-850 dark:text-slate-100">
+                      Filter & Metrik Mutasi Barang
+                    </span>
+                    {filterType !== 'ALL' && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1">
+                        <span>Aktif: {activeFilterLabel}</span>
+                        <button
+                          type="button"
+                          onClick={() => startTransition(() => setFilterType('ALL'))}
+                          className="hover:text-rose-600 transition-colors cursor-pointer"
+                          title="Hapus filter"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    )}
                   </div>
-                  <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300">
-                    Koreksi Baris Langsung (Tanpa Menunggu Approval Berantai)
-                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsGuideOpen(!isGuideOpen)}
+                    className="text-[11px] font-semibold text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 flex items-center gap-1.5 transition-colors cursor-pointer self-start sm:self-auto"
+                  >
+                    <Info className="w-3.5 h-3.5" />
+                    <span>{isGuideOpen ? 'Tutup Panduan Tata Kelola' : 'Panduan Tata Kelola (CRU Tanpa Hapus)'}</span>
+                    {isGuideOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px]">
-                  <div className="p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-800/60">
-                    <div className="font-bold text-emerald-900 dark:text-emerald-300 mb-1">
-                      1. Material Kontrak BOQ
+
+                {/* Panel Panduan (Collapsible) */}
+                {isGuideOpen && (
+                  <div className="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 text-[11px] space-y-2 animate-in fade-in duration-150">
+                    <div className="font-bold text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      <span>Prinsip Tata Kelola Barang & Koreksi Transaksi (CRU Tanpa Hapus):</span>
                     </div>
-                    <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
-                      Saat <b>Masuk</b>, material dicatat ke stok fisik gudang (Tab Stok Gudang). Saat <b>Keluar</b>, material dialokasikan ke pos pekerjaan tertentu (Tab Realisasi BOQ).
-                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-slate-700 dark:text-slate-300">
+                      <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-indigo-100 dark:border-slate-800">
+                        <b>1. Material Kontrak BOQ:</b> Saat Masuk dicatat ke stok gudang, saat Keluar dialokasikan ke pos pekerjaan BOQ.
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-indigo-100 dark:border-slate-800">
+                        <b>2. Material Non-BOQ (Kustom):</b> Dicatat fleksibel saat tiba, tujuan penggunaan disesuaikan instruksi lapangan saat keluar.
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-indigo-100 dark:border-slate-800">
+                        <b>3. Koreksi Batal vs Ganti:</b> Tidak ada hapus fisik. Jika salah input, klik Batal atau Ganti (nominal lama dinolkan sah).
+                      </div>
+                    </div>
                   </div>
-                  <div className="p-3 rounded-xl bg-purple-50/60 dark:bg-purple-950/25 border border-purple-200 dark:border-purple-800/60">
-                    <div className="font-bold text-purple-900 dark:text-purple-300 mb-1">
-                      2. Material Non-BOQ (Kustom)
+                )}
+
+                {/* Grid 3 Kartu Filter Interaktif */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* KARTU 1: ARUS MUTASI FISIK */}
+                  <div
+                    className={`rounded-2xl border p-4 transition-all duration-200 flex flex-col justify-between space-y-3.5 ${
+                      ['ALL', 'MASUK', 'KELUAR'].includes(filterType)
+                        ? 'bg-gradient-to-br from-blue-50/70 to-indigo-50/40 dark:from-blue-950/30 dark:to-slate-900 border-blue-300 dark:border-blue-700 shadow-xs ring-1 ring-blue-500/20'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+                          <ArrowUpDown className="w-3.5 h-3.5" />
+                          <span>Arus Mutasi Fisik</span>
+                        </div>
+                        <div className="text-xl font-black text-slate-900 dark:text-white mt-1">
+                          {stockMutations.length} <span className="text-xs font-normal text-slate-500">Transaksi</span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200">
+                        Gudang & Pos
+                      </span>
                     </div>
-                    <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
-                      Barang di luar daftar kontrak BOQ dicatat fleksibel saat tiba, dan tujuan penggunaannya disesuaikan dengan instruksi lapangan saat keluar.
-                    </p>
+
+                    <div className="grid grid-cols-3 gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => startTransition(() => setFilterType('ALL'))}
+                        className={`px-2 py-1.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
+                          filterType === 'ALL'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'bg-white/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        <span className="text-[10px] font-medium opacity-80">Semua</span>
+                        <span className="font-extrabold">{stockMutations.length}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => startTransition(() => setFilterType('MASUK'))}
+                        className={`px-2 py-1.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
+                          filterType === 'MASUK'
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 border border-emerald-200 dark:border-emerald-800/60'
+                        }`}
+                      >
+                        <span className="text-[10px] font-medium opacity-80 flex items-center gap-0.5">
+                          <ArrowDownLeft className="w-2.5 h-2.5" /> Masuk
+                        </span>
+                        <span className="font-extrabold">{mutationStats.masuk}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => startTransition(() => setFilterType('KELUAR'))}
+                        className={`px-2 py-1.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
+                          filterType === 'KELUAR'
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 border border-amber-200 dark:border-amber-800/60'
+                        }`}
+                      >
+                        <span className="text-[10px] font-medium opacity-80 flex items-center gap-0.5">
+                          <ArrowUpRight className="w-2.5 h-2.5" /> Keluar
+                        </span>
+                        <span className="font-extrabold">{mutationStats.keluar}</span>
+                      </button>
+                    </div>
                   </div>
-                  <div className="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-800/60">
-                    <div className="font-bold text-amber-900 dark:text-amber-300 mb-1">
-                      3. Koreksi Baris Data vs Persetujuan Dokumen
+
+                  {/* KARTU 2: PERUNTUKAN & BEBAN BIAYA */}
+                  <div
+                    className={`rounded-2xl border p-4 transition-all duration-200 flex flex-col justify-between space-y-3.5 ${
+                      ['PROYEK_BOQ', 'PERMINTAAN_KLIEN', 'BONUS_KLIEN', 'OPERASIONAL'].includes(filterType)
+                        ? 'bg-gradient-to-br from-purple-50/70 to-indigo-50/40 dark:from-purple-950/30 dark:to-slate-900 border-purple-300 dark:border-purple-700 shadow-xs ring-1 ring-purple-500/20'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 flex items-center gap-1.5">
+                          <Building2 className="w-3.5 h-3.5" />
+                          <span>Peruntukan & Beban Biaya</span>
+                        </div>
+                        <div className="text-xl font-black text-slate-900 dark:text-white mt-1">
+                          {mutationStats.boq} <span className="text-xs font-normal text-slate-500">BOQ Kontraktor</span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200">
+                        Alokasi Hak
+                      </span>
                     </div>
-                    <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
-                      Tidak ada tombol Hapus. Jika salah input baris, Clerk langsung klik <b>Batal</b> atau <b>Ganti</b> (nominal lama otomatis dinolkan). Persetujuan berantai khusus di Tab 4 (Dokumen).
-                    </p>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => startTransition(() => setFilterType('PROYEK_BOQ'))}
+                        className={`px-1.5 py-1.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
+                          filterType === 'PROYEK_BOQ'
+                            ? 'bg-purple-600 text-white shadow-xs'
+                            : 'bg-white/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                        }`}
+                        title="Pengadaan Kontraktor (CV Menara Megah)"
+                      >
+                        <span className="text-[9px] font-medium opacity-80 truncate max-w-full">BOQ Kontrak</span>
+                        <span className="font-extrabold">{mutationStats.boq}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => startTransition(() => setFilterType('PERMINTAAN_KLIEN'))}
+                        className={`px-1.5 py-1.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
+                          filterType === 'PERMINTAAN_KLIEN'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'bg-white/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                        }`}
+                        title="Permintaan Khusus Klien"
+                      >
+                        <span className="text-[9px] font-medium opacity-80 truncate max-w-full">Minta Klien</span>
+                        <span className="font-extrabold">{mutationStats.klien}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => startTransition(() => setFilterType('BONUS_KLIEN'))}
+                        className={`px-1.5 py-1.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
+                          filterType === 'BONUS_KLIEN'
+                            ? 'bg-teal-600 text-white shadow-xs'
+                            : 'bg-white/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                        }`}
+                        title="Bonus / Complimentary Klien"
+                      >
+                        <span className="text-[9px] font-medium opacity-80 truncate max-w-full">Bonus Klien</span>
+                        <span className="font-extrabold">{mutationStats.bonus}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => startTransition(() => setFilterType('OPERASIONAL'))}
+                        className={`px-1.5 py-1.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
+                          filterType === 'OPERASIONAL'
+                            ? 'bg-slate-700 text-white shadow-xs'
+                            : 'bg-white/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                        }`}
+                        title="Operasional Proyek"
+                      >
+                        <span className="text-[9px] font-medium opacity-80 truncate max-w-full">Operasional</span>
+                        <span className="font-extrabold">{mutationStats.ops}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* KARTU 3: PENGAWASAN AUDIT & ALBUM NOTA */}
+                  <div
+                    className={`rounded-2xl border p-4 transition-all duration-200 flex flex-col justify-between space-y-3.5 ${
+                      filterType === 'BEDA_PENYEDIA'
+                        ? 'bg-gradient-to-br from-amber-50/70 to-rose-50/40 dark:from-amber-950/30 dark:to-slate-900 border-amber-300 dark:border-amber-700 shadow-xs ring-1 ring-amber-500/20'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Pengawasan & Bukti Nota</span>
+                        </div>
+                        <div className="text-xl font-black text-slate-900 dark:text-white mt-1 flex items-center gap-2">
+                          {providerMismatchCount > 0 ? (
+                            <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                              <AlertTriangle className="w-4 h-4" />
+                              {providerMismatchCount} Talangan
+                            </span>
+                          ) : (
+                            <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 text-base font-bold">
+                              <CheckCircle2 className="w-4 h-4" />
+                              Tertib Penyedia
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                        Audit & Nota
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => startTransition(() => setFilterType('BEDA_PENYEDIA'))}
+                        className={`px-2 py-1.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
+                          filterType === 'BEDA_PENYEDIA'
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : providerMismatchCount > 0
+                            ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 hover:bg-amber-100 border border-amber-200 dark:border-amber-800'
+                            : 'bg-white/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-700'
+                        }`}
+                        title="Filter item mutasi dengan indikasi beda penyedia / talangan sepihak"
+                      >
+                        <span className="text-[9px] font-medium opacity-80 flex items-center gap-1">
+                          <AlertTriangle className="w-2.5 h-2.5" /> Beda Penyedia
+                        </span>
+                        <span className="font-extrabold">{providerMismatchCount} Item</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsProjectAlbumOpen(true)}
+                        className="px-2 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-all flex flex-col items-center justify-center cursor-pointer shadow-2xs"
+                        title="Buka galeri album berkas nota fisik resmi proyek"
+                      >
+                        <span className="text-[9px] font-medium opacity-80 flex items-center gap-1">
+                          <Images className="w-2.5 h-2.5" /> Album Nota
+                        </span>
+                        <span className="font-extrabold">{projectAlbumItems.length} Nota</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2446,35 +2723,49 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 </div>
               )}
 
-              {/* Filter & Pencarian */}
-              <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 transition-colors">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <div className="relative flex-1 min-w-0">
-                    <Search className="w-4 h-4 text-slate-500 dark:text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      aria-label="Cari transaksi mutasi barang"
-                      placeholder="Cari transaksi, material, keperluan, PIC, atau no surat jalan..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
+              {/* Toolbar Pencarian & Aksi Dokumen (Lega & Tidak Berdesakan) */}
+              <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors">
+                <div className="relative flex-1 min-w-0">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    aria-label="Cari transaksi mutasi barang"
+                    placeholder="Cari transaksi, material, keperluan, PIC, toko, atau no surat jalan..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {filterType !== 'ALL' && (
+                    <button
+                      type="button"
+                      onClick={() => startTransition(() => setFilterType('ALL'))}
+                      className="px-3 py-2 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Kembalikan ke semua transaksi"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Reset Filter</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => openExportModal('STOCK_JOURNAL')}
                     disabled={isExportingJournal || filteredMutations.length === 0}
                     title="Ekspor PDF sesuai filter & urutan sortir di layar"
-                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors cursor-pointer disabled:opacity-40"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors cursor-pointer disabled:opacity-40"
                   >
                     <FileText className="w-3.5 h-3.5" />
                     <span>{isExportingJournal ? 'Menyiapkan...' : 'Ekspor PDF'}</span>
                   </button>
+
                   <button
                     type="button"
                     onClick={() => setIsProjectAlbumOpen(true)}
                     title="Buka Album Galeri Seluruh Berkas Nota Resmi Proyek"
-                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-2xs transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-2xs transition-colors cursor-pointer"
                   >
                     <Images className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                     <span>Album Nota</span>
@@ -2484,31 +2775,6 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                       </span>
                     )}
                   </button>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {[
-                    { id: 'ALL', label: `Semua (${stockMutations.length})` },
-                    { id: 'MASUK', label: `Masuk (${stockMutations.filter((m) => m.jenis === 'MASUK').length})` },
-                    { id: 'KELUAR', label: `Keluar (${stockMutations.filter((m) => m.jenis === 'KELUAR').length})` },
-                    { id: 'BEDA_PENYEDIA', label: `⚠️ Beda Penyedia / Talangan (${providerMismatchCount})` },
-                    { id: 'PROYEK_BOQ', label: `Proyek BOQ (${stockMutations.filter((m) => m.beban_biaya === 'PROYEK_BOQ' || m.beban_biaya === 'KONTRAKTOR').length})` },
-                    { id: 'PERMINTAAN_KLIEN', label: `Minta Klien (${stockMutations.filter((m) => m.beban_biaya === 'KLIEN' || (m.beban_biaya as string) === 'PERMINTAAN_KLIEN').length})` },
-                    { id: 'BONUS_KLIEN', label: `Bonus Klien (${stockMutations.filter((m) => m.beban_biaya === 'BONUS_KLIEN').length})` },
-                    { id: 'OPERASIONAL', label: `Operasional (${stockMutations.filter((m) => m.beban_biaya === 'OPERASIONAL').length})` },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => startTransition(() => setFilterType(tab.id as any))}
-                      className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-colors cursor-pointer ${
-                        filterType === tab.id
-                          ? 'bg-blue-600 text-white shadow-sm'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
                 </div>
               </div>
 
