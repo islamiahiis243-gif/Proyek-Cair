@@ -397,38 +397,14 @@ export const LandingPageView: React.FC = () => {
               Selaraskan nota fisik toko, pantau realisasi BOQ secara presisi, dan sahkan berita acara 
               tanda tangan digital (TTE/QR) 4 jenjang dalam satu layar yang mudah bagi siapa saja.
             </p>
-
-            {/* Aksi Cepat (Call to Action Tanpa Ikon - Sejajar Rapi 1 Baris) */}
-            <div className="pt-2 flex flex-wrap items-center gap-2.5 sm:gap-3">
-              <button
-                onClick={() => setCurrentView('dashboard')}
-                className="px-4 sm:px-4.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all hover:translate-y-[-1px] cursor-pointer"
-              >
-                Buka Dasbor Operasional
-              </button>
-
-              <button
-                onClick={() => setCurrentView('rfin-b-input')}
-                className="px-4 sm:px-4.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
-              >
-                Aktivasi Kunci Proyek (RFIN-B)
-              </button>
-
-              <button
-                onClick={() => setCurrentView('verification')}
-                className="px-3.5 sm:px-4 py-2.5 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs sm:text-sm font-medium transition-colors cursor-pointer"
-              >
-                Verifikasi Dokumen QR
-              </button>
-            </div>
           </div>
 
-          {/* Kolom Kanan: Banner Branding Resmi (words.png) Proporsional & Seimbang */}
-          <div className="w-full lg:w-[460px] xl:w-[500px] shrink-0 flex items-center justify-center lg:justify-end">
+          {/* Kolom Kanan: Banner Branding Resmi (words.png) Ukuran Semula */}
+          <div className="w-full lg:w-[420px] shrink-0 flex items-center justify-center">
             <img
               src="/words.png"
               alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
-              className="w-full max-w-[420px] lg:max-w-none h-auto object-contain drop-shadow-2xl hover:scale-[1.01] transition-transform duration-300"
+              className="w-full max-w-[380px] lg:max-w-none h-auto object-contain drop-shadow-2xl"
             />
           </div>
         </div>
