@@ -899,6 +899,26 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     setIsModalOpen(true);
   };
 
+  // Aksi Cepat Catat Pakai / Keluar langsung dari 1 Baris Material Gudang
+  const handleOpenWarehouseMaterialOut = (pm: PhysicalMaterialItem) => {
+    if (!rolePermissions.canIssue) {
+      setErrorMessage(`Jabatan Anda (${activeRole}) tidak memiliki wewenang mencatat mutasi baru. Wewenang ini milik Clerk.`);
+      return;
+    }
+    if (pm.stok_fisik <= 0) {
+      setErrorMessage(`Stok fisik ${pm.nama_barang} di gudang saat ini kosong (0 ${pm.satuan}). Tidak ada saldo fisik untuk dipakai.`);
+      return;
+    }
+    openedInternallyRef.current = true;
+    setWizardType('KELUAR');
+    setWizardPreselectedMaterial(pm);
+    // Prioritaskan pos BOQ yang masih memiliki sisa alokasi pemenuhan
+    const targetLine = pm.budget_lines.find((bl) => bl.sisa_anggaran > 0) || pm.budget_lines[0];
+    setWizardPreselectedLineId(targetLine?.id);
+    setErrorMessage(null);
+    setIsModalOpen(true);
+  };
+
   // Filter Material Gudang untuk Tab 1 ("Satukan Masuk" - 1 Baris per Nama Material)
   const filteredWarehouseMaterials = useMemo(() => {
     const q = deferredWarehouseSearchQuery.trim().toLowerCase();
@@ -2204,16 +2224,51 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                 )}
                               </td>
                               <td className="py-3 px-3.5 text-center">
-                                <div className="flex items-center justify-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenWarehouseMaterialIn(pm)}
-                                    disabled={!rolePermissions.canIssue}
-                                    title="Catat penerimaan barang masuk ke gudang"
-                                    className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-[10px] font-bold hover:bg-emerald-700 disabled:opacity-40 transition-colors cursor-pointer"
-                                  >
-                                    + Catat Masuk
-                                  </button>
+                                <div className="flex items-center justify-center gap-1.5 flex-nowrap">
+                                  {(() => {
+                                    const canPakai = pm.stok_fisik > 0;
+                                    const canMasuk = sisaBelumTiba > 0 || pm.total_qty_boq === 0;
+                                    const isTuntas = pm.stok_fisik <= 0 && sisaBelumTiba <= 0 && totalMasuk > 0;
+
+                                    if (isTuntas) {
+                                      return (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                          Tuntas
+                                        </span>
+                                      );
+                                    }
+
+                                    return (
+                                      <>
+                                        {canPakai && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenWarehouseMaterialOut(pm)}
+                                            disabled={!rolePermissions.canIssue}
+                                            title={`Keluarkan / gunakan ${pm.nama_barang} ke pekerjaan lapangan (Saldo fisik: ${pm.stok_fisik} ${pm.satuan})`}
+                                            className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-bold disabled:opacity-40 transition-colors cursor-pointer shadow-xs whitespace-nowrap"
+                                          >
+                                            Pakai
+                                          </button>
+                                        )}
+                                        {canMasuk && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenWarehouseMaterialIn(pm)}
+                                            disabled={!rolePermissions.canIssue}
+                                            title={
+                                              sisaBelumTiba > 0
+                                                ? `Catat kedatangan sisa ${sisaBelumTiba.toLocaleString('id-ID')} ${pm.satuan} dari pemasok`
+                                                : 'Catat penerimaan barang masuk ke gudang'
+                                            }
+                                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold disabled:opacity-40 transition-colors cursor-pointer shadow-xs whitespace-nowrap"
+                                          >
+                                            Masuk
+                                          </button>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
                                   <button
                                     type="button"
                                     onClick={() => handleViewItemHistory(pm.nama_barang)}
@@ -2683,7 +2738,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                             'center'
                           )}
                         </th>
-                        <th className="py-3 px-3.5 text-center w-28">Aksi Pemakaian</th>
+                        <th className="py-3 px-3.5 text-center w-28">Aksi Cepat</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -2833,14 +2888,20 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
                                               <td className="py-2.5 px-3.5 text-center">
                                                 <div className="flex items-center justify-center gap-1">
-                                                  <button
-                                                    onClick={() => handleOpenItemMutation(item, 'KELUAR')}
-                                                    disabled={!rolePermissions.canIssue}
-                                                    title="Catat pemakaian (keluar) khusus untuk pos pekerjaan BOQ ini"
-                                                    className="px-2.5 py-1 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-lg text-[10px] font-bold hover:bg-rose-100 dark:hover:bg-rose-900/60 disabled:opacity-40 transition-colors cursor-pointer whitespace-nowrap"
-                                                  >
-                                                    Pakai
-                                                  </button>
+                                                  {item.qty_pemenuhan_sisa <= 0 && item.qty_keluar_total >= item.qty_boq ? (
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                                      Tuntas
+                                                    </span>
+                                                  ) : (
+                                                    <button
+                                                      onClick={() => handleOpenItemMutation(item, 'KELUAR')}
+                                                      disabled={!rolePermissions.canIssue}
+                                                      title="Catat pemakaian (keluar) khusus untuk pos pekerjaan BOQ ini"
+                                                      className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-bold disabled:opacity-40 transition-colors cursor-pointer shadow-xs whitespace-nowrap"
+                                                    >
+                                                      Pakai
+                                                    </button>
+                                                  )}
                                                   <button
                                                     onClick={() => handleViewItemHistory(item.nama_barang)}
                                                     aria-label="Lihat riwayat mutasi material ini"
