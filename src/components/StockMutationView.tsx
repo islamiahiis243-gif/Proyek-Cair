@@ -739,6 +739,152 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     };
   }, [items, physicalMaterials, tenantBranding.clientName]);
 
+  // Metrik Finansial Riil Proyek (Masuk Dibeli, Keluar Terpasang & Estimasi Efisiensi Profit)
+  const financialExecutionMetrics = useMemo(() => {
+    let totalInValue = 0;
+    let materialInValue = 0;
+    let manpowerInValue = 0;
+
+    let totalOutValue = 0;
+    let materialOutValue = 0;
+    let manpowerOutValue = 0;
+
+    let boqValueOfImplemented = 0;
+
+    // Lookup harga riil
+    const materialPriceMap = new Map<string, number>();
+    (physicalMaterials || []).forEach((pm) => {
+      const p =
+        pm.harga_beli_rata_rata ||
+        pm.harga_beli_terakhir ||
+        (pm.total_qty_masuk > 0 && pm.total_nilai_belanja_riil != null && pm.total_nilai_belanja_riil > 0
+          ? Math.round(pm.total_nilai_belanja_riil / pm.total_qty_masuk)
+          : 0);
+      if (p > 0) {
+        materialPriceMap.set(pm.id, p);
+        materialPriceMap.set(pm.nama_barang.trim().toLowerCase(), p);
+      }
+    });
+
+    const boqPriceMap = new Map<string, number>();
+    items.forEach((it) => {
+      if (it.harga_satuan > 0) {
+        boqPriceMap.set(it.id, it.harga_satuan);
+        boqPriceMap.set(it.nama_barang.trim().toLowerCase(), it.harga_satuan);
+      }
+    });
+
+    stockMutations.forEach((m) => {
+      if (m.is_batal || m.is_ganti || m.status_dokumen === 'BATAL' || m.status_dokumen === 'DIGANTI') return;
+
+      const qty = Number(m.jumlah || 0);
+      const explicitPrice =
+        m.harga_satuan_beli != null && Number(m.harga_satuan_beli) > 0 ? Number(m.harga_satuan_beli) : null;
+      const fallbackPrice =
+        materialPriceMap.get(m.barang_id) ||
+        materialPriceMap.get((m.nama_barang || '').trim().toLowerCase()) ||
+        boqPriceMap.get(m.barang_id) ||
+        boqPriceMap.get((m.nama_barang || '').trim().toLowerCase()) ||
+        0;
+
+      const effPrice = explicitPrice ?? fallbackPrice;
+      const lineTotal = qty * effPrice;
+
+      const targetBoq = items.find(
+        (it) => it.id === m.barang_id || it.nama_barang.trim().toLowerCase() === (m.nama_barang || '').trim().toLowerCase()
+      );
+      const catUpper = (targetBoq?.kategori || '').toUpperCase();
+      const isManpower = targetBoq
+        ? (!targetBoq.is_stock_item || catUpper.startsWith('IV') || catUpper.includes('JASA') || catUpper.includes('UPAH'))
+        : false;
+
+      if (m.jenis === 'MASUK') {
+        totalInValue += lineTotal;
+        if (isManpower) manpowerInValue += lineTotal;
+        else materialInValue += lineTotal;
+      } else if (m.jenis === 'KELUAR') {
+        totalOutValue += lineTotal;
+        if (isManpower) manpowerOutValue += lineTotal;
+        else materialOutValue += lineTotal;
+
+        if (targetBoq && targetBoq.harga_satuan > 0) {
+          boqValueOfImplemented += qty * targetBoq.harga_satuan;
+        }
+      }
+    });
+
+    const contractGrandTotal = boqMetrics.contractGrandTotal || 0;
+    const sisaPaguKontrak = Math.max(0, contractGrandTotal - totalInValue);
+    const penyerapanPct = contractGrandTotal > 0 ? (totalInValue / contractGrandTotal) * 100 : 0;
+    const serapanLapanganPct = contractGrandTotal > 0 ? (totalOutValue / contractGrandTotal) * 100 : 0;
+
+    // Selisih efisiensi belanja (Pagu BOQ vs Biaya Beli Riil)
+    const hematBelanja = Math.max(0, boqValueOfImplemented - totalOutValue);
+
+    return {
+      totalInValue,
+      materialInValue,
+      manpowerInValue,
+      totalOutValue,
+      materialOutValue,
+      manpowerOutValue,
+      sisaPaguKontrak,
+      penyerapanPct,
+      serapanLapanganPct,
+      hematBelanja
+    };
+  }, [stockMutations, physicalMaterials, items, boqMetrics.contractGrandTotal]);
+
+  // Metrik Kewajiban Free-Issue Klien (IN / OUT / SISA & Item / Nominal)
+  const clientObligationStats = useMemo(() => {
+    const clientItems = items.filter((it) =>
+      isClientProvidedRemark(it.keterangan, tenantBranding.clientName)
+    );
+    const totalItems = clientItems.length;
+    let totalNominal = 0;
+    let arrivedItemsCount = 0;
+    let fullyArrivedCount = 0;
+    let consumedItemsCount = 0;
+    let pendingItemsCount = 0;
+
+    let totalQtyBoq = 0;
+    let totalQtyMasuk = 0;
+    let totalQtyKeluar = 0;
+
+    clientItems.forEach((it) => {
+      const lineVal = (Number(it.harga_satuan) || 0) * (Number(it.qty_boq) || 0);
+      totalNominal += lineVal;
+
+      const qtyBoq = Number(it.qty_boq) || 0;
+      const qtyMasuk = Number(it.qty_masuk_total) || 0;
+      const qtyKeluar = Number(it.qty_keluar_total) || 0;
+
+      totalQtyBoq += qtyBoq;
+      totalQtyMasuk += qtyMasuk;
+      totalQtyKeluar += qtyKeluar;
+
+      if (qtyMasuk > 0) arrivedItemsCount++;
+      if (qtyMasuk >= qtyBoq && qtyBoq > 0) fullyArrivedCount++;
+      if (qtyKeluar > 0) consumedItemsCount++;
+      if (qtyMasuk === 0) pendingItemsCount++;
+    });
+
+    const totalQtySisa = Math.max(0, totalQtyBoq - totalQtyMasuk);
+
+    return {
+      totalItems,
+      totalNominal,
+      arrivedItemsCount,
+      fullyArrivedCount,
+      consumedItemsCount,
+      pendingItemsCount,
+      totalQtyBoq,
+      totalQtyMasuk,
+      totalQtyKeluar,
+      totalQtySisa
+    };
+  }, [items, tenantBranding.clientName]);
+
   // Aksi Cepat Catat Masuk langsung dari 1 Baris Material Gudang ("Satukan Masuk")
   const handleOpenWarehouseMaterialIn = (pm: PhysicalMaterialItem) => {
     if (!rolePermissions.canIssue) {
@@ -2122,63 +2268,269 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-3.5">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 pt-3.5">
                   {activeRole === 'Viewer/Pengamat' ? (
                     <>
-                      <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
-                        <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider">1. Pos Material Kontrak</span>
-                        <div className="mt-1 text-base sm:text-lg font-black text-blue-400 font-mono">
-                          {items.filter(it => !isClientProvidedRemark(it.keterangan, tenantBranding.clientName) && it.satuan !== 'ls').length} Pos
+                      {/* KONTAINER 1 (VIEWER): RUANG LINGKUP KONTRAK */}
+                      <div className="bg-gradient-to-br from-amber-500/15 via-amber-500/5 to-transparent p-4 rounded-xl border border-amber-500/30 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between gap-1 text-[10px] uppercase font-bold text-amber-300 tracking-wider">
+                            <span>1. Ruang Lingkup Kontrak</span>
+                            <span className="px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-200 text-[9px] font-bold">
+                              Total Pos
+                            </span>
+                          </div>
+                          <div className="mt-1.5 text-xl sm:text-2xl font-black text-amber-300 font-mono tracking-tight">
+                            {boqMetrics.totalKontraktorItems} Pos Kontraktor
+                          </div>
+                          <div className="mt-2 pt-2 border-t border-amber-500/20 space-y-1 text-xs">
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="text-[11px] text-slate-400">Material Kontrak:</span>
+                              <span className="font-mono font-bold text-blue-400">
+                                {items.filter(it => !isClientProvidedRemark(it.keterangan, tenantBranding.clientName) && it.satuan !== 'ls').length} Pos
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="text-[11px] text-slate-400">Upah & Jasa:</span>
+                              <span className="font-mono font-bold text-emerald-400">
+                                {items.filter(it => (it.kategori || '').toLowerCase().includes('manpower') || (it.kategori || '').toLowerCase().includes('upah') || it.satuan === 'ls').length} Pos
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <span className="text-[10px] text-slate-300">Tanggungan {tenantBranding.contractorName}</span>
+                        <div className="mt-2.5 pt-1.5 border-t border-amber-500/10 text-[10px] text-amber-200/80 font-medium">
+                          Pelaksanaan {tenantBranding.contractorName}
+                        </div>
                       </div>
 
-                      <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
-                        <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider">2. Pos Upah & Jasa</span>
-                        <div className="mt-1 text-base sm:text-lg font-black text-emerald-400 font-mono">
-                          {items.filter(it => (it.kategori || '').toLowerCase().includes('manpower') || (it.kategori || '').toLowerCase().includes('upah') || it.satuan === 'ls').length} Pos
+                      {/* KONTAINER 2 (VIEWER): KEDATANGAN MATERIAL */}
+                      <div className="bg-white/5 dark:bg-white/[0.03] p-4 rounded-xl border border-blue-500/30 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between gap-1 text-[10px] uppercase font-bold text-blue-300 tracking-wider">
+                            <span>2. Material Tiba di Proyek</span>
+                            <span className="px-1.5 py-0.5 rounded-full bg-blue-400/20 text-blue-200 text-[9px] font-bold">
+                              Gudang
+                            </span>
+                          </div>
+                          <div className="mt-1.5 text-xl sm:text-2xl font-black text-blue-400 font-mono tracking-tight">
+                            {boqMetrics.arrivedPosCoverageCount} Pos Tiba
+                          </div>
+                          <div className="mt-2 pt-2 border-t border-white/10 space-y-1 text-xs text-slate-300">
+                            <p className="text-[11px] text-slate-400">
+                              {boqMetrics.arrivedMaterialTypesCount} jenis material fisik telah diterima di gudang proyek.
+                            </p>
+                          </div>
                         </div>
-                        <span className="text-[10px] text-slate-300">Jasa & Tenaga Kerja</span>
+                        <div className="mt-2.5 pt-1.5 border-t border-white/10 text-[10px] text-slate-300 font-medium">
+                          Status Penerimaan Fisik
+                        </div>
                       </div>
 
-                      <div className="bg-amber-500/10 dark:bg-amber-500/[0.08] p-3 rounded-xl border border-amber-500/30">
-                        <span className="text-[10px] uppercase font-bold text-amber-300 tracking-wider">3. Total Ruang Lingkup</span>
-                        <div className="mt-1 text-base sm:text-lg font-black text-amber-300 font-mono">{items.length} Pos BOQ</div>
-                        <span className="text-[10px] text-amber-200/90 font-medium">Seluruh Pos Pelaksanaan</span>
+                      {/* KONTAINER 3 (VIEWER): IMPLEMENTASI LAPANGAN */}
+                      <div className="bg-white/5 dark:bg-white/[0.03] p-4 rounded-xl border border-indigo-500/30 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between gap-1 text-[10px] uppercase font-bold text-indigo-300 tracking-wider">
+                            <span>3. Realisasi Lapangan</span>
+                            <span className="px-1.5 py-0.5 rounded-full bg-indigo-400/20 text-indigo-200 text-[9px] font-bold">
+                              Progres
+                            </span>
+                          </div>
+                          <div className="mt-1.5 text-xl sm:text-2xl font-black text-indigo-300 font-mono tracking-tight">
+                            {boqMetrics.fulfilledCount} Pos Terpenuhi
+                          </div>
+                          <div className="mt-2 pt-2 border-t border-white/10 space-y-1 text-xs">
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="text-[11px] text-slate-400">Dalam Pengerjaan:</span>
+                              <span className="font-mono font-bold text-amber-400">
+                                {boqMetrics.inProgressCount} Pos
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="text-[11px] text-slate-400">Belum Mulai:</span>
+                              <span className="font-mono font-bold text-slate-400">
+                                {boqMetrics.notStartedCount} Pos
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-2.5 pt-1.5 border-t border-white/10 text-[10px] text-slate-300 font-medium">
+                          Tingkat Penyelesaian Fisik
+                        </div>
                       </div>
 
-                      <div className="bg-purple-950/50 p-3 rounded-xl border border-purple-800/40">
-                        <span className="text-[10px] uppercase font-bold text-purple-300 tracking-wider">Free-Issue Klien ({tenantBranding.clientName})</span>
-                        <div className="mt-1 text-base sm:text-lg font-black text-purple-300 font-mono">
-                          {items.filter(it => isClientProvidedRemark(it.keterangan, tenantBranding.clientName)).length} Pos
+                      {/* KONTAINER 4 (VIEWER): KEWAJIBAN FREE-ISSUE KLIEN */}
+                      <div className="bg-purple-950/40 p-4 rounded-xl border border-purple-800/40 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between gap-1 text-[10px] uppercase font-bold text-purple-300 tracking-wider">
+                            <span>4. Kewajiban Klien</span>
+                            <span className="px-1.5 py-0.5 rounded-full bg-purple-900/60 text-purple-200 text-[9px] font-bold">
+                              {clientObligationStats.totalItems} Pos
+                            </span>
+                          </div>
+                          <div className="mt-1.5 text-xl sm:text-2xl font-black text-purple-300 font-mono tracking-tight">
+                            Free-Issue Klien
+                          </div>
+                          <div className="mt-2 pt-2 border-t border-purple-800/30 space-y-1 text-xs">
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="text-[11px] text-purple-300/80">IN (Tiba):</span>
+                              <span className="font-mono font-bold text-emerald-300">
+                                {clientObligationStats.totalQtyMasuk.toLocaleString('id-ID')} unit ({clientObligationStats.arrivedItemsCount} pos)
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="text-[11px] text-purple-300/80">OUT (Terpasang):</span>
+                              <span className="font-mono font-bold text-indigo-300">
+                                {clientObligationStats.totalQtyKeluar.toLocaleString('id-ID')} unit
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <span className="text-[10px] text-purple-200">Material Disediakan Klien</span>
+                        <div className="mt-2.5 pt-1.5 border-t border-purple-800/30 text-[10px] font-medium flex items-center justify-between">
+                          <span className="text-purple-200/80">SISA Belum Tiba</span>
+                          <span className="font-mono font-bold text-amber-300">
+                            {clientObligationStats.totalQtySisa.toLocaleString('id-ID')} unit ({clientObligationStats.pendingItemsCount} pos)
+                          </span>
+                        </div>
                       </div>
                     </>
                   ) : (
                     <>
-                      <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
-                        <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider">1. Material Kontrak</span>
-                        <div className="mt-1 text-base sm:text-lg font-black text-blue-400 font-mono">{formatRupiah(boqMetrics.contractMaterialTotal)}</div>
-                        <span className="text-[10px] text-slate-300">Tanggungan {tenantBranding.contractorName}</span>
+                      {/* KONTAINER 1: HERO KONTRAK PELAKSANAAN (Disatukan: Grand Total, Material, Upah & Jasa) */}
+                      <div className="bg-gradient-to-br from-amber-500/15 via-amber-500/5 to-transparent p-4 rounded-xl border border-amber-500/30 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between gap-1 text-[10px] uppercase font-bold text-amber-300 tracking-wider">
+                            <span>1. Nilai Kontrak Pelaksanaan</span>
+                            <span className="px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-200 text-[9px] font-bold">
+                              Grand Total
+                            </span>
+                          </div>
+                          <div className="mt-1.5 text-xl sm:text-2xl font-black text-amber-300 font-mono tracking-tight">
+                            {formatRupiah(boqMetrics.contractGrandTotal)}
+                          </div>
+                          <div className="mt-2 pt-2 border-t border-amber-500/20 space-y-1 text-xs">
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="text-[11px] text-slate-400">Material Kontrak:</span>
+                              <span className="font-mono font-bold text-blue-400">
+                                {formatRupiah(boqMetrics.contractMaterialTotal)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="text-[11px] text-slate-400">Upah & Jasa:</span>
+                              <span className="font-mono font-bold text-emerald-400">
+                                {formatRupiah(boqMetrics.contractManpowerTotal)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-2.5 pt-1.5 border-t border-amber-500/10 text-[10px] text-amber-200/80 font-medium flex items-center justify-between">
+                          <span>Pagu {tenantBranding.contractorName}</span>
+                          <span>{boqMetrics.totalKontraktorItems} Pos Kontrak</span>
+                        </div>
                       </div>
 
-                      <div className="bg-white/5 dark:bg-white/[0.03] p-3 rounded-xl border border-white/10">
-                        <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider">2. Upah & Jasa (Manpower)</span>
-                        <div className="mt-1 text-base sm:text-lg font-black text-emerald-400 font-mono">{formatRupiah(boqMetrics.contractManpowerTotal)}</div>
-                        <span className="text-[10px] text-slate-300">Jasa & Tenaga Kerja</span>
+                      {/* KONTAINER 2: TOTAL SUDAH MASUK / DIBELI RIIL */}
+                      <div className="bg-white/5 dark:bg-white/[0.03] p-4 rounded-xl border border-blue-500/30 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between gap-1 text-[10px] uppercase font-bold text-blue-300 tracking-wider">
+                            <span>2. Belanja Masuk / Dibeli Riil</span>
+                            <span className="px-1.5 py-0.5 rounded-full bg-blue-400/20 text-blue-200 text-[9px] font-bold">
+                              {financialExecutionMetrics.penyerapanPct.toFixed(1)}% Terserap
+                            </span>
+                          </div>
+                          <div className="mt-1.5 text-xl sm:text-2xl font-black text-blue-400 font-mono tracking-tight">
+                            {formatRupiah(financialExecutionMetrics.totalInValue)}
+                          </div>
+                          <div className="mt-2 pt-2 border-t border-white/10 space-y-1 text-xs">
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="text-[11px] text-slate-400">Material Masuk:</span>
+                              <span className="font-mono font-semibold text-slate-200">
+                                {formatRupiah(financialExecutionMetrics.materialInValue)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="text-[11px] text-slate-400">Jasa/Upah Masuk:</span>
+                              <span className="font-mono font-semibold text-slate-200">
+                                {formatRupiah(financialExecutionMetrics.manpowerInValue)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-2.5 pt-1.5 border-t border-white/10 text-[10px] text-slate-300 font-medium flex items-center justify-between">
+                          <span>Sisa Pagu Aman</span>
+                          <span className="font-mono font-bold text-emerald-400">
+                            {formatRupiah(financialExecutionMetrics.sisaPaguKontrak)}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="bg-amber-500/10 dark:bg-amber-500/[0.08] p-3 rounded-xl border border-amber-500/30">
-                        <span className="text-[10px] uppercase font-bold text-amber-300 tracking-wider">3. Grand Total Kontrak</span>
-                        <div className="mt-1 text-base sm:text-lg font-black text-amber-300 font-mono">{formatRupiah(boqMetrics.contractGrandTotal)}</div>
-                        <span className="text-[10px] text-amber-200/90 font-medium">Total Nilai BOQ Kontraktor</span>
+                      {/* KONTAINER 3: TOTAL SUDAH DIIMPLEMENTASIKAN / KELUAR & PROFIT */}
+                      <div className="bg-white/5 dark:bg-white/[0.03] p-4 rounded-xl border border-indigo-500/30 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between gap-1 text-[10px] uppercase font-bold text-indigo-300 tracking-wider">
+                            <span>3. Terimplementasi & Profit</span>
+                            <span className="px-1.5 py-0.5 rounded-full bg-indigo-400/20 text-indigo-200 text-[9px] font-bold">
+                              Lapangan
+                            </span>
+                          </div>
+                          <div className="mt-1.5 text-xl sm:text-2xl font-black text-indigo-300 font-mono tracking-tight">
+                            {formatRupiah(financialExecutionMetrics.totalOutValue)}
+                          </div>
+                          <div className="mt-2 pt-2 border-t border-white/10 space-y-1 text-xs">
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="text-[11px] text-slate-400">Material Terpasang:</span>
+                              <span className="font-mono font-semibold text-slate-200">
+                                {formatRupiah(financialExecutionMetrics.materialOutValue)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="text-[11px] text-slate-400">Upah/Jasa Terlaksana:</span>
+                              <span className="font-mono font-semibold text-slate-200">
+                                {formatRupiah(financialExecutionMetrics.manpowerOutValue)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-2.5 pt-1.5 border-t border-white/10 text-[10px] font-medium flex items-center justify-between">
+                          <span className="text-slate-300">Margin Efisiensi Kontrak</span>
+                          <span className="font-mono font-bold text-emerald-400">
+                            +{formatRupiah(financialExecutionMetrics.sisaPaguKontrak)}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="bg-purple-950/50 p-3 rounded-xl border border-purple-800/40">
-                        <span className="text-[10px] uppercase font-bold text-purple-300 tracking-wider">Free-Issue Klien ({tenantBranding.clientName})</span>
-                        <div className="mt-1 text-base sm:text-lg font-black text-purple-300 font-mono">{formatRupiah(boqMetrics.clientFreeIssueTotal)}</div>
-                        <span className="text-[10px] text-purple-200">Disediakan Klien (Beban Kontraktor: Rp 0)</span>
+                      {/* KONTAINER 4: SEGALA HAL TENTANG KEWAJIBAN KLIEN (Item, Nominal, IN/OUT/SISA) */}
+                      <div className="bg-purple-950/40 p-4 rounded-xl border border-purple-800/40 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between gap-1 text-[10px] uppercase font-bold text-purple-300 tracking-wider">
+                            <span>4. Kewajiban Klien</span>
+                            <span className="px-1.5 py-0.5 rounded-full bg-purple-900/60 text-purple-200 text-[9px] font-bold">
+                              {clientObligationStats.totalItems} Pos
+                            </span>
+                          </div>
+                          <div className="mt-1.5 text-xl sm:text-2xl font-black text-purple-300 font-mono tracking-tight">
+                            {clientObligationStats.totalNominal > 0 ? formatRupiah(clientObligationStats.totalNominal) : 'Free-Issue Klien'}
+                          </div>
+                          <div className="mt-2 pt-2 border-t border-purple-800/30 space-y-1 text-xs">
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="text-[11px] text-purple-300/80">IN (Masuk Tiba):</span>
+                              <span className="font-mono font-bold text-emerald-300">
+                                {clientObligationStats.totalQtyMasuk.toLocaleString('id-ID')} unit ({clientObligationStats.arrivedItemsCount} pos)
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-slate-300">
+                              <span className="text-[11px] text-purple-300/80">OUT (Terpasang):</span>
+                              <span className="font-mono font-bold text-indigo-300">
+                                {clientObligationStats.totalQtyKeluar.toLocaleString('id-ID')} unit ({clientObligationStats.consumedItemsCount} pos)
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-2.5 pt-1.5 border-t border-purple-800/30 text-[10px] font-medium flex items-center justify-between">
+                          <span className="text-purple-200/80">SISA Belum Tiba</span>
+                          <span className="font-mono font-bold text-amber-300">
+                            {clientObligationStats.totalQtySisa.toLocaleString('id-ID')} unit ({clientObligationStats.pendingItemsCount} pos)
+                          </span>
+                        </div>
                       </div>
                     </>
                   )}
