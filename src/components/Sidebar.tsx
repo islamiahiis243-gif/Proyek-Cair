@@ -214,6 +214,7 @@ export const Sidebar: React.FC = () => {
               key={item.id}
               type="button"
               onClick={() => {
+                if (currentView === item.id) return;
                 startTransition(() => {
                   setCurrentView(item.id);
                 });
