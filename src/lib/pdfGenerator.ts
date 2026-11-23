@@ -215,6 +215,31 @@ export async function generateStockMutationPDF(params: {
   const b = resolvePdfBranding(rawBranding, projectName);
   const providerLabels = { contractorName: b.contractorName, clientName: b.clientName };
 
+  // Map harga riil material dari data fisik gudang
+  const materialPriceMap = new Map<string, number>();
+  (physicalMaterials || []).forEach((pm) => {
+    const p =
+      pm.harga_beli_rata_rata ||
+      pm.harga_beli_terakhir ||
+      (pm.total_qty_masuk > 0 && pm.total_nilai_belanja_riil != null && pm.total_nilai_belanja_riil > 0
+        ? Math.round(pm.total_nilai_belanja_riil / pm.total_qty_masuk)
+        : 0);
+    if (p > 0) {
+      materialPriceMap.set(pm.id, p);
+      materialPriceMap.set(pm.nama_barang.trim().toLowerCase(), p);
+    }
+  });
+
+  const getPdfEffectivePrice = (m: MutasiBarang): number | null => {
+    if (m.harga_satuan_beli != null && Number(m.harga_satuan_beli) > 0) {
+      return Number(m.harga_satuan_beli);
+    }
+    const fromMap =
+      materialPriceMap.get(m.barang_id) ||
+      materialPriceMap.get((m.nama_barang || '').trim().toLowerCase());
+    return fromMap || null;
+  };
+
   // Definisi Pemetaan Kolom Fleksibel
   const stockColumnMap: Record<string, {
     header: string;
@@ -239,13 +264,21 @@ export async function generateStockMutationPDF(params: {
       header: 'Harga Satuan',
       width: 24,
       align: 'right',
-      getValue: (m, _, __, isVoid) => isVoid ? '-' : m.harga_satuan_beli != null ? `Rp ${m.harga_satuan_beli.toLocaleString('id-ID')}` : '-'
+      getValue: (m, _, __, isVoid) => {
+        if (isVoid) return '-';
+        const price = getPdfEffectivePrice(m);
+        return price != null ? `Rp ${price.toLocaleString('id-ID')}` : '-';
+      }
     },
     total_harga_nota: {
-      header: 'Total Belanja',
+      header: 'Total Nilai / Belanja',
       width: 26,
       align: 'right',
-      getValue: (m, _, __, isVoid) => isVoid ? 'Rp 0' : m.harga_satuan_beli != null ? `Rp ${(m.harga_satuan_beli * m.jumlah).toLocaleString('id-ID')}` : '-'
+      getValue: (m, _, __, isVoid) => {
+        if (isVoid) return 'Rp 0';
+        const price = getPdfEffectivePrice(m);
+        return price != null ? `Rp ${(price * m.jumlah).toLocaleString('id-ID')}` : '-';
+      }
     },
     status_harga: {
       header: 'Status Nota',
@@ -337,12 +370,19 @@ export async function generateStockMutationPDF(params: {
   const totalMasuk = activeMutations.filter((m) => m.jenis === 'MASUK').reduce((acc, m) => acc + m.jumlah, 0);
   const totalKeluar = activeMutations.filter((m) => m.jenis === 'KELUAR').reduce((acc, m) => acc + m.jumlah, 0);
 
-  // Analisis Belanja Riil Finansial (transaksi MASUK dengan harga satuan valid)
+  // Analisis Belanja Riil Finansial (transaksi MASUK dan KELUAR dengan harga satuan valid)
   const activeMasukWithPrice = activeMutations.filter(
-    (m) => m.jenis === 'MASUK' && m.harga_satuan_beli != null && m.harga_satuan_beli > 0
+    (m) => m.jenis === 'MASUK' && getPdfEffectivePrice(m) != null && getPdfEffectivePrice(m)! > 0
   );
   const totalBelanjaRiil = activeMasukWithPrice.reduce(
-    (acc, m) => acc + (m.harga_satuan_beli! * m.jumlah), 0
+    (acc, m) => acc + (getPdfEffectivePrice(m)! * m.jumlah), 0
+  );
+
+  const activeKeluarWithPrice = activeMutations.filter(
+    (m) => m.jenis === 'KELUAR' && getPdfEffectivePrice(m) != null && getPdfEffectivePrice(m)! > 0
+  );
+  const totalKeluarRiil = activeKeluarWithPrice.reduce(
+    (acc, m) => acc + (getPdfEffectivePrice(m)! * m.jumlah), 0
   );
 
   const notaLengkapCount = activeMutations.filter(
@@ -399,15 +439,17 @@ export async function generateStockMutationPDF(params: {
     doc.setTextColor(159, 18, 57);
     doc.text(`- ${totalKeluar.toLocaleString('id-ID')} unit`, 14 + colStep * 2 + 3, summaryBoxY + 11);
 
-    // 4. Total Belanja Riil Masuk (Finansial Utama)
+    // 4. Total Nilai Finansial (Masuk / Keluar)
+    const isOutReport = totalMasuk === 0 && totalKeluar > 0;
     doc.setFontSize(6.8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
-    doc.text('TOTAL BELANJA RIIL (MASUK)', 14 + colStep * 3 + 3, summaryBoxY + 5);
+    doc.text(isOutReport ? 'TOTAL ALOKASI (KELUAR)' : 'TOTAL BELANJA RIIL (MASUK)', 14 + colStep * 3 + 3, summaryBoxY + 5);
     doc.setFontSize(9.5);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(15, 23, 42);
-    doc.text(totalBelanjaRiil > 0 ? `Rp ${totalBelanjaRiil.toLocaleString('id-ID')}` : 'Rp 0', 14 + colStep * 3 + 3, summaryBoxY + 11);
+    const displayFinValue = isOutReport ? totalKeluarRiil : totalBelanjaRiil;
+    doc.text(displayFinValue > 0 ? `Rp ${displayFinValue.toLocaleString('id-ID')}` : 'Rp 0', 14 + colStep * 3 + 3, summaryBoxY + 11);
 
     // 5. Status Kelengkapan Nota
     doc.setFontSize(6.8);

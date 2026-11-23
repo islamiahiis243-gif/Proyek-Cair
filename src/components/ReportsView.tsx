@@ -133,10 +133,41 @@ export const ReportsView: React.FC = () => {
         return matchDate && matchType && matchSearch;
       });
 
+      const materialPriceMap = new Map<string, number>();
+      (physicalMaterials || []).forEach((pm) => {
+        const p =
+          pm.harga_beli_rata_rata ||
+          pm.harga_beli_terakhir ||
+          (pm.total_qty_masuk > 0 && pm.total_nilai_belanja_riil != null && pm.total_nilai_belanja_riil > 0
+            ? Math.round(pm.total_nilai_belanja_riil / pm.total_qty_masuk)
+            : 0);
+        if (p > 0) {
+          materialPriceMap.set(pm.id, p);
+          materialPriceMap.set(pm.nama_barang.trim().toLowerCase(), p);
+        }
+      });
+
+      const boqPriceMap = new Map<string, number>();
+      (items || []).forEach((it) => {
+        if (it.harga_satuan > 0) {
+          boqPriceMap.set(it.id, it.harga_satuan);
+          boqPriceMap.set(it.nama_barang.trim().toLowerCase(), it.harga_satuan);
+        }
+      });
+
       const totalVolume = filtered.reduce((acc, m) => acc + (Number(m.jumlah) || 0), 0);
       const totalNilai = filtered.reduce((acc, m) => {
         if (m.total_nota_fisik) return acc + Number(m.total_nota_fisik);
-        if (m.harga_satuan_beli) return acc + (Number(m.harga_satuan_beli) * Number(m.jumlah));
+        const explicitPrice =
+          m.harga_satuan_beli != null && Number(m.harga_satuan_beli) > 0 ? Number(m.harga_satuan_beli) : null;
+        const fallbackPrice =
+          materialPriceMap.get(m.barang_id) ||
+          materialPriceMap.get((m.nama_barang || '').trim().toLowerCase()) ||
+          boqPriceMap.get(m.barang_id) ||
+          boqPriceMap.get((m.nama_barang || '').trim().toLowerCase()) ||
+          0;
+        const effPrice = explicitPrice ?? fallbackPrice;
+        if (effPrice > 0) return acc + (effPrice * Number(m.jumlah || 0));
         return acc;
       }, 0);
 

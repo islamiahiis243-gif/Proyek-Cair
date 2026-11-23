@@ -429,6 +429,32 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     [stockMutations, physicalMaterials, providerLabels]
   );
 
+  // Helper resolusi harga satuan efektif transaksi mutasi (baik MASUK maupun KELUAR)
+  const getMutationEffectivePrice = (mut: MutasiBarang): number | null => {
+    if (mut.harga_satuan_beli != null && Number(mut.harga_satuan_beli) > 0) {
+      return Number(mut.harga_satuan_beli);
+    }
+    const pm = (physicalMaterials || []).find(
+      (p) => p.id === mut.barang_id || p.nama_barang.trim().toLowerCase() === (mut.nama_barang || '').trim().toLowerCase()
+    );
+    if (pm) {
+      const p =
+        pm.harga_beli_rata_rata ||
+        pm.harga_beli_terakhir ||
+        (pm.total_qty_masuk > 0 && pm.total_nilai_belanja_riil != null && pm.total_nilai_belanja_riil > 0
+          ? Math.round(pm.total_nilai_belanja_riil / pm.total_qty_masuk)
+          : 0);
+      if (p > 0) return p;
+    }
+    const boq = items.find(
+      (it) => it.id === mut.barang_id || it.nama_barang.trim().toLowerCase() === (mut.nama_barang || '').trim().toLowerCase()
+    );
+    if (boq && boq.harga_satuan > 0) {
+      return boq.harga_satuan;
+    }
+    return null;
+  };
+
   // Helper Pengelompokan Kategori BOQ dengan cache instan
   const categoryCacheRef = useRef<Map<string, { division: string; subSection: string }>>(new Map());
   const parseCategory = (cat: string) => {
@@ -3180,11 +3206,38 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                     <span className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">{mut.satuan}</span>
                                   </span>
                                 )}
-                                {mut.harga_satuan_beli != null && canViewFinancials && (
-                                  <div className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300 font-semibold">
-                                    @ Rp {mut.harga_satuan_beli.toLocaleString('id-ID')}
-                                  </div>
-                                )}
+                                {canViewFinancials && (() => {
+                                  const effPrice = getMutationEffectivePrice(mut);
+                                  if (effPrice != null && effPrice > 0) {
+                                    return (
+                                      <div
+                                        className={`text-[10px] font-mono font-semibold ${
+                                          mut.jenis === 'MASUK'
+                                            ? 'text-emerald-700 dark:text-emerald-300'
+                                            : 'text-slate-600 dark:text-slate-400'
+                                        }`}
+                                      >
+                                        @ Rp {effPrice.toLocaleString('id-ID')}
+                                        {mut.jenis === 'KELUAR' && (
+                                          <span className="text-[9px] text-slate-500 dark:text-slate-400 font-normal block">
+                                            (Total: Rp {(effPrice * mut.jumlah).toLocaleString('id-ID')})
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  }
+                                  if (
+                                    mut.jenis === 'MASUK' &&
+                                    (mut.status_harga === 'NOTA_MENYUSUL' || mut.status_harga === 'BELUM_DIKETAHUI')
+                                  ) {
+                                    return (
+                                      <span className="text-[9px] font-semibold text-amber-600 dark:text-amber-400">
+                                        Nota Menyusul
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()}
                               </td>
                               <td className="py-3 px-3.5 text-slate-700 dark:text-slate-300 max-w-xs">
                                 <div className="flex items-center gap-1.5 mb-1 flex-wrap">
@@ -3932,6 +3985,30 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     {auditDetailMutation.pic_penerima_penyerah || auditDetailMutation.created_by_name || '-'}
                   </span>
                 </div>
+                {canViewFinancials && (() => {
+                  const effPrice = getMutationEffectivePrice(auditDetailMutation);
+                  if (effPrice != null && effPrice > 0) {
+                    return (
+                      <>
+                        <div className="flex justify-between pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                          <span className="text-slate-500">
+                            Harga Satuan {auditDetailMutation.jenis === 'MASUK' ? 'Beli / Nota' : 'Riil Material'}:
+                          </span>
+                          <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                            Rp {effPrice.toLocaleString('id-ID')} / {auditDetailMutation.satuan}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Total Nilai Finansial:</span>
+                          <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300">
+                            Rp {(effPrice * auditDetailMutation.jumlah).toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
 
               <div>
