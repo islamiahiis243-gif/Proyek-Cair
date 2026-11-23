@@ -1,6 +1,6 @@
 # PANDUAN RESMI: ENGINE DINAMIS MULTI-POV DAN MATRIKS KEPUTUSAN PROYEK CAIR
 
-Dokumen ini merupakan panduan tunggal dan rujukan baku perancangan **Engine Dinamis Multi-POV** pada aplikasi Proyek Cair. Seluruh definisi, aturan keputusan, status pos, dan aksi cepat di dalam dokumen ini dirumuskan secara tegas, pasti, bebas dari multitafsir, dan mengacu penuh pada pedoman **[AGENTS.md](file:///c:/Users/A%20C%20E%20R/antigravity/Proyek%20Cair/AGENTS.md)**.
+Dokumen ini merupakan **panduan tunggal dan rujukan baku mutlak** perancangan **Engine Dinamis Multi-POV** pada aplikasi Proyek Cair. Seluruh definisi, aturan keputusan, status pos, dan aksi cepat di dalam dokumen ini dirumuskan secara tegas, pasti, bebas dari multitafsir, dan mengacu penuh pada pedoman **[AGENTS.md](file:///c:/Users/A%20C%20E%20R/antigravity/Proyek%20Cair/AGENTS.md)**.
 
 ---
 
@@ -13,7 +13,51 @@ Dokumen ini merupakan panduan tunggal dan rujukan baku perancangan **Engine Dina
 
 ---
 
-## 2. INVENTARISASI DOMAIN: PIHAK & SUDUT PANDANG (MULTI-POV)
+## 2. LATAR BELAKANG & TEMUAN KASUS RIIL LAPANGAN
+
+Berdasarkan evaluasi terhadap pekerjaan *Bowplank* (Kode BOQ `I/A/1` s.d. `I/A/6`: Kayu 5/7, Papan 2/20, Paku 2", Paku 3", Benang, Pensil), ditemukan dua kontradiksi logika nyata di sistem sebelumnya:
+
+1. **Barang Fisik Belum Ada (`Ada: 0`), tetapi Tombol Menyuruh `[Pakai]`**
+   * Di kolom **Ketersediaan Gudang**, tertulis jelas: `Ada: 0 m3` / `Ada: 0 ea`.
+   * Di kolom **Aksi Cepat**, tombol menyala merah tegas bertuliskan **`[Pakai]`**.
+   * *Masalah:* Secara fisik di lapangan, tukang/mandor tidak mungkin disuruh "memakai" material yang stok fisiknya di gudang masih nol.
+2. **Barang Belum Pernah Masuk Proyek, tetapi Status Pos Tertulis `Belum Dipakai`**
+   * Di kolom **Status Pos**, terpajang badge abu-abu: `Belum Dipakai`.
+   * *Masalah:* Istilah *"Belum Dipakai"* mengesankan barang sudah standby di gudang namun tukang belum mau memakainya. Padahal fakta operasionalnya adalah **barangnya belum pernah masuk sama sekali ke lokasi proyek**.
+
+---
+
+## 3. ANALISIS KODE EXISTING (TITIK LEMAH HARDCODE)
+
+### A. Logika Status Pos Lama di [src/context/AppContext.tsx](file:///c:/Users/A%20C%20E%20R/antigravity/Proyek%20Cair/src/context/AppContext.tsx#L590-L605)
+```typescript
+if (terpakaiDiPosIni >= baseTarget - EPS && baseTarget > 0) {
+  statusPemenuhan = terpakaiDiPosIni > baseTarget + EPS ? 'Melebihi BOQ' : 'Terpenuhi';
+} else if (masukKePosIni >= baseTarget - EPS && baseTarget > 0) {
+  statusPemenuhan = masukKePosIni > baseTarget + EPS ? 'Melebihi BOQ' : 'Terpenuhi';
+} else if (masukKePosIni > 0 || terpakaiDiPosIni > 0) {
+  statusPemenuhan = 'Dalam pemenuhan';
+} else {
+  statusPemenuhan = 'Belum dipenuhi'; // <- Jatuh ke default dan dilabeli "Belum Dipakai"
+}
+```
+*Kelemahan:* Perhitungan status murni membandingkan angka realisasi keluar terhadap target BOQ, **tanpa mengaitkan saldo ketersediaan fisik gudang (`stok_saat_ini`)**.
+
+### B. Logika Tombol Aksi Cepat Lama di [src/components/StockMutationView.tsx](file:///c:/Users/A%20C%20E%20R/antigravity/Proyek%20Cair/src/components/StockMutationView.tsx#L2890-L2915)
+```tsx
+{item.qty_pemenuhan_sisa <= 0 && item.qty_keluar_total >= item.qty_boq ? (
+  <span className="...">Tuntas</span>
+) : (
+  <button onClick={() => handleOpenItemMutation(item, 'KELUAR')} className="...">
+    Pakai
+  </button>
+)}
+```
+*Kelemahan:* Tombol di-*hardcode* selalu menampilkan **`[Pakai]`** selama pos belum tuntas 100%, terlepas dari apakah barang fisiknya di gudang masih nol.
+
+---
+
+## 4. INVENTARISASI DOMAIN: PIHAK & SUDUT PANDANG (MULTI-POV)
 
 Aplikasi Proyek Cair beroperasi di bawah 2 entitas utama dengan sudut pandang dan kepentingan operasional yang berbeda:
 
@@ -36,7 +80,7 @@ Aplikasi Proyek Cair beroperasi di bawah 2 entitas utama dengan sudut pandang da
 
 ---
 
-## 3. INVENTARISASI TANGGUNG JAWAB PENGADAAN (ASAL BARANG)
+## 5. INVENTARISASI TANGGUNG JAWAB PENGADAAN (ASAL BARANG)
 
 Setiap pos pekerjaan dan material dikelompokkan secara tegas ke dalam salah satu dari 4 status penyedia:
 
@@ -55,7 +99,7 @@ Setiap pos pekerjaan dan material dikelompokkan secara tegas ke dalam salah satu
 
 ---
 
-## 4. INVENTARISASI KONDISI FISIK & REALISASI (STATE MACHINE EKSPLOITASI)
+## 6. INVENTARISASI KONDISI FISIK & REALISASI (STATE MACHINE EKSPLOITASI)
 
 Kombinasi antara **Saldo Fisik Gudang (`stok_saat_ini`)** dan **Realisasi Pos (`qty_keluar_total`)** menghasilkan 6 kondisi pasti:
 
@@ -70,7 +114,7 @@ Kombinasi antara **Saldo Fisik Gudang (`stok_saat_ini`)** dan **Realisasi Pos (`
 
 ---
 
-## 5. MATRIKS KEPUTUSAN TERPADU (LOGIKA ENGINE DINAMIS)
+## 7. MATRIKS KEPUTUSAN TERPADU (LOGIKA ENGINE DINAMIS)
 
 Engine `BoqExecutionEngine` mengevaluasi setiap pos BOQ berdasarkan rumus:
 $$\text{Output Evaluasi} = f(\text{Kondisi S-1 s.d. S-6}, \text{Tanggung Jawab Penyedia}, \text{POV Akun Aktif})$$
@@ -122,7 +166,7 @@ $$\text{Output Evaluasi} = f(\text{Kondisi S-1 s.d. S-6}, \text{Tanggung Jawab P
 
 ---
 
-## 6. STANDARISASI KOSAKATA & ATRIBUT TAMPILAN (100% TIDAK AMBIGU)
+## 8. STANDARISASI KOSAKATA & ATRIBUT TAMPILAN (100% TIDAK AMBIGU)
 
 Untuk memenuhi Aturan ke-1 [AGENTS.md](file:///c:/Users/A%20C%20E%20R/antigravity/Proyek%20Cair/AGENTS.md) (hemat alfabet dan tidak ambigu):
 
@@ -142,7 +186,7 @@ Untuk memenuhi Aturan ke-1 [AGENTS.md](file:///c:/Users/A%20C%20E%20R/antigravit
 
 ---
 
-## 7. ARSITEKTUR IMPLEMENTASI KODE
+## 9. ARSITEKTUR IMPLEMENTASI KODE
 
 Untuk memastikan tidak ada logika yang di-*hardcode* di dalam berkas UI:
 
@@ -162,6 +206,14 @@ Untuk memastikan tidak ada logika yang di-*hardcode* di dalam berkas UI:
 3. **Komponen Pengguna:**
    * [StockMutationView.tsx](file:///c:/Users/A%20C%20E%20R/antigravity/Proyek%20Cair/src/components/StockMutationView.tsx) pada Tab 1 dan Tab 2 hanya memanggil `evaluateBoqPos()` dan merender hasilnya.
    * [pdfGenerator.ts](file:///c:/Users/A%20C%20E%20R/antigravity/Proyek%20Cair/src/lib/pdfGenerator.ts) menggunakan engine yang sama agar hasil cetak PDF 100% identik dengan tampilan layar.
+
+---
+
+## 10. POIN PERTIMBANGAN & DISKUSI LANJUTAN
+
+1. Apakah label status **`Belum Masuk`** atau **`Belum Ada`** yang Anda pilih untuk Kondisi S-1?
+2. Pada Kondisi S-4 (pekerjaan jalan tapi stok gudang habis), apakah label status **`Habis`** sudah memuaskan, atau lebih informatif **`Butuh Pasokan`**?
+3. Saat tombol **`[Masuk]`** di Tab 2 diklik, dialog penerimaan barang otomatis mem-preselect nama barang dan kode pos pekerjaan BOQ tersebut.
 
 ---
 
