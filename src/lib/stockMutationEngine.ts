@@ -650,7 +650,8 @@ export const validateWizardStep = (
       if (
         answers.mutationType === 'KELUAR' &&
         answers.itemSource === 'BOQ' &&
-        answers.physicalMaterial
+        answers.physicalMaterial &&
+        answers.physicalMaterial.is_stock_item
       ) {
         const stok = answers.physicalMaterial.stok_fisik || 0;
         if (answers.qty > stok) {
@@ -882,9 +883,13 @@ export const buildStockMutationPayload = (
     answers.mutationType === 'MASUK'
       ? isCustom
         ? '✍️ Barang Kustom Non-BOQ'
+        : pm && !pm.is_stock_item
+        ? '🛠️ Jasa / Upah BOQ · Belanja Langsung'
         : '📦 Material BOQ · Stok Masuk'
       : isCustom
       ? '✍️ Barang Kustom Non-BOQ'
+      : pm && !pm.is_stock_item
+      ? '🛠️ Realisasi Pos Jasa / Upah BOQ'
       : '📦 Alokasi Pos BOQ';
 
   return {

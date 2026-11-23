@@ -131,19 +131,17 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
   const trimmedQuery = deferredSearchQuery.trim();
   const hasTypedSearch = trimmedQuery.length > 0;
 
-  // Pra-indeks teks pencarian material BOQ agar tidak re-map/re-join array pada setiap ketukan tuts
+  // Pra-indeks teks pencarian material & pos jasa BOQ agar tidak re-map/re-join array pada setiap ketukan tuts
   const searchableBoqList = useMemo(() => {
-    return physicalMaterials
-      .filter((pm) => pm.is_stock_item)
-      .map((pm) => {
-        const boqInfo = pm.budget_lines.map((bl) => `${bl.kode_boq} ${bl.kategori}`).join(' ');
-        return {
-          pm,
-          name: pm.nama_barang,
-          uom: pm.satuan || '',
-          boqInfo
-        };
-      });
+    return physicalMaterials.map((pm) => {
+      const boqInfo = pm.budget_lines.map((bl) => `${bl.kode_boq} ${bl.kategori}`).join(' ');
+      return {
+        pm,
+        name: pm.nama_barang,
+        uom: pm.satuan || '',
+        boqInfo
+      };
+    });
   }, [physicalMaterials]);
 
   const filteredBoqMatches = useMemo(() => {
@@ -157,8 +155,8 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
 
     scored.sort((a, b) => {
       if (answers.mutationType === 'KELUAR') {
-        const aHas = a.pm.stok_fisik > 0 ? 1 : 0;
-        const bHas = b.pm.stok_fisik > 0 ? 1 : 0;
+        const aHas = (a.pm.stok_fisik > 0 || !a.pm.is_stock_item) ? 1 : 0;
+        const bHas = (b.pm.stok_fisik > 0 || !b.pm.is_stock_item) ? 1 : 0;
         if (aHas !== bHas) return bHas - aHas;
       }
       if (b.score !== a.score) return b.score - a.score;
@@ -551,7 +549,7 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                                 : `🏢 ${tenantBranding.contractorName}`}
                             </span>
                             <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">
-                              Barang BOQ
+                              {pm.is_stock_item ? 'Barang BOQ' : 'Jasa & Upah (BOQ)'}
                             </span>
                           </div>
                         </div>
@@ -568,6 +566,15 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                                   : 'Target terpenuhi'}
                               </div>
                             </>
+                          ) : !pm.is_stock_item ? (
+                            <div className="text-right">
+                              <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-200">
+                                🛠️ Realisasi Langsung
+                              </span>
+                              <div className="text-[11px] font-bold text-slate-700 dark:text-slate-200 mt-0.5">
+                                Target: {totalTgt.toLocaleString('id-ID', { maximumFractionDigits: 2 })} {pm.satuan}
+                              </div>
+                            </div>
                           ) : (
                             <div
                               className={`text-sm font-bold ${
@@ -764,6 +771,26 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                         ).toLocaleString('id-ID', { maximumFractionDigits: 2 })}{' '}
                         {activeUom}
                       </b>
+                    </>
+                  ) : !answers.physicalMaterial.is_stock_item ? (
+                    <>
+                      Target Kontrak BOQ:{' '}
+                      <b className="font-mono">
+                        {(answers.physicalMaterial.total_qty_boq || 0).toLocaleString('id-ID', {
+                          maximumFractionDigits: 2
+                        })}{' '}
+                        {activeUom}
+                      </b>{' '}
+                      · Terpakai Sebelumnya:{' '}
+                      <b className="font-mono text-emerald-600 dark:text-emerald-400">
+                        {(answers.physicalMaterial.total_qty_keluar || 0).toLocaleString('id-ID', {
+                          maximumFractionDigits: 2
+                        })}{' '}
+                        {activeUom}
+                      </b>{' '}
+                      <span className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold block sm:inline mt-0.5 sm:mt-0">
+                        · Pos Jasa & Upah (Direct Realisasi ke Proyek)
+                      </span>
                     </>
                   ) : (
                     <>
