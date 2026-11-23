@@ -1,3 +1,5 @@
+import { CurrencyInput } from './CurrencyInput';
+import { QuantityInput } from './QuantityInput';
 import React, { useEffect, useMemo, useState, useDeferredValue } from 'react';
 import {
   ArrowDownLeft,
@@ -710,23 +712,19 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-200 mb-2">
                     Jumlah ({activeUom}) <span className="text-rose-500">*</span>
                   </label>
-                  <input
-                    type="number"
-                    autoFocus
-                    min="0.0001"
-                    step="any"
-                    placeholder="Contoh: 5"
-                    value={answers.qty === 0 ? '' : answers.qty}
-                    onFocus={(e) => e.target.select()}
-                    onWheel={(e) => (e.target as HTMLElement).blur()}
-                    onChange={(e) => {
+                  <QuantityInput
+                    value={answers.qty}
+                    onChange={(val) => {
                       setAnswers({
                         ...answers,
-                        qty: e.target.value === '' ? 0 : Number(e.target.value)
+                        qty: val
                       });
                       setStepError(null);
                     }}
-                    className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-800 border-2 border-blue-300 dark:border-blue-700 focus:border-blue-500 text-slate-900 dark:text-white rounded-2xl font-mono text-xl font-extrabold focus:outline-hidden"
+                    uom={activeUom}
+                    placeholder="Contoh: 5"
+                    autoFocus
+                    inputClassName="px-4 py-3.5 bg-slate-50 dark:bg-slate-800 border-2 border-blue-300 dark:border-blue-700 focus:border-blue-500 text-xl font-extrabold rounded-2xl"
                   />
                 </div>
 
@@ -847,38 +845,35 @@ export const StockMutationWizardModal: React.FC<StockMutationWizardModalProps> =
                       ) : null}
                     </div>
 
-                    <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 dark:text-slate-500 font-mono">
-                        Rp
-                      </span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        placeholder="Contoh: 75000"
-                        disabled={answers.isHargaBelumDiketahui || answers.isNotaMenyusul}
-                        value={
-                          answers.isHargaBelumDiketahui || answers.isNotaMenyusul || answers.hargaNotaSatuan == null || answers.hargaNotaSatuan === 0
-                            ? ''
-                            : answers.hargaNotaSatuan
-                        }
-                        onChange={(e) => {
-                          const val = e.target.value === '' ? null : Number(e.target.value);
-                          setAnswers({
-                            ...answers,
-                            hargaNotaSatuan: val,
-                            isHargaBelumDiketahui: false,
-                            isNotaMenyusul: false
-                          });
-                          setStepError(null);
-                        }}
-                        className={`w-full pl-12 pr-4 py-3 bg-white dark:bg-slate-900 border-2 rounded-xl text-base font-bold font-mono focus:outline-hidden transition-all ${
-                          answers.isHargaBelumDiketahui || answers.isNotaMenyusul
-                            ? 'border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-900/40 text-slate-400 cursor-not-allowed'
-                            : 'border-slate-300 dark:border-slate-600 focus:border-blue-500 text-slate-900 dark:text-white'
-                        }`}
-                      />
-                    </div>
+                    <CurrencyInput
+                      value={
+                        answers.isHargaBelumDiketahui || answers.isNotaMenyusul || answers.hargaNotaSatuan == null || answers.hargaNotaSatuan === 0
+                          ? null
+                          : answers.hargaNotaSatuan
+                      }
+                      onChange={(val) => {
+                        setAnswers({
+                          ...answers,
+                          hargaNotaSatuan: val,
+                          isHargaBelumDiketahui: false,
+                          isNotaMenyusul: false
+                        });
+                        setStepError(null);
+                      }}
+                      disabled={answers.isHargaBelumDiketahui || answers.isNotaMenyusul}
+                      placeholder={
+                        answers.isHargaBelumDiketahui
+                          ? 'Harga belum diketahui'
+                          : answers.isNotaMenyusul
+                          ? 'Nota menyusul'
+                          : 'Contoh: 280.000'
+                      }
+                      inputClassName={`py-3 text-base rounded-xl font-mono ${
+                        answers.isHargaBelumDiketahui || answers.isNotaMenyusul
+                          ? 'border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-900/40 text-slate-400 cursor-not-allowed'
+                          : 'border-slate-300 dark:border-slate-600 focus:border-blue-500 text-slate-900 dark:text-white'
+                      }`}
+                    />
 
                     {/* Bantuan Cerdas: Pembelian Terakhir */}
                     {lastPurchaseInfo && !answers.isHargaBelumDiketahui && !answers.isNotaMenyusul && (

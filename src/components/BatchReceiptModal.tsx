@@ -1,3 +1,5 @@
+import { CurrencyInput } from './CurrencyInput';
+import { parseRupiahInput } from '../lib/numberFormat';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
@@ -878,19 +880,12 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
                       Pencocokan Otomatis
                     </span>
                   </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2 text-xs text-slate-400 font-bold">Rp</span>
-                    <input
-                      type="text"
-                      value={physicalTotal}
-                      onChange={(e) => {
-                        const numOnly = e.target.value.replace(/\D/g, '');
-                        setPhysicalTotal(numOnly ? Number(numOnly).toLocaleString('id-ID') : '');
-                      }}
-                      placeholder="0"
-                      className="w-full pl-9 pr-3 py-2 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
+                  <CurrencyInput
+                    value={physicalTotal ? parseRupiahInput(physicalTotal) : null}
+                    onChange={(val) => setPhysicalTotal(val ? val.toLocaleString('id-ID') : '')}
+                    placeholder="Contoh: 280.000"
+                    inputClassName="px-3 py-2 text-xs"
+                  />
                 </div>
               </div>
 

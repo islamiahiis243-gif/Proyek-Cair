@@ -1,3 +1,4 @@
+import { CurrencyInput } from './CurrencyInput';
 import React, { useState, useMemo, startTransition } from 'react';
 import { useApp } from '../context/AppContext';
 import { JenisMutasiKas, MutasiKas, StatusDokumenWorkflow } from '../types';
@@ -1238,14 +1239,12 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Nominal Transaksi (Rp) <span className="text-rose-500">*</span>
                   </label>
-                  <input
-                    type="number"
-                    min="1"
+                  <CurrencyInput
+                    value={amount}
+                    onChange={(val) => setAmount(val || 0)}
+                    placeholder="Contoh: 280.000"
                     required
-                    value={amount || ''}
-                    onChange={(e) => setAmount(Number(e.target.value))}
-                    placeholder="0"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl font-mono font-bold text-sm focus:ring-2 focus:ring-blue-500/20"
+                    inputClassName="px-3 py-2 text-sm"
                   />
                 </div>
               </div>
@@ -1394,13 +1393,12 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Nominal Baru (Rp)</label>
-                <input
-                  type="number"
-                  min="1"
+                <CurrencyInput
+                  value={amount}
+                  onChange={(val) => setAmount(val || 0)}
+                  placeholder="Contoh: 280.000"
                   required
-                  value={amount || ''}
-                  onChange={(e) => setAmount(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl font-mono font-bold text-xs"
+                  inputClassName="px-3 py-2 text-xs"
                 />
               </div>
               <div>
