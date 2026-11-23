@@ -45,6 +45,7 @@ export const ReportsView: React.FC = () => {
     user,
     setVerifyingDocId,
     setCurrentView,
+    goBack,
     dataReady,
     dataError,
     refreshData,
@@ -334,8 +335,9 @@ export const ReportsView: React.FC = () => {
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setCurrentView('dashboard')}
+              onClick={() => goBack ? goBack() : setCurrentView('dashboard')}
               className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer mr-1"
+              title="Kembali ke satu langkah/halaman sebelumnya"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Dasbor</span>

@@ -79,6 +79,8 @@ interface AppContextType {
   supabaseConfig: SupabaseConfig;
   currentView: string;
   setCurrentView: (view: string) => void;
+  goBack: () => void;
+  previousView: string | null;
   verifyingDocId: string | null;
   setVerifyingDocId: (id: string | null) => void;
   addStockMutation: (mutation: Omit<MutasiBarang, 'id' | 'stok_sebelum' | 'stok_sesudah'>) => Promise<{ success: boolean; message: string }>;
@@ -165,11 +167,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [user, setUser] = useState<UserProfile>(() => getStoredUser());
   const [supabaseConfig] = useState<SupabaseConfig>(() => getStoredConfig());
   const [currentView, setCurrentViewRaw] = useState('landing');
+  const [viewHistory, setViewHistory] = useState<string[]>(['landing']);
+
   const setCurrentView = useCallback((view: string) => {
     startTransition(() => {
+      setViewHistory(prev => {
+        if (prev[prev.length - 1] === view) return prev;
+        return [...prev, view];
+      });
       setCurrentViewRaw(view);
     });
   }, []);
+
+  const goBack = useCallback(() => {
+    startTransition(() => {
+      setViewHistory(prev => {
+        if (prev.length <= 1) {
+          const fallback = 'dashboard';
+          setCurrentViewRaw(fallback);
+          return [fallback];
+        }
+        const updated = prev.slice(0, -1);
+        const target = updated[updated.length - 1] || 'dashboard';
+        setCurrentViewRaw(target);
+        return updated;
+      });
+    });
+  }, []);
+
+  const previousView = viewHistory.length > 1 ? viewHistory[viewHistory.length - 2] : null;
   const [verifyingDocId, setVerifyingDocId] = useState<string | null>(null);
   const [dataReady, setDataReady] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
@@ -1384,6 +1410,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         supabaseConfig,
         currentView,
         setCurrentView,
+        goBack,
+        previousView,
         verifyingDocId,
         setVerifyingDocId,
         addStockMutation,

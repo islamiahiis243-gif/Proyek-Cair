@@ -14,7 +14,8 @@ import {
   Briefcase,
   Camera,
   Trash2,
-  XCircle
+  XCircle,
+  ArrowLeft
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { getSupabaseClient, resolveMyActiveContext } from '../lib/supabase';
@@ -71,7 +72,7 @@ type ProjectCoverage = {
 
 export const CompanyConsole: React.FC = () => {
   const db = getSupabaseClient();
-  const { currentView, setCurrentView, activeCompany, updateCompanyLogo } = useApp();
+  const { currentView, setCurrentView, goBack, activeCompany, updateCompanyLogo } = useApp();
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -470,7 +471,21 @@ export const CompanyConsole: React.FC = () => {
               <Camera className="w-3 h-3" />
             </div>
           </div>
-          <div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => goBack ? goBack() : setCurrentView('landing')}
+                className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer mr-1"
+                title="Kembali ke satu langkah/halaman sebelumnya"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Beranda</span>
+              </button>
+              <span className="text-slate-300 dark:text-slate-700">/</span>
+              <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400">
+                Konsol Perusahaan
+              </span>
+            </div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Konsol Perusahaan (CSA)</h1>
               <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">

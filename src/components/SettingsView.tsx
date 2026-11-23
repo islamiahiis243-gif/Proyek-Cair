@@ -18,7 +18,8 @@ import {
   ArrowRight,
   Save,
   Check,
-  Upload
+  Upload,
+  ArrowLeft
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -42,7 +43,9 @@ export const SettingsView: React.FC = () => {
     activeRole,
     appMode,
     setAppMode,
-    activeCompany
+    activeCompany,
+    setCurrentView,
+    goBack
   } = useApp();
 
   // Local state for editing personal profile
@@ -173,17 +176,33 @@ export const SettingsView: React.FC = () => {
       {/* Header Utama Pengaturan */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 shadow-xs transition-colors">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
-          <div>
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-              <User className="w-3.5 h-3.5" />
-              <span>Pusat Kendali Akun Pribadi</span>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => goBack ? goBack() : setCurrentView('dashboard')}
+                className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer mr-1"
+                title="Kembali ke satu langkah/halaman sebelumnya"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Dasbor</span>
+              </button>
+              <span className="text-slate-300 dark:text-slate-700">/</span>
+              <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400">
+                Pengaturan
+              </span>
             </div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white mt-1.5">
-              Pengaturan Akun & Aplikasi
-            </h1>
-            <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
-              Kelola identitas pribadi, foto profil, tema warna, bahasa, serta preferensi aplikasi Proyek Cair Anda.
-            </p>
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                <User className="w-3.5 h-3.5" />
+                <span>Pusat Kendali Akun Pribadi</span>
+              </div>
+              <h1 className="text-xl font-bold text-slate-900 dark:text-white mt-1.5">
+                Pengaturan Akun & Aplikasi
+              </h1>
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
+                Kelola identitas pribadi, foto profil, tema warna, bahasa, serta preferensi aplikasi Proyek Cair Anda.
+              </p>
+            </div>
           </div>
 
           {/* Banner Rata Kanan: words_PNG2 */}

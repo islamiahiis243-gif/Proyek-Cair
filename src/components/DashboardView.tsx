@@ -19,6 +19,7 @@ import {
   Coins,
   Warehouse,
   Layers,
+  ArrowLeft,
 } from 'lucide-react';
 import { formatRupiah, formatDateTime } from '../lib/pdfGenerator';
 import { isClientProvidedRemark } from '../lib/stockMutationEngine';
@@ -45,6 +46,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     lowStockCount,
     availableStockCount,
     setCurrentView,
+    goBack,
     tenantBranding,
     activeRole,
   } = useApp();
@@ -167,7 +169,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     <div className="space-y-6">
       {/* Top Banner & Quick Action Bar */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
-        <div>
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => goBack ? goBack() : setCurrentView('landing')}
+              className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer mr-1"
+              title="Kembali ke satu langkah/halaman sebelumnya"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Beranda</span>
+            </button>
+            <span className="text-slate-300 dark:text-slate-700">/</span>
+            <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400">
+              Dasbor Proyek
+            </span>
+          </div>
+
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
               Dashboard Analitik Proyek Cair
@@ -177,7 +194,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Data Supabase
             </span>
           </div>
-          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
+          <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
             Monitoring arus barang keluar-masuk dan mutasi kas proyek {tenantBranding.projectName}.
           </p>
         </div>

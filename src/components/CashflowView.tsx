@@ -18,7 +18,8 @@ import {
   Eye,
   History,
   FileText,
-  ArrowUpDown
+  ArrowUpDown,
+  ArrowLeft
 } from 'lucide-react';
 import { formatRupiah, formatDateTime, generateCashflowPDF } from '../lib/pdfGenerator';
 import { ExportSettingsModal, ExportSettingsConfig } from './ExportSettingsModal';
@@ -52,7 +53,9 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
     rolePermissions,
     activeRole,
     dataReady,
-    tenantBranding
+    tenantBranding,
+    setCurrentView,
+    goBack
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'CASH_JOURNAL' | 'CASH_DOCUMENTS'>('CASH_JOURNAL');
@@ -533,12 +536,27 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
 
           {/* Header Panel */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
-            <div>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => goBack ? goBack() : setCurrentView('dashboard')}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer mr-1"
+                  title="Kembali ke satu langkah/halaman sebelumnya"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Dasbor</span>
+                </button>
+                <span className="text-slate-300 dark:text-slate-700">/</span>
+                <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400">
+                  Mutasi Dana & Kas
+                </span>
+              </div>
+
               <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
                 Mutasi Dana
               </h1>
-              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
-                Pencatatan Mutasi Kas
+              <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+                Pencatatan mutasi kas operasional proyek dan pembukuan voucher kas.
               </p>
             </div>
 

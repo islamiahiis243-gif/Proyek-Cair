@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { getSupabaseClient } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
-import { Building2, CheckCircle2, Clock, FileText, Send, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Building2, CheckCircle2, Clock, FileText, Send, AlertTriangle, RefreshCw, ArrowLeft } from 'lucide-react';
 
 export const RfinARequestView: React.FC = () => {
-  const { user } = useApp();
+  const { user, setCurrentView, goBack } = useApp();
   const db = getSupabaseClient();
   const [companyName, setCompanyName] = useState('');
   const [companyNpwp, setCompanyNpwp] = useState('');
@@ -114,12 +114,26 @@ export const RfinARequestView: React.FC = () => {
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-600 dark:bg-blue-950 dark:text-blue-400">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-600 dark:bg-blue-950 dark:text-blue-400 shrink-0">
               <Building2 className="h-6 w-6" />
             </div>
-            <div>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => goBack ? goBack() : setCurrentView('dashboard')}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer mr-1"
+                  title="Kembali ke satu langkah/halaman sebelumnya"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Dasbor</span>
+                </button>
+                <span className="text-slate-300 dark:text-slate-700">/</span>
+                <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400">
+                  Pendaftaran Tenant (RFIN-A)
+                </span>
+              </div>
               <h1 className="text-xl font-bold text-slate-900 dark:text-white">Pengajuan Pendaftaran Perusahaan (RFIN-A)</h1>
-              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
+              <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
                 Daftarkan perusahaan baru Anda sebagai Tenant di Proyek Cair. Pengajuan ini akan ditinjau oleh Platform Super Admin (PSA).
               </p>
             </div>

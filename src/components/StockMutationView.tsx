@@ -43,7 +43,8 @@ import {
   RotateCcw,
   RefreshCw,
   Info,
-  ChevronUp
+  ChevronUp,
+  ArrowLeft
 } from 'lucide-react';
 import { formatDateTime, formatRupiah, generateBOQReportPDF, generateStockMutationPDF, generateWarehouseSummaryPDF } from '../lib/pdfGenerator';
 import {
@@ -95,6 +96,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     activeRole,
     setActiveRole,
     setCurrentView,
+    goBack,
     setVerifyingDocId,
     dataReady,
     tenantBranding,
@@ -1623,12 +1625,27 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
           {/* Header Panel */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
-            <div>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => goBack ? goBack() : setCurrentView('dashboard')}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer mr-1"
+                  title="Kembali ke satu langkah/halaman sebelumnya"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Dasbor</span>
+                </button>
+                <span className="text-slate-300 dark:text-slate-700">/</span>
+                <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400">
+                  Mutasi Barang & Pemantauan BOQ
+                </span>
+              </div>
+
               <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
                 Mutasi Barang
               </h1>
-              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
-                Mutasi Barang & Pemantauan BOQ
+              <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+                Pencatatan mutasi fisik gudang dan pemantauan realisasi pos BOQ.
               </p>
             </div>
 

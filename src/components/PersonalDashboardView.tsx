@@ -1,9 +1,9 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { Building2, KeyRound, ShieldCheck, UserCheck, ArrowRight, Info, CheckCircle2 } from 'lucide-react';
+import { Building2, KeyRound, ShieldCheck, UserCheck, ArrowRight, Info, CheckCircle2, ArrowLeft } from 'lucide-react';
 
 export const PersonalDashboardView: React.FC = () => {
-  const { user, setCurrentView, activeContext } = useApp();
+  const { user, setCurrentView, goBack, activeContext } = useApp();
 
   const userAssignments = activeContext?.projects || [];
   const hasAssignments = userAssignments.length > 0;
@@ -20,6 +20,20 @@ export const PersonalDashboardView: React.FC = () => {
               className="w-16 h-16 sm:w-20 sm:h-20 object-contain shrink-0 drop-shadow-md"
             />
             <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => goBack ? goBack() : setCurrentView('landing')}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer mr-1"
+                  title="Kembali ke satu langkah/halaman sebelumnya"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Beranda</span>
+                </button>
+                <span className="text-slate-300 dark:text-slate-700">/</span>
+                <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400">
+                  Dasbor Personal
+                </span>
+              </div>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800">
                 <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                 <span>Akun Pribadi Terverifikasi</span>

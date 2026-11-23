@@ -3,8 +3,9 @@ import {
   Activity, AlertCircle, Building2, CheckCircle2, Clock3,
   Copy, FileCheck2, LayoutDashboard, LockKeyhole, RefreshCw,
   Search, ShieldCheck, Users, XCircle, ChevronDown, ChevronRight,
-  Mail, Send, ExternalLink
+  Mail, Send, ExternalLink, ArrowLeft
 } from 'lucide-react';
+import { useApp } from '../context/AppContext';
 import { getSupabaseClient, resolveMyActiveContext } from '../lib/supabase';
 
 // ─── Tipe ─────────────────────────────────────────────────────────────────────
@@ -76,6 +77,7 @@ const KartuStat = ({ label, nilai, icon: Icon, warna }: { label: string; nilai: 
 
 // ─── Komponen Utama ───────────────────────────────────────────────────────────
 export const PlatformConsole: React.FC = () => {
+  const { setCurrentView, goBack } = useApp();
   const db = getSupabaseClient();
 
   // State utama
@@ -350,10 +352,24 @@ Platform Super Admin (PSA) - Proyek Cair`;
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white shrink-0">
             <ShieldCheck className="h-5 w-5" />
           </div>
-          <div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => goBack ? goBack() : setCurrentView('landing')}
+                className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer mr-1"
+                title="Kembali ke satu langkah/halaman sebelumnya"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Beranda</span>
+              </button>
+              <span className="text-slate-300 dark:text-slate-700">/</span>
+              <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400">
+                Platform Console
+              </span>
+            </div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">Platform Console</h1>
             <p className="text-xs text-slate-500">Control plane global · PSA only</p>
           </div>

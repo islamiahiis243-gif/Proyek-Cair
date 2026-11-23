@@ -1,13 +1,13 @@
 import React,{useMemo,useState} from 'react';
 import {useApp} from '../context/AppContext';
 import {ItemBarang,AvailabilityStatus} from '../types';
-import {Search,Package,ArrowDownLeft,ArrowUpRight,AlertCircle,CheckCircle2,XCircle,ClipboardList,History,X} from 'lucide-react';
+import {Search,Package,ArrowDownLeft,ArrowUpRight,AlertCircle,CheckCircle2,XCircle,ClipboardList,History,X,ArrowLeft} from 'lucide-react';
 import {formatRupiah} from '../lib/pdfGenerator';
 import {getSupabaseClient} from '../lib/supabase';
 import {makeBoqCsv,parseBoqCsv} from '../lib/boqCsv';
 interface InventoryViewProps{onQuickMutate:(item:ItemBarang,type:'MASUK'|'KELUAR')=>void;canMutate:boolean;}
 export const InventoryView:React.FC<InventoryViewProps>=({onQuickMutate,canMutate})=>{
- const {items,boqSections,stockMutations,dataReady,dataError,user,activeProject,activeWorkspaceId,refreshData,activeRole}=useApp();
+ const {items,boqSections,stockMutations,dataReady,dataError,user,activeProject,activeWorkspaceId,refreshData,activeRole,setCurrentView,goBack}=useApp();
  const isViewer=activeRole==='Viewer/Pengamat';
  const canReadBoq=Boolean(activeProject?.permissions.includes('boq.read'));
   const canReadInventory=Boolean(activeProject?.permissions.includes('inventory.read'));
@@ -81,9 +81,23 @@ export const InventoryView:React.FC<InventoryViewProps>=({onQuickMutate,canMutat
   {!canReadInventory&&<div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">Permission inventory.read tidak tersedia. Master BOQ tetap dapat dilihat, tetapi saldo, status stok, dan histori mutasi disembunyikan.</div>}
   <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
    <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-    <div>
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => goBack ? goBack() : setCurrentView('dashboard')}
+          className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer mr-1"
+          title="Kembali ke satu langkah/halaman sebelumnya"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Dasbor</span>
+        </button>
+        <span className="text-slate-300 dark:text-slate-700">/</span>
+        <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400">
+          Master BOQ & Kontrol Stok
+        </span>
+      </div>
       <h1 className="text-xl font-bold text-slate-900 dark:text-white">Master BOQ & Kontrol Stok</h1>
-      <p className="mt-1 text-xs text-slate-500">Qty dan UOM kontrak bersumber dari Master BOQ yang diimpor. Saldo fisik hanya berasal dari ledger mutasi.</p>
+      <p className="text-xs text-slate-500">Qty dan UOM kontrak bersumber dari Master BOQ yang diimpor. Saldo fisik hanya berasal dari ledger mutasi.</p>
     </div>
     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 shrink-0">
       <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
