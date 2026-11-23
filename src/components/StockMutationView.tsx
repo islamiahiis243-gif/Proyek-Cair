@@ -2226,10 +2226,25 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                               <td className="py-3 px-3.5 text-center">
                                 <div className="flex items-center justify-center gap-1.5 flex-nowrap">
                                   {(() => {
-                                    const canPakai = pm.stok_fisik > 0;
-                                    const canMasuk = sisaBelumTiba > 0 || pm.total_qty_boq === 0;
-                                    const isTuntas = pm.stok_fisik <= 0 && sisaBelumTiba <= 0 && totalMasuk > 0;
+                                    // Aturan Tombol Tunggal Cerdas (Smart Single Dynamic Button):
+                                    // 1. Jika ada saldo fisik di gudang -> Tombol TUNGGAL: Pakai
+                                    // 2. Jika saldo fisik kosong dan tuntas seluruhnya -> Badge: Tuntas
+                                    // 3. Jika saldo fisik kosong dan butuh kiriman -> Tombol TUNGGAL: Masuk
+                                    if (pm.stok_fisik > 0) {
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenWarehouseMaterialOut(pm)}
+                                          disabled={!rolePermissions.canIssue}
+                                          title={`Keluarkan / gunakan ${pm.nama_barang} ke pekerjaan lapangan (Saldo fisik: ${pm.stok_fisik} ${pm.satuan})`}
+                                          className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-bold disabled:opacity-40 transition-colors cursor-pointer shadow-xs whitespace-nowrap"
+                                        >
+                                          Pakai
+                                        </button>
+                                      );
+                                    }
 
+                                    const isTuntas = sisaBelumTiba <= 0 && totalMasuk > 0;
                                     if (isTuntas) {
                                       return (
                                         <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
@@ -2239,34 +2254,19 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                     }
 
                                     return (
-                                      <>
-                                        {canPakai && (
-                                          <button
-                                            type="button"
-                                            onClick={() => handleOpenWarehouseMaterialOut(pm)}
-                                            disabled={!rolePermissions.canIssue}
-                                            title={`Keluarkan / gunakan ${pm.nama_barang} ke pekerjaan lapangan (Saldo fisik: ${pm.stok_fisik} ${pm.satuan})`}
-                                            className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-bold disabled:opacity-40 transition-colors cursor-pointer shadow-xs whitespace-nowrap"
-                                          >
-                                            Pakai
-                                          </button>
-                                        )}
-                                        {canMasuk && (
-                                          <button
-                                            type="button"
-                                            onClick={() => handleOpenWarehouseMaterialIn(pm)}
-                                            disabled={!rolePermissions.canIssue}
-                                            title={
-                                              sisaBelumTiba > 0
-                                                ? `Catat kedatangan sisa ${sisaBelumTiba.toLocaleString('id-ID')} ${pm.satuan} dari pemasok`
-                                                : 'Catat penerimaan barang masuk ke gudang'
-                                            }
-                                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold disabled:opacity-40 transition-colors cursor-pointer shadow-xs whitespace-nowrap"
-                                          >
-                                            Masuk
-                                          </button>
-                                        )}
-                                      </>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenWarehouseMaterialIn(pm)}
+                                        disabled={!rolePermissions.canIssue}
+                                        title={
+                                          sisaBelumTiba > 0
+                                            ? `Catat kedatangan sisa ${sisaBelumTiba.toLocaleString('id-ID')} ${pm.satuan} dari pemasok`
+                                            : `Catat penerimaan ${pm.nama_barang} masuk ke gudang`
+                                        }
+                                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold disabled:opacity-40 transition-colors cursor-pointer shadow-xs whitespace-nowrap"
+                                      >
+                                        Masuk
+                                      </button>
                                     );
                                   })()}
                                   <button
