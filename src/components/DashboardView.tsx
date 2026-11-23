@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   Boxes,
@@ -20,6 +20,9 @@ import {
   Warehouse,
   Layers,
   ArrowLeft,
+  MoreVertical,
+  Sparkles,
+  X,
 } from 'lucide-react';
 import { formatRupiah, formatDateTime } from '../lib/pdfGenerator';
 import { isClientProvidedRemark } from '../lib/stockMutationEngine';
@@ -53,6 +56,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   } = useApp();
 
   const isViewer = activeRole === 'Viewer/Pengamat';
+
+  // State menu aksi cepat "Mau nyatat apa hari ini?"
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(event.target as Node)) {
+        setIsActionMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsActionMenuOpen(false);
+      }
+    };
+
+    if (isActionMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isActionMenuOpen]);
 
   // Cash stats
   const totalCashIn = cashMutations
@@ -260,59 +289,188 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </p>
         </div>
 
-        {/* Quick Action Buttons & Banner Rata Kanan */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 shrink-0">
-          <div className="flex flex-wrap items-center gap-2">
-            {stockWriteAccess && <>
-            <button
-              onClick={() => onOpenStockModal('MASUK')}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-            >
-              <ArrowDownLeft className="w-3.5 h-3.5 text-blue-200" />
-              <span>+ Stok Masuk</span>
-            </button>
-
-            <button
-              onClick={() => onOpenStockModal('KELUAR')}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors border border-slate-200 dark:border-slate-700"
-            >
-              <ArrowUpRight className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-              <span>- Stok Keluar</span>
-            </button>
-            </>}
-
-            {cashWriteAccess && <>
-            <button
-              onClick={() => onOpenCashModal('MASUK')}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg transition-colors border border-emerald-200 dark:border-emerald-800"
-            >
-              <ArrowDownLeft className="w-3.5 h-3.5" />
-              <span>+ Kas Masuk</span>
-            </button>
-
-            <button
-              onClick={() => onOpenCashModal('KELUAR')}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 rounded-lg transition-colors border border-rose-200 dark:border-rose-800"
-            >
-              <ArrowUpRight className="w-3.5 h-3.5" />
-              <span>- Kas Keluar</span>
-            </button>
-            </>}
-          </div>
-
-          {/* Banner Rata Kanan: words_PNG2 */}
-          <div className="flex items-center justify-end self-center shrink-0">
+        {/* Kolom Kanan: Logo words (Jauh Lebih Gede & Leluasa) + 1 Tombol Titik Tiga di Paling Kanan */}
+        <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 shrink-0">
+          {/* Banner Rata Kanan: words_PNG2 (Dark) & words_light (Light) dibuat jauh lebih GEDE */}
+          <div className="flex items-center justify-center self-center shrink-0">
             <img
               src="/words_PNG2.png"
               alt="Proyek Cair"
-              className="h-10 sm:h-12 lg:h-14 w-auto max-w-[150px] sm:max-w-[200px] lg:max-w-[240px] object-contain drop-shadow-md dark:block hidden"
+              className="h-12 sm:h-16 lg:h-20 w-auto max-w-[200px] sm:max-w-[260px] lg:max-w-[320px] object-contain drop-shadow-md dark:block hidden transition-all"
             />
             <img
               src="/words_light.png"
               alt="Proyek Cair"
-              className="h-10 sm:h-12 lg:h-14 w-auto max-w-[150px] sm:max-w-[200px] lg:max-w-[240px] object-contain drop-shadow-md dark:hidden block"
+              className="h-12 sm:h-16 lg:h-20 w-auto max-w-[200px] sm:max-w-[260px] lg:max-w-[320px] object-contain drop-shadow-md dark:hidden block transition-all"
             />
           </div>
+
+          {/* 1 Tombol Titik Tiga di Paling Kanan */}
+          {(stockWriteAccess || cashWriteAccess) && (
+            <div className="relative" ref={actionMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsActionMenuOpen((prev) => !prev)}
+                className={`p-2.5 sm:p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-center shadow-xs ${
+                  isActionMenuOpen
+                    ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-500/30 shadow-md'
+                    : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                }`}
+                title="Pencatatan Transaksi Cepat (Mau nyatat apa hari ini?)"
+                aria-label="Menu Pencatatan Transaksi Cepat"
+                aria-expanded={isActionMenuOpen}
+              >
+                <MoreVertical className="w-5 h-5" />
+              </button>
+
+              {/* Kartu Popover: Mau nyatat apa hari ini? */}
+              {isActionMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 w-[320px] sm:w-[360px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-4 z-50 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
+                          Mau nyatat apa hari ini?
+                        </h3>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          Pilih jenis mutasi yang ingin dibukukan:
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsActionMenuOpen(false)}
+                      className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
+                      title="Tutup Menu"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {/* 1. Catat Stok Masuk */}
+                    {stockWriteAccess && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsActionMenuOpen(false);
+                          onOpenStockModal('MASUK');
+                        }}
+                        className="w-full text-left p-3 rounded-xl border border-blue-100 dark:border-blue-950/60 bg-blue-50/40 dark:bg-blue-950/20 hover:bg-blue-100/60 dark:hover:bg-blue-950/50 hover:border-blue-300 dark:hover:border-blue-800 transition-all cursor-pointer group flex items-start gap-3"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                          <ArrowDownLeft className="w-4 h-4 text-blue-100" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-blue-900 dark:text-blue-300">
+                              + Catat Stok Masuk
+                            </span>
+                            <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                              Gudang
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-snug">
+                            Penerimaan material/barang tiba dari toko atau supplier
+                          </p>
+                        </div>
+                      </button>
+                    )}
+
+                    {/* 2. Catat Stok Keluar */}
+                    {stockWriteAccess && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsActionMenuOpen(false);
+                          onOpenStockModal('KELUAR');
+                        }}
+                        className="w-full text-left p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-all cursor-pointer group flex items-start gap-3"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-slate-700 dark:bg-slate-700 text-white flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                          <ArrowUpRight className="w-4 h-4 text-rose-300" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-900 dark:text-white">
+                              - Catat Stok Keluar
+                            </span>
+                            <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                              Lapangan
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-snug">
+                            Pengeluaran material dari gudang ke pos pekerjaan fisik
+                          </p>
+                        </div>
+                      </button>
+                    )}
+
+                    {/* 3. Catat Kas Masuk */}
+                    {cashWriteAccess && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsActionMenuOpen(false);
+                          onOpenCashModal('MASUK');
+                        }}
+                        className="w-full text-left p-3 rounded-xl border border-emerald-100 dark:border-emerald-950/60 bg-emerald-50/40 dark:bg-emerald-950/20 hover:bg-emerald-100/60 dark:hover:bg-emerald-950/50 hover:border-emerald-300 dark:hover:border-emerald-800 transition-all cursor-pointer group flex items-start gap-3"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                          <ArrowDownLeft className="w-4 h-4 text-emerald-100" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-emerald-900 dark:text-emerald-300">
+                              + Catat Kas Masuk
+                            </span>
+                            <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">
+                              Arus Kas
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-snug">
+                            Penerimaan uang kas proyek dari termin klien atau modal
+                          </p>
+                        </div>
+                      </button>
+                    )}
+
+                    {/* 4. Catat Kas Keluar */}
+                    {cashWriteAccess && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsActionMenuOpen(false);
+                          onOpenCashModal('KELUAR');
+                        }}
+                        className="w-full text-left p-3 rounded-xl border border-rose-100 dark:border-rose-950/60 bg-rose-50/40 dark:bg-rose-950/20 hover:bg-rose-100/60 dark:hover:bg-rose-950/50 hover:border-rose-300 dark:hover:border-rose-800 transition-all cursor-pointer group flex items-start gap-3"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-rose-600 text-white flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                          <ArrowUpRight className="w-4 h-4 text-rose-100" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-rose-900 dark:text-rose-300">
+                              - Catat Kas Keluar
+                            </span>
+                            <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300">
+                              Belanja Kas
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-snug">
+                            Pengeluaran uang operasional atau belanja tunai lapangan
+                          </p>
+                        </div>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
