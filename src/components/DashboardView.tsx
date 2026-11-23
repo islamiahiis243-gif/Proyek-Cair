@@ -291,17 +291,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Kolom Kanan: Logo words (Jauh Lebih Gede & Leluasa) + 1 Tombol Titik Tiga di Paling Kanan */}
         <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 shrink-0">
-          {/* Banner Rata Kanan: words_PNG2 (Dark) & words_light (Light) dibuat jauh lebih GEDE */}
+          {/* Banner Rata Kanan: words_PNG2 (Dark) & words_light (Light) dibuat jauh lebih GEDE & GAGAH */}
           <div className="flex items-center justify-center self-center shrink-0">
             <img
               src="/words_PNG2.png"
               alt="Proyek Cair"
-              className="h-12 sm:h-16 lg:h-20 w-auto max-w-[200px] sm:max-w-[260px] lg:max-w-[320px] object-contain drop-shadow-md dark:block hidden transition-all"
+              className="h-16 sm:h-20 lg:h-24 xl:h-28 w-auto max-w-[260px] sm:max-w-[340px] lg:max-w-[420px] xl:max-w-[480px] object-contain drop-shadow-md dark:block hidden transition-all hover:scale-[1.02]"
             />
             <img
               src="/words_light.png"
               alt="Proyek Cair"
-              className="h-12 sm:h-16 lg:h-20 w-auto max-w-[200px] sm:max-w-[260px] lg:max-w-[320px] object-contain drop-shadow-md dark:hidden block transition-all"
+              className="h-16 sm:h-20 lg:h-24 xl:h-28 w-auto max-w-[260px] sm:max-w-[340px] lg:max-w-[420px] xl:max-w-[480px] object-contain drop-shadow-md dark:hidden block transition-all hover:scale-[1.02]"
             />
           </div>
 
