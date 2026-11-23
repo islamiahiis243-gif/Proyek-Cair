@@ -1343,9 +1343,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const cashHasEntries = cashMutations.length > 0;
   const recordedStockCount = stockItems.filter(x => x.has_stock_history).length;
   const unrecordedStockCount = stockItems.length - recordedStockCount;
-  const outOfStockCount = stockItems.filter(x => x.has_stock_history && x.stok_saat_ini <= 0).length;
-  const lowStockCount = stockItems.filter(x => x.stok_saat_ini > 0 && x.stok_saat_ini <= x.stok_minimum).length;
-  const availableStockCount = stockItems.filter(x => x.has_stock_history && x.stok_saat_ini > x.stok_minimum).length;
+  // Item yang benar-benar butuh perhatian pengadaan:
+  // Masih ada sisa alokasi pekerjaan BOQ (qty_pemenuhan_sisa > 0), tetapi stok fisik gudang kosong (stok_saat_ini <= 0).
+  // Jika pekerjaan BOQ sudah 100% terpenuhi & terpasang ke fisik bangunan (qty_pemenuhan_sisa <= 0), saldo gudang 0 adalah Tuntas/Selesai, BUKAN defisit!
+  const outOfStockCount = stockItems.filter(x => x.qty_pemenuhan_sisa > 0 && x.stok_saat_ini <= 0).length;
+  const lowStockCount = stockItems.filter(x => x.qty_pemenuhan_sisa > 0 && x.stok_saat_ini > 0 && x.stok_saat_ini <= x.stok_minimum).length;
+  const availableStockCount = stockItems.filter(x => x.has_stock_history && (x.stok_saat_ini > x.stok_minimum || x.qty_pemenuhan_sisa <= 0)).length;
 
   const updateCompanyLogo = async (logoUrl: string) => {
     const targetCompanyId = activeCompany.id || activeContext?.workspaces.find(w => w.type === 'COMPANY')?.company_id;

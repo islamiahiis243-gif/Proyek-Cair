@@ -113,7 +113,7 @@ export const Sidebar: React.FC = () => {
         id: 'stock-mutations',
         label: 'Mutasi Barang',
         icon: Boxes,
-        badge: outOfStockCount > 0 ? `${outOfStockCount} Kosong` : null
+        badge: outOfStockCount > 0 ? `${outOfStockCount} Butuh Stok` : null
       },
       ...(activeRole !== 'Viewer/Pengamat'
         ? [{ id: 'cashflow' as const, label: 'Mutasi Dana', icon: WalletCards }]

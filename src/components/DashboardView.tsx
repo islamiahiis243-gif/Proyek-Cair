@@ -474,27 +474,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Stock Zero Warning Notice */}
+      {/* Peringatan Kebutuhan Pengadaan Lanjutan BOQ (Hanya muncul jika masih ada sisa alokasi BOQ yang belum memiliki stok) */}
       {outOfStockCount > 0 && (
         <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/50 rounded-xl p-4 flex items-start gap-3 transition-colors">
           <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
           <div className="flex-1 text-xs">
             <span className="font-semibold text-amber-900 dark:text-amber-200">
-              Otomasi Status Stok Aktif: {outOfStockCount} item berstatus "Tidak Tersedia" (stok = 0).
+              Kebutuhan Pengadaan Material: {outOfStockCount} pos pekerjaan masih memerlukan pengadaan material lanjutan.
             </span>{' '}
             <span className="text-amber-800 dark:text-amber-300/80">
-              Saldo fisik saat ini dihitung dari ledger mutasi, bukan dari Qty BOQ. Saat barang benar-benar diterima di lokasi proyek via menu{' '}
+              Terdapat pos pekerjaan BOQ yang belum terpenuhi dan stok gudang saat ini belum mencukupi. Segera jadwalkan pemesanan toko via menu{' '}
               <strong className="underline cursor-pointer" onClick={() => onOpenStockModal('MASUK')}>
-                Mutasi Masuk
+                + Catat Stok Masuk
               </strong>
-              , status item akan otomatis beralih menjadi Tersedia.
+              {' '}saat barang tiba di lokasi proyek.
             </span>
           </div>
           <button
-            onClick={() => setCurrentView('inventory')}
-            className="text-xs font-semibold text-amber-900 dark:text-amber-300 hover:underline shrink-0"
+            onClick={() => setCurrentView('stock-mutations')}
+            className="text-xs font-bold text-amber-900 dark:text-amber-300 hover:underline shrink-0"
           >
-            Lihat Katalog →
+            Lihat Pos BOQ →
           </button>
         </div>
       )}
