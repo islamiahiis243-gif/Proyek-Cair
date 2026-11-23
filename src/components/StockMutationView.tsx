@@ -1434,9 +1434,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         }
         const filterLabelMap: Record<typeof warehouseFilter, string> = {
           ALL: 'Semua Material',
-          HAS_ARRIVED: 'Sudah Ada Masuk',
-          IN_STOCK: 'Tersedia di Gudang',
-          NOT_ARRIVED: 'Belum Tiba'
+          HAS_ARRIVED: 'Sudah Masuk',
+          IN_STOCK: 'Ada di Gudang',
+          NOT_ARRIVED: 'Belum Masuk'
         };
         const sortLabel = warehouseSort
           ? `Urut: ${warehouseSort.key} (${warehouseSort.dir === 'asc' ? 'Naik' : 'Turun'})`
@@ -1998,9 +1998,9 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 <div className="flex flex-wrap items-center gap-1.5">
                   {[
                     { id: 'ALL', label: `Semua Material (${boqMetrics.totalMaterialTypesCount})` },
-                    { id: 'HAS_ARRIVED', label: `Sudah Ada Masuk (${boqMetrics.arrivedMaterialTypesCount})` },
-                    { id: 'IN_STOCK', label: `Tersedia di Gudang (${(physicalMaterials || []).filter((pm) => pm.is_stock_item && pm.stok_fisik > 0).length})` },
-                    { id: 'NOT_ARRIVED', label: `Belum Tiba (${boqMetrics.totalMaterialTypesCount - boqMetrics.arrivedMaterialTypesCount})` }
+                    { id: 'HAS_ARRIVED', label: `Sudah Masuk (${boqMetrics.arrivedMaterialTypesCount})` },
+                    { id: 'IN_STOCK', label: `Ada di Gudang (${(physicalMaterials || []).filter((pm) => pm.is_stock_item && pm.stok_fisik > 0).length})` },
+                    { id: 'NOT_ARRIVED', label: `Belum Masuk (${boqMetrics.totalMaterialTypesCount - boqMetrics.arrivedMaterialTypesCount})` }
                   ].map((f) => (
                     <button
                       key={f.id}
@@ -2130,7 +2130,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                   </span>
                                 </div>
                                 <div className="text-[10px] text-slate-600 dark:text-slate-300 font-medium mt-0.5">
-                                  Digunakan pada kode pos:{' '}
+                                  Kode BOQ{' '}
                                   <span className="font-mono">
                                     {pm.budget_lines.slice(0, 5).map((bl) => bl.kode_boq).join(', ')}
                                     {posCount > 5 ? ` (+${posCount - 5} pos lainnya)` : ''}
@@ -2157,7 +2157,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                               <td className="py-3 px-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
                                 <div>{totalMasuk.toLocaleString('id-ID', { maximumFractionDigits: 3 })}</div>
                                 <div className="text-[10px] font-medium text-slate-600 dark:text-slate-300">
-                                  {pctTiba}% tiba di proyek
+                                  {pctTiba}% Tiba
                                 </div>
                               </td>
                               <td className="py-3 px-3 text-right font-mono text-slate-700 dark:text-slate-300 font-medium">
@@ -2215,11 +2215,11 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                   </span>
                                 ) : totalMasuk > 0 ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                                    Habis Terpakai
+                                    Habis
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                                    Belum Ada Masuk
+                                    Belum Masuk
                                   </span>
                                 )}
                               </td>
@@ -2362,7 +2362,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                       <div className="bg-white/5 dark:bg-white/[0.03] p-4 rounded-xl border border-blue-500/30 flex flex-col justify-between">
                         <div>
                           <div className="flex items-center justify-between gap-1 text-[10px] uppercase font-bold text-blue-300 tracking-wider">
-                            <span>2. Material Tiba di Proyek</span>
+                            <span>2. Material Tiba</span>
                             <span className="px-1.5 py-0.5 rounded-full bg-blue-400/20 text-blue-200 text-[9px] font-bold">
                               Gudang
                             </span>
@@ -2873,11 +2873,11 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                                   </span>
                                                 ) : item.stok_saat_ini > 0 ? (
                                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/70">
-                                                    Gudang: {item.stok_saat_ini.toLocaleString('id-ID', { maximumFractionDigits: 3 })} {item.satuan} siap pakai
+                                                    Ada:{item.stok_saat_ini.toLocaleString('id-ID', { maximumFractionDigits: 3 })} {item.satuan} siap pakai
                                                   </span>
                                                 ) : (
                                                   <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">
-                                                    Gudang: 0 {item.satuan}
+                                                    Ada:0 {item.satuan}
                                                   </span>
                                                 )}
                                               </td>

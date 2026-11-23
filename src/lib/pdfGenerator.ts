@@ -1673,8 +1673,8 @@ export async function generateWarehouseSummaryPDF(params: {
         return pm.stok_fisik > 0
           ? `Tersedia (${pm.stok_fisik.toLocaleString('id-ID', { maximumFractionDigits: 3 })})`
           : (pm.total_qty_masuk || 0) > 0
-          ? 'Habis Terpakai'
-          : 'Belum Ada Masuk';
+          ? 'Habis'
+          : 'Belum Masuk';
       }
     }
   };
