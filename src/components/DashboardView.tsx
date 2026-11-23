@@ -37,6 +37,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     items,
     stockMutations,
     cashMutations,
+    physicalMaterials,
     totalStockAssetValue,
     currentCashBalance,
     cashAccess,
@@ -115,18 +116,55 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const materialFinancialStats = useMemo(() => {
     let totalInValue = 0;
     let totalOutValue = 0;
+    let materialOutValue = 0;
     let itemsWithPriceCount = 0;
     let itemsPendingInvoiceCount = 0;
     let mainStoreName = '';
     const storeCountMap = new Map<string, number>();
 
+    // Buat lookup harga riil material dari physicalMaterials
+    const materialPriceMap = new Map<string, number>();
+    (physicalMaterials || []).forEach((pm) => {
+      const price =
+        pm.harga_beli_rata_rata ||
+        pm.harga_beli_terakhir ||
+        (pm.total_qty_masuk > 0 && pm.total_nilai_belanja_riil != null && pm.total_nilai_belanja_riil > 0
+          ? Math.round(pm.total_nilai_belanja_riil / pm.total_qty_masuk)
+          : 0);
+      if (price > 0) {
+        materialPriceMap.set(pm.id, price);
+        materialPriceMap.set(pm.nama_barang.trim().toLowerCase(), price);
+      }
+    });
+
+    // Lookup harga pagu BOQ
+    const boqPriceMap = new Map<string, number>();
+    items.forEach((it) => {
+      if (it.harga_satuan > 0) {
+        boqPriceMap.set(it.id, it.harga_satuan);
+        boqPriceMap.set(it.nama_barang.trim().toLowerCase(), it.harga_satuan);
+      }
+    });
+
     stockMutations.forEach((m) => {
       if (m.is_batal || m.is_ganti || m.status_dokumen === 'BATAL' || m.status_dokumen === 'DIGANTI') return;
 
-      const lineTotal = Number(m.jumlah || 0) * Number(m.harga_satuan_beli || 0);
+      const qty = Number(m.jumlah || 0);
+      const explicitPrice =
+        m.harga_satuan_beli != null && Number(m.harga_satuan_beli) > 0 ? Number(m.harga_satuan_beli) : null;
+      const fallbackPrice =
+        materialPriceMap.get(m.barang_id) ||
+        materialPriceMap.get((m.nama_barang || '').trim().toLowerCase()) ||
+        boqPriceMap.get(m.barang_id) ||
+        boqPriceMap.get((m.nama_barang || '').trim().toLowerCase()) ||
+        0;
+
+      const effectivePrice = explicitPrice ?? fallbackPrice;
+      const lineTotal = qty * effectivePrice;
+
       if (m.jenis === 'MASUK') {
         totalInValue += lineTotal;
-        if (m.harga_satuan_beli && m.harga_satuan_beli > 0) {
+        if (explicitPrice != null && explicitPrice > 0) {
           itemsWithPriceCount += 1;
         } else {
           itemsPendingInvoiceCount += 1;
@@ -136,6 +174,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         }
       } else if (m.jenis === 'KELUAR') {
         totalOutValue += lineTotal;
+
+        // Cek apakah item fisik gudang
+        const targetBoq = items.find((it) => it.id === m.barang_id);
+        const targetPm = (physicalMaterials || []).find(
+          (pm) => pm.id === m.barang_id || pm.nama_barang === m.nama_barang
+        );
+        const isStock = targetBoq ? targetBoq.is_stock_item : targetPm ? targetPm.is_stock_item : true;
+        if (isStock) {
+          materialOutValue += lineTotal;
+        }
       }
     });
 
@@ -150,11 +198,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const boqMaterialBudget = contractStats.material || 0;
     const sisaPaguMaterial = Math.max(0, boqMaterialBudget - totalInValue);
     const penyerapanPercent = boqMaterialBudget > 0 ? (totalInValue / boqMaterialBudget) * 100 : 0;
-    const warehouseStockValue = Math.max(0, totalInValue - totalOutValue);
+
+    // Valuasi stok gudang dihitung riil dari saldo fisik barang di gudang dikalikan harga riilnya
+    const warehouseStockValue = (physicalMaterials || [])
+      .filter((pm) => pm.is_stock_item)
+      .reduce((sum, pm) => {
+        const p =
+          pm.harga_beli_rata_rata ||
+          pm.harga_beli_terakhir ||
+          (pm.total_qty_masuk > 0 && pm.total_nilai_belanja_riil != null && pm.total_nilai_belanja_riil > 0
+            ? Math.round(pm.total_nilai_belanja_riil / pm.total_qty_masuk)
+            : 0);
+        return sum + Math.max(0, pm.stok_fisik || 0) * p;
+      }, 0);
 
     return {
       totalInValue,
       totalOutValue,
+      materialOutValue,
       warehouseStockValue,
       boqMaterialBudget,
       sisaPaguMaterial,
@@ -163,7 +224,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       itemsPendingInvoiceCount,
       mainStoreName: mainStoreName || 'Penyedia Resmi'
     };
-  }, [stockMutations, contractStats.material]);
+  }, [stockMutations, physicalMaterials, items, contractStats.material]);
 
   return (
     <div className="space-y-6">
@@ -536,10 +597,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
               </div>
               <div className="mt-2 text-xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
-                {formatRupiah(materialFinancialStats.totalOutValue)}
+                {formatRupiah(
+                  materialFinancialStats.materialOutValue > 0
+                    ? materialFinancialStats.materialOutValue
+                    : materialFinancialStats.totalOutValue
+                )}
               </div>
               <div className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
-                {materialFinancialStats.totalOutValue === 0 ? 'Belum ada pengeluaran fisik' : 'Teralokasi ke pos pekerjaan'}
+                {materialFinancialStats.totalOutValue === 0 ? (
+                  'Belum ada pengeluaran fisik'
+                ) : (
+                  <span>
+                    Teralokasi ke pos pekerjaan
+                    {materialFinancialStats.totalOutValue > materialFinancialStats.materialOutValue && (
+                      <span className="block text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold mt-0.5">
+                        + {formatRupiah(materialFinancialStats.totalOutValue - materialFinancialStats.materialOutValue)} Jasa/Upah BOQ (Total: {formatRupiah(materialFinancialStats.totalOutValue)})
+                      </span>
+                    )}
+                  </span>
+                )}
               </div>
               <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-600 dark:text-slate-300 font-medium flex items-center justify-between">
                 <span>Realisasi Lapangan</span>
