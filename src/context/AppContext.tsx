@@ -485,14 +485,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         t.status_dokumen === 'DIGANTI' ||
         reversedIds.has(t.id)
       );
+      const isStock = targetItem ? Boolean(targetItem.is_stock_item) : true;
       const qtyNum = Number(t.quantity) || 0;
-      const delta = isVoid ? 0 : incoming ? qtyNum : -qtyNum;
+      const delta = isVoid || !isStock ? 0 : incoming ? qtyNum : -qtyNum;
       const afterPhysical = beforePhysical + delta;
 
       if (!isVoid) {
-        physicalBalance.set(key, afterPhysical);
+        if (isStock) {
+          physicalBalance.set(key, afterPhysical);
+        }
         if (incoming) {
-          physicalReceived.set(key, (physicalReceived.get(key) || 0) + qtyNum);
+          if (isStock) {
+            physicalReceived.set(key, (physicalReceived.get(key) || 0) + qtyNum);
+          }
 
           const unitPrice = t.harga_satuan_beli != null ? Number(t.harga_satuan_beli) : null;
           if (unitPrice != null && unitPrice > 0) {
@@ -504,7 +509,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             physicalPendingInvoiceCount.set(key, (physicalPendingInvoiceCount.get(key) || 0) + 1);
           }
         } else {
-          physicalConsumed.set(key, (physicalConsumed.get(key) || 0) + qtyNum);
+          if (isStock) {
+            physicalConsumed.set(key, (physicalConsumed.get(key) || 0) + qtyNum);
+          }
           boqItemConsumed.set(t.item_id, (boqItemConsumed.get(t.item_id) || 0) + qtyNum);
         }
         if (t.item_id) stockHistory.add(t.item_id);
@@ -579,8 +586,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         remainingReceivedPool.set(key, Math.max(0, poolAvailable - masukKePosIni));
       }
 
-      // Sisa Belum Tiba di level pos
-      const sisaBelumTibaPos = Math.max(0, baseTarget - masukKePosIni);
+      // Sisa Belum Tiba / Belum Terealisasi di level pos
+      const sisaBelumTibaPos = Math.max(0, baseTarget - Math.max(masukKePosIni, terpakaiDiPosIni));
       const sisaBelumTibaGudang = Math.max(0, totalBoqGabungan - masukGudangTotal);
       
       const EPS = 0.0001;

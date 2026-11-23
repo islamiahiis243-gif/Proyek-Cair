@@ -1049,6 +1049,13 @@ export async function generateBOQReportPDF(params: {
       const isManpower = !it.is_stock_item || catUpper.startsWith('IV') || catUpper.includes('JASA') || catUpper.includes('UPAH');
       if (isManpower) {
         contractManpower += lineTotal;
+        if (it.status_pemenuhan === 'Terpenuhi' || it.status_pemenuhan === 'Melebihi BOQ') {
+          fullyFulfilledCount += 1;
+        } else if (it.status_pemenuhan === 'Dalam pemenuhan') {
+          partialFulfilledCount += 1;
+        } else {
+          unfulfilledCount += 1;
+        }
       } else {
         contractMaterial += lineTotal;
         const unitRate = Number(it.harga_satuan) || 0;
@@ -1227,7 +1234,7 @@ export async function generateBOQReportPDF(params: {
     qty_boq: { header: 'Target BOQ', width: 24, align: 'right', getValue: (it) => `${it.qty_boq.toLocaleString('id-ID')} ${it.satuan}` },
     harga_satuan: { header: 'Harga Satuan (Rp)', width: 28, align: 'right', getValue: (it, isClient) => isClient ? '0 (Klien)' : formatRupiah(it.harga_satuan) },
     total_kontrak: { header: 'Total Kontrak (Rp)', width: 32, align: 'right', getValue: (it, isClient) => isClient ? '0 (Klien)' : formatRupiah(it.harga_satuan * it.qty_boq) },
-    qty_masuk: { header: 'Realisasi Masuk', width: 25, align: 'right', getValue: (it) => `${it.qty_masuk_total.toLocaleString('id-ID')} ${it.satuan}` },
+    qty_masuk: { header: 'Realisasi Masuk', width: 25, align: 'right', getValue: (it) => `${(it.is_stock_item ? it.qty_masuk_total : Math.max(it.qty_masuk_total, it.qty_keluar_total)).toLocaleString('id-ID')} ${it.satuan}` },
     qty_sisa: { header: 'Sisa Belum Tiba', width: 25, align: 'right', getValue: (it) => `${it.qty_pemenuhan_sisa.toLocaleString('id-ID')} ${it.satuan}` },
     status: { header: 'Status', width: 22, align: 'center', getValue: (it) => it.status_pemenuhan }
   };

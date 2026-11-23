@@ -98,10 +98,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return { material, manpower, total, clientFreeIssue, bruto };
   }, [items, tenantBranding.clientName]);
   const fulfilledOrArrivedCount = useMemo(() => {
-    return items.filter((it) => (it.qty_masuk_total || 0) > 0).length;
+    return items.filter((it) => Math.max(it.qty_masuk_total || 0, it.qty_keluar_total || 0) > 0).length;
   }, [items]);
   const pendingDeliveryCount = useMemo(() => {
-    return items.filter((it) => (it.qty_masuk_total || 0) === 0).length;
+    return items.filter((it) => Math.max(it.qty_masuk_total || 0, it.qty_keluar_total || 0) === 0).length;
   }, [items]);
 
   const totalBoqValue = useMemo(() => {
@@ -381,7 +381,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span className="font-semibold text-purple-600 dark:text-purple-400">{imkItemCount} Free-Issue Klien</span>
           </div>
           <div className="mt-2 flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-300 border-t border-slate-100 dark:border-slate-800 pt-2">
-            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{fulfilledOrArrivedCount} Item Masuk</span>
+            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{fulfilledOrArrivedCount} Terealisasi</span>
             <span className="text-amber-600 dark:text-amber-400 font-semibold">{pendingDeliveryCount} Belum Tiba</span>
           </div>
         </div>

@@ -1450,7 +1450,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
             if (config.sortConfig.key === 'nama_barang') return a.nama_barang.localeCompare(b.nama_barang) * dirMul;
             if (config.sortConfig.key === 'kode_boq') return (a.kode_boq || '').localeCompare(b.kode_boq || '') * dirMul;
             if (config.sortConfig.key === 'qty_boq') return (a.qty_boq - b.qty_boq) * dirMul;
-            if (config.sortConfig.key === 'qty_masuk') return (a.qty_masuk_total - b.qty_masuk_total) * dirMul;
+            if (config.sortConfig.key === 'qty_masuk') return (((a.is_stock_item ? a.qty_masuk_total : Math.max(a.qty_masuk_total, a.qty_keluar_total))) - ((b.is_stock_item ? b.qty_masuk_total : Math.max(b.qty_masuk_total, b.qty_keluar_total)))) * dirMul;
             if (config.sortConfig.key === 'qty_sisa') return (a.qty_pemenuhan_sisa - b.qty_pemenuhan_sisa) * dirMul;
             if (config.sortConfig.key === 'total_kontrak') return ((a.harga_satuan * a.qty_boq) - (b.harga_satuan * b.qty_boq)) * dirMul;
             return 0;
@@ -2432,7 +2432,11 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                               </td>
 
                                               <td className="py-2.5 px-3 text-center">
-                                                {item.stok_saat_ini > 0 ? (
+                                                {!item.is_stock_item ? (
+                                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                                                    — (Pos Jasa / Langsung)
+                                                  </span>
+                                                ) : item.stok_saat_ini > 0 ? (
                                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/70">
                                                     Gudang: {item.stok_saat_ini.toLocaleString('id-ID', { maximumFractionDigits: 3 })} {item.satuan} siap pakai
                                                   </span>
