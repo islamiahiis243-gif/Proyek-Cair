@@ -1,7 +1,8 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import QRCode from 'qrcode';
-import { DokumenLaporan, MutasiBarang, MutasiKas, UserProfile, ItemBarang, PhysicalMaterialItem, TenantBranding, ImpersonateRole } from '../types';
+import { DokumenLaporan, MutasiBarang, MutasiKas, UserProfile, ItemBarang, PhysicalMaterialItem, TenantBranding, ImpersonateRole, PurchaseOrder } from '../types';
+import { PO_PAYMENT_TERMS_LABELS } from './procurementEngine';
 import {
   analyzeIncomingProviderDiscrepancy,
   isClientProvidedRemark,
@@ -2387,6 +2388,274 @@ export async function generateIntegratedProjectReportPDF(params: {
     hash_keamanan: hash,
     total_transaksi: report.physicalProgress.totalPosCount + (report.cashMetrics?.activeCount || 0),
     ringkasan_nilai_rp: isContractor ? report.reconciliation?.totalAsetKerjaProyekRp || 0 : 0,
+    qr_payload: qrPayload,
+  };
+}
+
+/**
+ * Generate PDF Resmi Surat Pesanan Material (PO Toko) siap kirim ke Toko Rekanan
+ */
+export async function generatePurchaseOrderPDF(params: {
+  po: PurchaseOrder;
+  signer: UserProfile;
+  projectName?: string;
+  branding?: TenantBranding;
+  storeAddress?: string;
+  storePic?: string;
+  docId?: string;
+}): Promise<DokumenLaporan> {
+  const { po, signer, projectName, branding: rawBranding, storeAddress, storePic } = params;
+  const docId = params.docId || po.po_no;
+  const b = resolvePdfBranding(rawBranding, projectName);
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  drawOfficialHeader(doc, pageWidth, b);
+
+  // Banner Judul PO
+  doc.setFillColor(239, 246, 255);
+  doc.setDrawColor(191, 219, 254);
+  doc.roundedRect(14, 38, pageWidth - 28, 14, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(30, 58, 138);
+  doc.text('SURAT PESANAN MATERIAL (PO TOKO)', 18, 44.5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`No. Surat Pesanan: ${po.po_no}`, 18, 49.5);
+
+  const statusText =
+    po.is_batal || po.status_dokumen === 'BATAL'
+      ? 'STATUS: BATAL'
+      : po.is_ganti || po.status_dokumen === 'DIGANTI'
+        ? 'STATUS: DIGANTI (REVISI)'
+        : po.status_dokumen === 'MENGETAHUI'
+          ? 'STATUS: SAH TTE / QR'
+          : 'STATUS: MENUNGGU PENGESAHAN';
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(
+    po.is_batal ? 190 : po.status_dokumen === 'MENGETAHUI' ? 15 : 180,
+    po.is_batal ? 18 : po.status_dokumen === 'MENGETAHUI' ? 118 : 83,
+    po.is_batal ? 60 : po.status_dokumen === 'MENGETAHUI' ? 110 : 9
+  );
+  doc.text(statusText, pageWidth - 18, 46.5, { align: 'right' });
+
+  // Blok Metadata 2 Kolom: Toko Rekanan vs Info Syarat & Jadwal
+  let cursorY = 56;
+  const halfW = (pageWidth - 32) / 2;
+
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(14, cursorY, halfW, 28, 2, 2, 'FD');
+  doc.roundedRect(14 + halfW + 4, cursorY, halfW, 28, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text('KEPADA YTH. TOKO REKANAN:', 17, cursorY + 5.5);
+  doc.setFontSize(9.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text(po.nama_toko || '-', 17, cursorY + 11, { maxWidth: halfW - 6 });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  if (storePic) {
+    doc.text(`UP / Kontak PIC: ${storePic}`, 17, cursorY + 16, { maxWidth: halfW - 6 });
+  }
+  doc.text(`Telepon / WA: ${po.toko_kontak || '-'}`, 17, cursorY + (storePic ? 20.5 : 16.5), {
+    maxWidth: halfW - 6,
+  });
+  if (storeAddress) {
+    doc.text(`Alamat: ${storeAddress}`, 17, cursorY + 25, { maxWidth: halfW - 6 });
+  }
+
+  const rightX = 14 + halfW + 7;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text('RINCIAN PESANAN & SYARAT PEMBAYARAN:', rightX, cursorY + 5.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Tanggal PO: ${formatDateOnly(po.tanggal_po)}`, rightX, cursorY + 11);
+  doc.text(
+    `Estimasi Tiba: ${po.estimasi_tiba ? formatDateOnly(po.estimasi_tiba) : 'Sesuai Kesepakatan'}`,
+    rightX,
+    cursorY + 15.5
+  );
+  doc.text(
+    `Syarat Bayar: ${PO_PAYMENT_TERMS_LABELS[po.payment_terms] || po.payment_terms}`,
+    rightX,
+    cursorY + 20
+  );
+  const tempoOrDpText =
+    po.payment_terms === 'DP_PELUNASAN' && (po.dp_amount_rp || 0) > 0
+      ? `Uang Muka (DP): ${formatRupiah(po.dp_amount_rp)}`
+      : po.jatuh_tempo_bayar
+        ? `Jatuh Tempo: ${formatDateOnly(po.jatuh_tempo_bayar)}`
+        : `Proyek: ${b.projectName}`;
+  doc.text(tempoOrDpText, rightX, cursorY + 24.5, { maxWidth: halfW - 6 });
+
+  cursorY += 34;
+
+  // Tabel Item Pesanan (Harga Satuan PO Terkunci)
+  const items = po.items || [];
+  autoTable(doc, {
+    startY: cursorY,
+    head: [['No', 'Nama Material / Spesifikasi', 'Qty', 'Satuan', 'Harga Satuan PO', 'Subtotal (Rp)', 'Catatan']],
+    body: items.map((it, idx) => [
+      String(idx + 1),
+      it.nama_barang,
+      new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(Number(it.qty_pesan) || 0),
+      it.satuan || 'Unit',
+      formatRupiah(Number(it.harga_satuan_po) || 0),
+      formatRupiah(Number(it.subtotal_rp) || 0),
+      it.catatan || '-',
+    ]),
+    foot: [
+      [
+        '',
+        'TOTAL NILAI SURAT PESANAN (PO)',
+        '',
+        '',
+        '',
+        formatRupiah(Number(po.total_amount_rp) || 0),
+        '',
+      ],
+    ],
+    theme: 'grid',
+    headStyles: { fillColor: [30, 58, 138], textColor: [255, 255, 255], fontSize: 8 },
+    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 8.5 },
+    styles: { fontSize: 8, cellPadding: 2.4 },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 9 },
+      2: { halign: 'right', cellWidth: 16 },
+      3: { halign: 'center', cellWidth: 16 },
+      4: { halign: 'right', cellWidth: 28 },
+      5: { halign: 'right', cellWidth: 30 },
+      6: { cellWidth: 26 },
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  cursorY = ((doc as any).lastAutoTable?.finalY || cursorY + 30) + 6;
+
+  // Catatan Pengiriman ke Toko
+  if (cursorY > pageHeight - 68) {
+    doc.addPage();
+    cursorY = 18;
+  }
+
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  const noteLines = [
+    `1. Mohon sertakan Surat Jalan / Nota Toko resmi yang mencantumkan nomor ${po.po_no} saat pengiriman ke lokasi proyek.`,
+    `2. Harga satuan di atas mengikat sesuai kesepakatan pesanan. Perubahan harga atau spesifikasi wajib konfirmasi terlebih dahulu.`,
+    ...(po.catatan_toko ? [`3. Catatan Khusus: ${po.catatan_toko}`] : []),
+  ];
+  const noteBoxH = 8 + noteLines.length * 4.5;
+  doc.roundedRect(14, cursorY, pageWidth - 28, noteBoxH, 2, 2, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(30, 58, 138);
+  doc.text('KETENTUAN PENGIRIMAN & PENAGIHAN:', 17, cursorY + 5);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.6);
+  doc.setTextColor(51, 65, 85);
+  noteLines.forEach((line, idx) => {
+    doc.text(line, 17, cursorY + 10 + idx * 4.5, { maxWidth: pageWidth - 34 });
+  });
+  cursorY += noteBoxH + 8;
+
+  // Blok Pengesahan Berjenjang 4 Tingkat + TTE/QR
+  if (cursorY > pageHeight - 44) {
+    doc.addPage();
+    cursorY = 18;
+  }
+
+  const colW = (pageWidth - 28) / 4;
+  const issuerName = po.created_by_name || signer?.name || 'Clerk / Pelaksana';
+  const checkerName = po.diperiksa_oleh || 'Menunggu Pemeriksaan';
+  const approverName = po.disetujui_oleh || 'Menunggu Persetujuan';
+  const directorName = po.mengetahui_oleh || (po.status_dokumen === 'MENGETAHUI' ? b.directorName : 'Menunggu Pengesahan');
+
+  const qrPayload =
+    po.tte_qr_code ||
+    `TTE-${b.contractorSlug}:${docId}:PO_PENGADAAN:KONTRAKTOR:NPWP_${b.contractorNpwp || 'NA'}`;
+  const qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 100, margin: 0 });
+
+  const signCols = [
+    { label: '1. Diterbitkan Oleh', role: 'Clerk / Pelaksana', name: issuerName },
+    { label: '2. Diperiksa Oleh', role: 'Foreman / Lapangan', name: checkerName.split('·')[0].trim() },
+    { label: '3. Disetujui Oleh', role: 'Spv. / Pengawas', name: approverName.split('·')[0].trim() },
+    { label: '4. Mengetahui / Sah TTE', role: 'Dept. Mgr / KTT / Dir.', name: directorName.split('·')[0].trim() },
+  ];
+
+  signCols.forEach((sc, i) => {
+    const x = 14 + colW * i;
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text(sc.label, x, cursorY);
+    doc.setFont('helvetica', 'bold');
+    doc.text(sc.role, x, cursorY + 4);
+    if (i === 3) {
+      doc.addImage(qrDataUrl, 'PNG', x, cursorY + 6.5, 16, 16);
+    }
+    doc.setTextColor(15, 23, 42);
+    doc.text(sc.name, x, cursorY + 26, { maxWidth: colW - 4 });
+  });
+
+  const snapshotPayload = stableStringify({
+    docId,
+    jenis: 'PO_PENGADAAN',
+    poId: po.id,
+    poNo: po.po_no,
+    store: po.nama_toko,
+    totalAmountRp: po.total_amount_rp,
+    itemCount: items.length,
+    status: po.status_dokumen,
+  });
+  const hash = await sha256Hex(snapshotPayload);
+
+  doc.setFontSize(6);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(148, 163, 184);
+  doc.text(
+    `Integritas Dokumen SHA-256: ${hash} | ${b.contractorName}`,
+    pageWidth / 2,
+    pageHeight - 5,
+    { align: 'center' }
+  );
+
+  const fileName = buildCleanPdfFilename(
+    `Surat_Pesanan_${po.po_no}_${po.nama_toko}`,
+    'Surat_Pesanan_PO',
+    b.projectName
+  );
+  doc.save(fileName);
+
+  return {
+    id: docId,
+    judul: `Surat Pesanan (PO) ${po.po_no} — ${po.nama_toko}`,
+    jenis: 'PO_PENGADAAN',
+    audience_pov: 'KONTRAKTOR',
+    status: po.status_dokumen === 'MENGETAHUI' ? 'TERVERIFIKASI' : 'MENUNGGU',
+    periode_awal: po.tanggal_po,
+    periode_akhir: po.estimasi_tiba || po.tanggal_po,
+    dibuat_pada: new Date().toISOString(),
+    penandatangan_nama: directorName,
+    penandatangan_jabatan: 'Pengesah PO',
+    penandatangan_email: b.directorEmail,
+    hash_keamanan: hash,
+    total_transaksi: items.length,
+    ringkasan_nilai_rp: Number(po.total_amount_rp) || 0,
     qr_payload: qrPayload,
   };
 }

@@ -46,6 +46,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     totalStockAssetValue,
     currentCashBalance,
     cashSummaryMetrics,
+    procurementSummary,
     cashAccess,
     cashWriteAccess,
     stockWriteAccess,
@@ -54,9 +55,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     availableStockCount,
     setCurrentView,
     setCashTargetTab,
+    setProcurementTargetTab,
     goBack,
     tenantBranding,
     activeRole,
+    rolePermissions,
   } = useApp();
 
   const isViewer = activeRole === 'Viewer/Pengamat';
@@ -500,6 +503,36 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         </div>
                       </button>
                     )}
+
+                    {/* 5. Buat Surat Pesanan (PO Toko) — Khusus Clerk / Kontraktor */}
+                    {rolePermissions.canIssue && !isViewer && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsActionMenuOpen(false);
+                          setProcurementTargetTab('NEEDS_STORES');
+                          setCurrentView('procurement');
+                        }}
+                        className="w-full text-left p-3 rounded-xl border border-purple-100 dark:border-purple-950/60 bg-purple-50/40 dark:bg-purple-950/20 hover:bg-purple-100/60 dark:hover:bg-purple-950/50 hover:border-purple-300 dark:hover:border-purple-800 transition-all cursor-pointer group flex items-start gap-3"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                          <ShoppingBag className="w-4 h-4 text-purple-100" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <span className="text-xs font-bold text-purple-900 dark:text-purple-300">
+                              + Buat Surat Pesanan (PO)
+                            </span>
+                            <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300">
+                              Pengadaan
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-snug">
+                            Pesan material BOQ ke toko rekanan dengan harga grosir terkunci
+                          </p>
+                        </div>
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -507,6 +540,55 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Ringkasan Komitmen Pengadaan & PO Toko (Khusus Kontraktor / Non-Pengamat) */}
+      {!isViewer && (procurementSummary.activePoCount > 0 || procurementSummary.needOrderItemsCount > 0) && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border border-purple-200/70 dark:border-purple-800/60 flex items-center justify-center shrink-0">
+              <ShoppingBag className="w-4 h-4" />
+            </div>
+            <div className="text-xs space-y-0.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold text-slate-900 dark:text-white">
+                  Pengadaan & PO Toko
+                </span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${procurementSummary.healthBadgeClass}`}>
+                  {procurementSummary.healthLabel}
+                </span>
+              </div>
+              <div className="text-slate-600 dark:text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                <span>
+                  Komitmen Aktif: <strong className="text-slate-900 dark:text-white">{formatRupiah(procurementSummary.totalPoCommitmentRp)}</strong> ({procurementSummary.activePoCount} PO)
+                </span>
+                <span>·</span>
+                <span>
+                  Sisa Bayar PO: <strong className="text-slate-900 dark:text-white">{formatRupiah(procurementSummary.totalPoOutstandingRp)}</strong>
+                </span>
+                {procurementSummary.needOrderItemsCount > 0 && (
+                  <>
+                    <span>·</span>
+                    <span className="text-amber-700 dark:text-amber-400 font-semibold">
+                      {procurementSummary.needOrderItemsCount} material perlu dipesan
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setProcurementTargetTab(procurementSummary.activePoCount > 0 ? 'PO_LIST' : 'NEEDS_STORES');
+              setCurrentView('procurement');
+            }}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer"
+          >
+            <span>Kelola PO Toko</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Peringatan Kebutuhan Pengadaan Lanjutan BOQ (Hanya muncul jika masih ada sisa alokasi BOQ yang belum memiliki stok) */}
       {outOfStockCount > 0 && (

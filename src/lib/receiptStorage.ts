@@ -190,38 +190,77 @@ export async function fetchSupplierStores(projectId?: string): Promise<SupplierS
 }
 
 /**
- * Simpan Toko / Suplier Baru jika belum ada
+ * Simpan Toko / Suplier Baru atau perbarui informasi rekanan jika sudah ada
  */
 export async function saveSupplierStore(store: {
+  id?: string;
   nama_toko: string;
   telepon?: string;
   alamat?: string;
+  kategori?: string;
+  pic_toko?: string;
+  syarat_bayar_default?: string;
+  catatan?: string;
+  is_active?: boolean;
   project_id?: string;
-}): Promise<void> {
+}): Promise<SupplierStore | null> {
   const cleanName = store.nama_toko.trim();
-  if (!cleanName) return;
+  if (!cleanName) return null;
 
   try {
     const client = getSupabaseClient();
-    if (!client) return;
+    if (!client) return null;
+
+    if (store.id) {
+      const { data, error } = await client
+        .from('supplier_stores')
+        .update({
+          nama_toko: cleanName,
+          telepon: store.telepon?.trim() || null,
+          alamat: store.alamat?.trim() || null,
+          kategori: store.kategori?.trim() || null,
+          pic_toko: store.pic_toko?.trim() || null,
+          syarat_bayar_default: store.syarat_bayar_default || 'TUNAI_SAAT_TIBA',
+          catatan: store.catatan?.trim() || null,
+          is_active: store.is_active !== false,
+        })
+        .eq('id', store.id)
+        .select()
+        .single();
+      if (error) throw error;
+      return (data as SupplierStore) || null;
+    }
 
     // Cek apakah sudah ada nama toko yang sama
-    const { data } = await client
+    const { data: existing } = await client
       .from('supplier_stores')
-      .select('id')
+      .select('*')
       .ilike('nama_toko', cleanName)
       .limit(1);
 
-    if (!data || data.length === 0) {
-      await client.from('supplier_stores').insert({
-        nama_toko: cleanName,
-        telepon: store.telepon?.trim() || null,
-        alamat: store.alamat?.trim() || null,
-        project_id: store.project_id || null
-      });
+    if (!existing || existing.length === 0) {
+      const { data: inserted, error } = await client
+        .from('supplier_stores')
+        .insert({
+          nama_toko: cleanName,
+          telepon: store.telepon?.trim() || null,
+          alamat: store.alamat?.trim() || null,
+          kategori: store.kategori?.trim() || null,
+          pic_toko: store.pic_toko?.trim() || null,
+          syarat_bayar_default: store.syarat_bayar_default || 'TUNAI_SAAT_TIBA',
+          catatan: store.catatan?.trim() || null,
+          is_active: store.is_active !== false,
+          project_id: store.project_id || null,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return (inserted as SupplierStore) || null;
     }
+    return existing[0] as SupplierStore;
   } catch (err) {
     console.warn('Gagal menyimpan toko suplier baru:', err);
+    return null;
   }
 }
 

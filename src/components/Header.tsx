@@ -36,10 +36,12 @@ export const Header: React.FC = () => {
     documents,
     pendingStockApprovalCount,
     pendingCashApprovalCount,
+    pendingPoApprovalCount,
     pendingDocumentApprovalCount,
     pendingApprovalCount,
     setCashTargetTab,
     setStockTargetTab,
+    setProcurementTargetTab,
     appMode,
     setAppMode,
     activeRole,
@@ -293,6 +295,22 @@ export const Header: React.FC = () => {
                   onClick: () => {
                     setCashTargetTab(cashApprovalTargetTab);
                     setCurrentView('cashflow');
+                    setNotifOpen(false);
+                  },
+                },
+              ]
+            : []),
+          ...(pendingPoApprovalCount > 0 && activeRole !== 'Viewer/Pengamat'
+            ? [
+                {
+                  id: 'op-po-approval',
+                  title: `${pendingPoApprovalCount} Antrean Persetujuan Surat Pesanan (PO)`,
+                  message: `Menunggu tindakan jabatan ${activeRole} pada Daftar Surat Pesanan (PO).`,
+                  tone: 'amber' as const,
+                  actionLabel: 'Buka Pengadaan & PO',
+                  onClick: () => {
+                    setProcurementTargetTab('PO_LIST');
+                    setCurrentView('procurement');
                     setNotifOpen(false);
                   },
                 },

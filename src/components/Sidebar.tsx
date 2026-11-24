@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Boxes,
   WalletCards,
+  ShoppingBag,
   KeyRound,
   Building2,
   Settings,
@@ -84,9 +85,11 @@ export const Sidebar: React.FC = () => {
     activeProject,
     outOfStockCount,
     cashSummaryMetrics,
+    procurementSummary,
     cashCriticalAlertCount,
     pendingStockApprovalCount,
     pendingCashApprovalCount,
+    pendingPoApprovalCount,
     user
   } = useApp();
 
@@ -176,6 +179,17 @@ export const Sidebar: React.FC = () => {
         ? { text: `${cashSummaryMetrics.openKasbonCount} Panjar`, tone: 'indigo' as BadgeTone }
         : null;
 
+    const poBadge =
+      procurementSummary.isPoCritical
+        ? { text: 'Jatuh Tempo', tone: 'rose' as BadgeTone }
+        : pendingPoApprovalCount > 0
+        ? { text: `${pendingPoApprovalCount} Antrean`, tone: approvalRoleTone }
+        : procurementSummary.waitingDeliveryCount > 0
+        ? { text: `${procurementSummary.waitingDeliveryCount} Terima`, tone: 'indigo' as BadgeTone }
+        : procurementSummary.needOrderItemsCount > 0 && activeRole === 'Clerk'
+        ? { text: `${procurementSummary.needOrderItemsCount} Pesan`, tone: 'amber' as BadgeTone }
+        : null;
+
     navItems = [
       { id: 'dashboard', label: 'Dasbor & Analitik', icon: LayoutDashboard },
       { id: 'landing', label: 'Beranda Modul & Lisensi', icon: HomeIcon },
@@ -189,6 +203,13 @@ export const Sidebar: React.FC = () => {
       },
       ...(activeRole !== 'Viewer/Pengamat'
         ? [
+            {
+              id: 'procurement' as const,
+              label: 'Pengadaan & PO',
+              icon: ShoppingBag,
+              badge: poBadge?.text || null,
+              badgeTone: poBadge?.tone,
+            },
             {
               id: 'cashflow' as const,
               label: 'Mutasi Dana',

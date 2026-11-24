@@ -110,6 +110,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     physicalMaterials,
     stockMutations,
     cashMutations,
+    purchaseOrders,
     documents,
     projectReceipts,
     refreshProjectReceipts,
@@ -135,6 +136,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     refreshData,
     stockTargetTab,
     setStockTargetTab,
+    setProcurementTargetTab,
   } = useApp();
 
   // State Penyelarasan Nota Toko (Batch & Viewer Modal)
@@ -3987,6 +3989,22 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                           ✓ Terbayar Kas
                                         </span>
                                       )}
+                                      {mut.po_id && activeRole !== 'Viewer/Pengamat' && (() => {
+                                        const linkedPo = purchaseOrders.find((p) => p.id === mut.po_id);
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setProcurementTargetTab('PO_LIST');
+                                              setCurrentView('procurement');
+                                            }}
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-800 dark:text-purple-200 text-[10px] font-bold transition-colors cursor-pointer"
+                                            title="Penerimaan barang dari Surat Pesanan (PO) — klik untuk membuka modul Pengadaan & PO"
+                                          >
+                                            PO: {linkedPo?.po_no || mut.nomor_surat_jalan || 'PO Toko'}
+                                          </button>
+                                        );
+                                      })()}
                                     </div>
                                   );
                                 })()}

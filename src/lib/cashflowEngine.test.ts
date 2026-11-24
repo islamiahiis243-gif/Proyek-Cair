@@ -1435,3 +1435,59 @@ test('findRelatedStockMutationsForReceipt isolates MASUK vs KELUAR and Kontrakto
   );
   assert.deepEqual(related.map((m) => m.id), ['m-in-k']);
 });
+
+// 30
+test('findUnreconciledStockReceipts prevents double-billing for stock receipts whose PO is paid via PO_PENGADAAN', () => {
+  const rcPo: ProjectReceipt = {
+    id: 'rc-po-1',
+    project_id: 'p1',
+    reference_no: 'SJ-PO-01',
+    nama_toko: 'TB Sinar Bangunan',
+    tanggal_nota: '2026-11-22',
+    total_nota_fisik: 3_250_000,
+    receipt_scope: 'BELANJA_BARANG',
+  };
+  const stockFromPo: MutasiBarang = {
+    id: 'sm-po-1',
+    barang_id: 'b1',
+    nama_barang: 'Semen 50kg',
+    jenis: 'MASUK',
+    jumlah: 50,
+    satuan: 'sak',
+    tujuan_keperluan: 'Penerimaan PO-20261124-001',
+    pic_penerima_penyerah: 'Budi',
+    tanggal: '2026-11-22T09:00:00Z',
+    stok_sebelum: 0,
+    stok_sesudah: 50,
+    owner_type: 'KONTRAKTOR',
+    harga_satuan_beli: 65_000,
+    total_nota_fisik: 3_250_000,
+    nomor_nota: 'SJ-PO-01',
+    nama_toko: 'TB Sinar Bangunan',
+    receipt_id: 'rc-po-1',
+    po_id: 'po-1',
+    po_item_id: 'poi-1',
+  };
+  const cashPayPo = makeCash({
+    id: 'c-po-pay-1',
+    jenis: 'KELUAR',
+    jumlah_rp: 3_250_000,
+    kategori_keperluan: 'Material',
+    source_module: 'PO_PENGADAAN',
+    source_entity_id: 'po-1',
+    source_entity_no: 'PO-20261124-001',
+    nama_toko: 'TB Sinar Bangunan',
+  });
+
+  // Setelah PO lunas lewat PO_PENGADAAN, tidak boleh muncul ganda di Tab 2 Rekonsiliasi Kas
+  const queuePaid = findUnreconciledStockReceipts([stockFromPo], [rcPo], [cashPayPo], branding.clientName);
+  assert.equal(queuePaid.length, 0);
+
+  // Dan mutasi gudang tersebut otomatis ditandai Terbayar Kas + tertaut ke transaksi kas PO
+  const idx = buildTerpaduReceiptIndex([rcPo], [cashPayPo]);
+  assert.equal(isStockMutationPaidViaCash(stockFromPo, idx, branding.clientName), true);
+  assert.deepEqual(
+    findLinkedCashMutationsForStockMutation(stockFromPo, [cashPayPo], branding.clientName).map((c) => c.id),
+    ['c-po-pay-1']
+  );
+});

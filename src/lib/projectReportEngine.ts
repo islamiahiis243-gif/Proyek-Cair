@@ -107,8 +107,13 @@ export function filterDocumentsForPov(
   }
 
   return list.filter((doc) => {
-    // Arsip kas internal kontraktor dilarang keras tampil di POV Klien
-    if (doc.jenis === 'MUTASI_KAS' || doc.document_type === 'MUTASI_KAS') {
+    // Arsip kas & PO toko internal kontraktor dilarang keras tampil di POV Klien
+    if (
+      doc.jenis === 'MUTASI_KAS' ||
+      doc.document_type === 'MUTASI_KAS' ||
+      doc.jenis === 'PO_PENGADAAN' ||
+      doc.document_type === 'PO_PENGADAAN'
+    ) {
       return false;
     }
 
@@ -331,7 +336,7 @@ export function buildIntegratedProjectReport(params: {
     const allModules: Array<{ code: ProjectModuleCode; status: 'AKTIF' | 'TAHAP_LANJUT' }> = [
       { code: 'KAS_LANGSUNG', status: 'AKTIF' },
       { code: 'MUTASI_BARANG', status: 'AKTIF' },
-      { code: 'PO_PENGADAAN', status: 'TAHAP_LANJUT' },
+      { code: 'PO_PENGADAAN', status: 'AKTIF' },
       { code: 'UPAH_MANDOR', status: 'TAHAP_LANJUT' },
       { code: 'TERMIN_BAP', status: 'TAHAP_LANJUT' },
       { code: 'SUBKON_ALAT', status: 'TAHAP_LANJUT' },

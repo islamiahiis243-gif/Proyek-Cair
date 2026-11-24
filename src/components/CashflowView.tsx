@@ -134,6 +134,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
     goBack,
     cashTargetTab,
     setCashTargetTab,
+    setProcurementTargetTab,
   } = useApp();
 
   // Proteksi Privasi Multi-POV: Pengamat (Klien) tidak boleh mengakses buku besar kas internal
@@ -2268,6 +2269,19 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                                     <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800 font-bold">
                                       ✓ Nota Gudang Terpadu
                                     </span>
+                                  )}
+                                  {c.source_module === 'PO_PENGADAAN' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setProcurementTargetTab('PO_LIST');
+                                        setCurrentView('procurement');
+                                      }}
+                                      className="px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-800 dark:text-purple-200 border border-purple-200 dark:border-purple-800 font-bold transition-colors cursor-pointer"
+                                      title="Pembayaran tertaut Surat Pesanan (PO) — klik untuk membuka modul Pengadaan & PO"
+                                    >
+                                      PO: {c.source_entity_no || 'PO Toko'}
+                                    </button>
                                   )}
                                   {hasProofFiles && (
                                     <button

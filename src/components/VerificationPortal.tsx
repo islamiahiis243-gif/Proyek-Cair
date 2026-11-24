@@ -19,6 +19,7 @@ import { filterDocumentsForPov } from '../lib/projectReportEngine';
 const DOC_TYPE_LABELS: Record<string, string> = {
   MUTASI_STOK: 'Berita Acara Mutasi Barang',
   MUTASI_KAS: 'Berita Acara Mutasi Dana',
+  PO_PENGADAAN: 'Surat Pesanan (PO Toko)',
   GABUNGAN_PROYEK: 'Laporan Proyek Terpadu',
   INVENTARIS_LENGKAP: 'Laporan Inventaris Lengkap',
 };

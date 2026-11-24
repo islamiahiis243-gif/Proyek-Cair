@@ -20,6 +20,9 @@ const StockMutationView = lazy(() =>
 const CashflowView = lazy(() =>
   import('./components/CashflowView').then((m) => ({ default: m.CashflowView }))
 );
+const ProcurementView = lazy(() =>
+  import('./components/ProcurementView').then((m) => ({ default: m.ProcurementView }))
+);
 const ReportsView = lazy(() =>
   import('./components/ReportsView').then((m) => ({ default: m.ReportsView }))
 );
@@ -129,6 +132,17 @@ const MainApp: React.FC = () => {
                   />
                 )}
                 {currentView === 'cashflow' && activeRole === 'Viewer/Pengamat' && (
+                  <StockMutationView
+                    isModalOpen={isStockModalOpen}
+                    setIsModalOpen={setIsStockModalOpen}
+                    preselectedItem={preselectedStockItem}
+                    preselectedType={preselectedStockType}
+                  />
+                )}
+                {currentView === 'procurement' && activeRole !== 'Viewer/Pengamat' && (
+                  <ProcurementView />
+                )}
+                {currentView === 'procurement' && activeRole === 'Viewer/Pengamat' && (
                   <StockMutationView
                     isModalOpen={isStockModalOpen}
                     setIsModalOpen={setIsStockModalOpen}

@@ -94,13 +94,13 @@ const MODULES: ModuleItem[] = [
     id: 'po-purchasing',
     title: 'Pengadaan Material & PO Toko',
     category: 'Pengadaan / Purchasing',
-    status: 'UPCOMING',
-    badge: 'Tahap 2 (Segera Hadir)',
+    status: 'ACTIVE',
+    badge: 'Aktif & Siap Pakai',
     icon: ShoppingBag,
     color: 'purple',
     description:
-      'Penerbitan Surat Pesanan (PO) ke toko rekanan suplier, rekonsiliasi Surat Jalan delivery order, dan penguncian harga satuan grosir.',
-    actionView: null
+      'Penerbitan Surat Pesanan (PO) ke toko rekanan suplier, rekonsiliasi Surat Jalan penerimaan barang parsial/penuh, penguncian harga satuan grosir, dan tautan pembayaran kas anti tagihan ganda.',
+    actionView: 'procurement'
   },
   {
     id: 'labor-payroll',

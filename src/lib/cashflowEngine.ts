@@ -465,6 +465,8 @@ export function resolveStockApprovalTargetTab(
 export interface TerpaduReceiptIndex {
   paidReceiptIds: Set<string>;
   paidRefsByNo: Map<string, Array<{ storeNorm: string; receiptId?: string }>>;
+  paidPoIds: Set<string>;
+  paidPoAmountById: Map<string, number>;
 }
 
 export function normalizeReceiptRef(raw?: string | null): string {
@@ -646,6 +648,8 @@ export function buildTerpaduReceiptIndex(
 ): TerpaduReceiptIndex {
   const paidReceiptIds = new Set<string>();
   const paidRefsByNo = new Map<string, Array<{ storeNorm: string; receiptId?: string }>>();
+  const paidPoIds = new Set<string>();
+  const paidPoAmountById = new Map<string, number>();
 
   const addRefEntry = (
     rawRef: string | undefined,
@@ -682,6 +686,16 @@ export function buildTerpaduReceiptIndex(
 
   for (const c of cashMutations || []) {
     if (isCashRowExcluded(c) || c.jenis !== 'KELUAR') continue;
+    if (c.source_module === 'PO_PENGADAAN' && c.source_entity_id) {
+      const amt = Math.max(0, Number(c.jumlah_rp) || 0);
+      if (amt > 0) {
+        paidPoIds.add(c.source_entity_id);
+        paidPoAmountById.set(
+          c.source_entity_id,
+          (paidPoAmountById.get(c.source_entity_id) || 0) + amt
+        );
+      }
+    }
     const linkedReceiptId =
       c.receipt_id || (c.source_module === 'MUTASI_BARANG' ? c.source_entity_id : undefined);
     if (linkedReceiptId) {
@@ -697,7 +711,7 @@ export function buildTerpaduReceiptIndex(
     }
   }
 
-  return { paidReceiptIds, paidRefsByNo };
+  return { paidReceiptIds, paidRefsByNo, paidPoIds, paidPoAmountById };
 }
 
 function isReceiptPaidInIndex(
@@ -742,6 +756,10 @@ export function isStockMutationPaidViaCash(
   }
   if (isClientSuppliedStockMutation(mut, clientName)) return false;
 
+  if (mut.po_id && index.paidPoIds.has(mut.po_id)) {
+    return true;
+  }
+
   return isReceiptPaidInIndex(
     mut.receipt_id,
     mut.nomor_nota || mut.nomor_surat_jalan,
@@ -768,6 +786,10 @@ export function findLinkedCashMutationsForStockMutation(
 
   return (cashMutations || []).filter((c) => {
     if (isCashRowExcluded(c) || c.jenis !== 'KELUAR') return false;
+
+    if (mut.po_id && c.source_module === 'PO_PENGADAAN' && c.source_entity_id === mut.po_id) {
+      return true;
+    }
 
     const cashReceiptId =
       c.receipt_id || (c.source_module === 'MUTASI_BARANG' ? c.source_entity_id : undefined);
@@ -891,9 +913,30 @@ export function findUnreconciledStockReceipts(
   });
 
   const activeStockLinkedReceiptIds = new Set<string>();
+  const receivedValueByPoId = new Map<string, number>();
+  const poIdsByReceiptId = new Map<string, Set<string>>();
+
   for (const m of activeStockIn) {
     if (m.receipt_id) activeStockLinkedReceiptIds.add(m.receipt_id);
+    if (m.po_id) {
+      const val = (Number(m.harga_satuan_beli) || 0) * (Number(m.jumlah) || 0);
+      receivedValueByPoId.set(m.po_id, (receivedValueByPoId.get(m.po_id) || 0) + val);
+      if (m.receipt_id) {
+        const set = poIdsByReceiptId.get(m.receipt_id) || new Set<string>();
+        set.add(m.po_id);
+        poIdsByReceiptId.set(m.receipt_id, set);
+      }
+    }
   }
+
+  // PO dianggap sudah tertutup pembayarannya lewat modul PO_PENGADAAN bila total bayar kas PO >= nilai barang diterima
+  const isPoReceiptCoveredByPoPayment = (poId: string | undefined): boolean => {
+    if (!poId) return false;
+    const paidRp = paymentIndex.paidPoAmountById.get(poId) || 0;
+    if (paidRp <= 0) return false;
+    const receivedRp = receivedValueByPoId.get(poId) || 0;
+    return receivedRp <= 0 || paidRp >= receivedRp;
+  };
 
   // Kelompokkan berdasarkan receipt_id resmi terlebih dahulu, lalu nomor nota + toko
   const receiptById = new Map<string, ProjectReceipt>();
@@ -931,6 +974,10 @@ export function findUnreconciledStockReceipts(
     if (isReceiptPaidInIndex(rc.id, rc.reference_no, rc.nama_toko, paymentIndex)) {
       continue;
     }
+    const linkedPos = poIdsByReceiptId.get(rc.id);
+    if (linkedPos && linkedPos.size > 0 && Array.from(linkedPos).every((pid) => isPoReceiptCoveredByPoPayment(pid))) {
+      continue;
+    }
 
     const totalPhys = Number(rc.total_nota_fisik || 0);
     groups.set(rc.id, {
@@ -964,6 +1011,9 @@ export function findUnreconciledStockReceipts(
     const sNameNorm = normalizeReceiptStoreName(m.nama_toko || m.source_name) || sNameRaw.toLowerCase();
 
     if (isReceiptPaidInIndex(m.receipt_id, rNoRaw, m.nama_toko || m.source_name, paymentIndex)) {
+      continue;
+    }
+    if (isPoReceiptCoveredByPoPayment(m.po_id)) {
       continue;
     }
 

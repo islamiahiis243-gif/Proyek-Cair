@@ -411,3 +411,39 @@ test('buildIntegratedProjectReport counts contractor purchases from stores shari
   // 5.250.000 (sm-1) + 800.000 (sm-indo-store) = 6.050.000
   assert.equal(report.reconciliation!.materialNotaGudangRp, 6_050_000);
 });
+
+test('PO_PENGADAAN is marked AKTIF in IntegratedProjectReport and blocked from KLIEN in filterDocumentsForPov', () => {
+  const poDoc: DokumenLaporan = {
+    ...sampleDocs[0],
+    id: 'PO-20261124-001',
+    jenis: 'PO_PENGADAAN',
+    audience_pov: 'KONTRAKTOR',
+  };
+  assert.equal(
+    filterDocumentsForPov([...sampleDocs, poDoc], 'KLIEN').some((d) => d.jenis === 'PO_PENGADAAN'),
+    false
+  );
+  assert.equal(
+    filterDocumentsForPov([...sampleDocs, poDoc], 'KONTRAKTOR').some((d) => d.jenis === 'PO_PENGADAAN'),
+    true
+  );
+
+  const report = buildIntegratedProjectReport({
+    activeRole: 'CEO/Direktur',
+    canViewFinancials: true,
+    items: sampleItems,
+    physicalMaterials: samplePhysical,
+    stockMutations: sampleStockMut,
+    cashMutations: sampleCash,
+    projectReceipts: sampleReceipts,
+    documents: [...sampleDocs, poDoc],
+    branding: {
+      projectName: 'Proyek UDU Office',
+      contractorName: 'CV. MENARA MEGAH',
+      clientName: 'PT INDO MURO KENCANA',
+    },
+  });
+  const poModule = report.reconciliation!.moduleContributions.find((m) => m.moduleCode === 'PO_PENGADAAN');
+  assert.ok(poModule);
+  assert.equal(poModule!.status, 'AKTIF');
+});

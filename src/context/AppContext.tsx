@@ -21,6 +21,10 @@ import {
   StatusBuktiKas,
   StatusKasbon,
   ProjectModuleCode,
+  PoPaymentTerms,
+  PurchaseOrder,
+  PurchaseOrderItem,
+  SupplierStore,
 } from '../types';
 import {
   getStoredConfig,
@@ -49,10 +53,68 @@ import {
 import {
   createProjectReceipt,
   downgradeReceiptScopeToBelanjaBarang,
+  saveSupplierStore,
   upgradeReceiptScopeToTerpadu,
 } from '../lib/receiptStorage';
+import {
+  computeDueDateFromTerms,
+  computePoPaymentProgress,
+  computePoReceiveProgress,
+  computeProcurementSummaryMetrics,
+  countPendingPoApprovals,
+  generateNextPoNumber,
+  ProcurementSummaryMetrics,
+} from '../lib/procurementEngine';
 
 export type CashflowTabKey = 'SUMMARY' | 'RECONCILIATION' | 'JOURNAL' | 'DOCUMENTS';
+export type ProcurementTabKey = 'NEEDS_STORES' | 'PO_LIST' | 'DELIVERIES' | 'DOCUMENTS';
+
+export interface CreatePurchaseOrderInput {
+  po_no?: string;
+  store_id?: string | null;
+  nama_toko: string;
+  toko_kontak?: string;
+  tanggal_po: string;
+  estimasi_tiba?: string | null;
+  payment_terms: PoPaymentTerms;
+  jatuh_tempo_bayar?: string | null;
+  dp_amount_rp?: number;
+  catatan_toko?: string;
+  items: Array<{
+    boq_item_id?: string | null;
+    nama_barang: string;
+    satuan: string;
+    qty_pesan: number;
+    harga_satuan_po: number;
+    harga_pagu_boq: number;
+    catatan?: string;
+  }>;
+}
+
+export interface ReceivePurchaseOrderInput {
+  poId: string;
+  tanggal: string;
+  nomor_surat_jalan?: string;
+  pic_penerima: string;
+  catatan?: string;
+  lampiran_nota_urls?: string[];
+  items: Array<{
+    po_item_id: string;
+    qty_terima: number;
+  }>;
+}
+
+export interface PayPurchaseOrderInput {
+  poId: string;
+  jumlah_rp: number;
+  tanggal: string;
+  payment_method: MetodePembayaran;
+  pic: string;
+  nomor_kuitansi?: string;
+  lampiran_nota_urls?: string[];
+  catatan?: string;
+  jenis_bayar?: 'DP' | 'PELUNASAN' | 'SEBAGIAN';
+}
 
 function stableStringify(value: any): string {
   if (Array.isArray(value)) {
@@ -116,9 +178,19 @@ interface AppContextType {
   boqSections: BoqSection[];
   stockMutations: MutasiBarang[];
   cashMutations: MutasiKas[];
+  purchaseOrders: PurchaseOrder[];
+  supplierStores: SupplierStore[];
   documents: DokumenLaporan[];
   projectReceipts: ProjectReceipt[];
   refreshProjectReceipts: () => Promise<void>;
+  saveProjectStore: (store: Partial<SupplierStore> & { nama_toko: string }) => Promise<{ success: boolean; message: string; store?: SupplierStore | null }>;
+  createPurchaseOrder: (input: CreatePurchaseOrderInput) => Promise<{ success: boolean; message: string; po?: PurchaseOrder }>;
+  advancePurchaseOrderWorkflow: (poId: string, nextStatus: StatusDokumenWorkflow, customActorRole?: ImpersonateRole) => Promise<{ success: boolean; message: string }>;
+  markPurchaseOrderSent: (poId: string) => Promise<{ success: boolean; message: string }>;
+  receivePurchaseOrderItems: (input: ReceivePurchaseOrderInput) => Promise<{ success: boolean; message: string }>;
+  payPurchaseOrder: (input: PayPurchaseOrderInput) => Promise<{ success: boolean; message: string }>;
+  batalPurchaseOrder: (poId: string, reason: string) => Promise<{ success: boolean; message: string }>;
+  gantiPurchaseOrder: (poId: string, newInput: CreatePurchaseOrderInput, reason: string) => Promise<{ success: boolean; message: string }>;
   user: UserProfile;
   supabaseConfig: SupabaseConfig;
   currentView: string;
@@ -152,7 +224,7 @@ interface AppContextType {
   ) => Promise<{ success: boolean; message: string }>;
   selesaikanKasbonMutation: (input: KasbonSettlementInput) => Promise<{ success: boolean; message: string }>;
   issueOfficialDocument: (params: {
-    jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP' | 'GABUNGAN_PROYEK';
+    jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'PO_PENGADAAN' | 'INVENTARIS_LENGKAP' | 'GABUNGAN_PROYEK';
     judul: string;
     periode: string;
     ringkasan: string;
@@ -169,7 +241,7 @@ interface AppContextType {
   gantiOfficialDocument: (
     dbId: string,
     params: {
-      jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP' | 'GABUNGAN_PROYEK';
+      jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'PO_PENGADAAN' | 'INVENTARIS_LENGKAP' | 'GABUNGAN_PROYEK';
       judul: string;
       periode: string;
       ringkasan: string;
@@ -188,16 +260,20 @@ interface AppContextType {
   lowStockCount: number;
   availableStockCount: number;
   cashSummaryMetrics: CashSummaryMetrics;
+  procurementSummary: ProcurementSummaryMetrics;
   cashCriticalAlertCount: number;
   cashActionBadgeCount: number;
   pendingStockApprovalCount: number;
   pendingCashApprovalCount: number;
+  pendingPoApprovalCount: number;
   pendingDocumentApprovalCount: number;
   pendingApprovalCount: number;
   cashTargetTab: CashflowTabKey | null;
   setCashTargetTab: (tab: CashflowTabKey | null) => void;
   stockTargetTab: string | null;
   setStockTargetTab: (tab: string | null) => void;
+  procurementTargetTab: ProcurementTabKey | null;
+  setProcurementTargetTab: (tab: ProcurementTabKey | null) => void;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
   dataReady: boolean;
@@ -272,6 +348,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [verifyingDocId, setVerifyingDocId] = useState<string | null>(null);
   const [cashTargetTab, setCashTargetTab] = useState<CashflowTabKey | null>(null);
   const [stockTargetTab, setStockTargetTab] = useState<string | null>(null);
+  const [procurementTargetTab, setProcurementTargetTab] = useState<ProcurementTabKey | null>(null);
   const [dataReady, setDataReady] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
   const [cashAccess, setCashAccess] = useState(false);
@@ -399,6 +476,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [boqSections, setBoqSections] = useState<BoqSection[]>([]);
   const [stockMutations, setStockMutations] = useState<MutasiBarang[]>([]);
   const [cashMutations, setCashMutations] = useState<MutasiKas[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [supplierStores, setSupplierStores] = useState<SupplierStore[]>([]);
   const [documents, setDocuments] = useState<DokumenLaporan[]>([]);
   const [projectReceipts, setProjectReceipts] = useState<ProjectReceipt[]>([]);
 
@@ -491,6 +570,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setBoqSections([]);
       setStockMutations([]);
       setCashMutations([]);
+      setPurchaseOrders([]);
+      setSupplierStores([]);
       setDocuments([]);
       setProjectReceipts([]);
       setDataReady(true);
@@ -499,18 +580,81 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const client = getSupabaseClient();
-    const [boqRes, sectionsRes, stockRes, cashRes, docsRes, reversalsRes, clientRelRes, receiptsRes] = await Promise.all([
+    const [boqRes, sectionsRes, stockRes, cashRes, docsRes, reversalsRes, clientRelRes, receiptsRes, poRes, poItemsRes, storesRes] = await Promise.all([
       client.from('boq_items').select('*').eq('project_id', selectedProject.id).eq('is_active', true).order('source_row'),
       client.from('boq_sections').select('*').eq('project_id', selectedProject.id).eq('is_active', true).order('sort_order'),
       client.from('inventory_transactions').select('*').eq('project_id', selectedProject.id).order('occurred_at', { ascending: true }).order('created_at', { ascending: true }),
       client.from('cash_transactions').select('*').eq('project_id', selectedProject.id).order('occurred_at', { ascending: true }).order('created_at', { ascending: true }),
-      client.from('documents').select('*').eq('project_id', selectedProject.id).in('document_type', ['MUTASI_KAS', 'MUTASI_STOK', 'GABUNGAN_PROYEK']).order('created_at', { ascending: false }),
+      client.from('documents').select('*').eq('project_id', selectedProject.id).in('document_type', ['MUTASI_KAS', 'MUTASI_STOK', 'PO_PENGADAAN', 'GABUNGAN_PROYEK']).order('created_at', { ascending: false }),
       client.from('inventory_transaction_reversals').select('original_transaction_id'),
       client.from('project_client_relationships').select('client_name, relationship_type').eq('project_id', selectedProject.id).order('created_at', { ascending: true }),
-      client.from('project_receipts').select('*').eq('project_id', selectedProject.id).order('created_at', { ascending: false })
+      client.from('project_receipts').select('*').eq('project_id', selectedProject.id).order('created_at', { ascending: false }),
+      client.from('purchase_orders').select('*').eq('project_id', selectedProject.id).order('tanggal_po', { ascending: false }).order('created_at', { ascending: false }),
+      client.from('purchase_order_items').select('*').eq('project_id', selectedProject.id).order('sort_order', { ascending: true }),
+      client.from('supplier_stores').select('*').or(`project_id.eq.${selectedProject.id},project_id.is.null`).order('nama_toko', { ascending: true })
     ]);
 
     setProjectReceipts(receiptsRes.data || []);
+    setSupplierStores((storesRes.data as SupplierStore[]) || []);
+
+    const poItemsByPoId = new Map<string, PurchaseOrderItem[]>();
+    for (const pi of (poItemsRes.data || []) as any[]) {
+      const mappedItem: PurchaseOrderItem = {
+        id: pi.id,
+        po_id: pi.po_id,
+        project_id: pi.project_id,
+        boq_item_id: pi.boq_item_id || null,
+        nama_barang: pi.nama_barang,
+        satuan: pi.satuan || 'Unit',
+        qty_pesan: Number(pi.qty_pesan) || 0,
+        harga_satuan_po: Number(pi.harga_satuan_po) || 0,
+        harga_pagu_boq: Number(pi.harga_pagu_boq) || 0,
+        subtotal_rp: Number(pi.subtotal_rp) || 0,
+        catatan: pi.catatan || undefined,
+        sort_order: Number(pi.sort_order) || 0,
+        created_at: pi.created_at || undefined,
+      };
+      const arr = poItemsByPoId.get(pi.po_id) || [];
+      arr.push(mappedItem);
+      poItemsByPoId.set(pi.po_id, arr);
+    }
+
+    const mappedPurchaseOrders: PurchaseOrder[] = ((poRes.data || []) as any[]).map((p) => {
+      const isBatalFlag = Boolean(p.is_batal || p.status_dokumen === 'BATAL');
+      const isGantiFlag = Boolean(p.is_ganti || p.status_dokumen === 'DIGANTI');
+      return {
+        id: p.id,
+        workspace_id: p.workspace_id || undefined,
+        project_id: p.project_id,
+        po_no: p.po_no,
+        store_id: p.store_id || null,
+        nama_toko: p.nama_toko,
+        toko_kontak: p.toko_kontak || undefined,
+        tanggal_po: p.tanggal_po || p.created_at,
+        estimasi_tiba: p.estimasi_tiba || null,
+        payment_terms: (p.payment_terms as PoPaymentTerms) || 'TUNAI_SAAT_TIBA',
+        jatuh_tempo_bayar: p.jatuh_tempo_bayar || null,
+        dp_amount_rp: Number(p.dp_amount_rp) || 0,
+        total_amount_rp: Number(p.total_amount_rp) || 0,
+        catatan_toko: p.catatan_toko || undefined,
+        sent_to_store_at: p.sent_to_store_at || null,
+        created_by: p.created_by || undefined,
+        created_by_name: p.created_by_name || undefined,
+        status_dokumen: (p.status_dokumen as StatusDokumenWorkflow) || (isBatalFlag ? 'BATAL' : isGantiFlag ? 'DIGANTI' : 'DITERBITKAN'),
+        diperiksa_oleh: p.diperiksa_oleh || undefined,
+        disetujui_oleh: p.disetujui_oleh || undefined,
+        mengetahui_oleh: p.mengetahui_oleh || undefined,
+        tte_qr_code: p.tte_qr_code || undefined,
+        is_batal: isBatalFlag,
+        is_ganti: isGantiFlag,
+        referensi_ganti_id: p.referensi_ganti_id || undefined,
+        alasan_batal_ganti: p.alasan_batal_ganti || undefined,
+        created_at: p.created_at || undefined,
+        updated_at: p.updated_at || undefined,
+        items: poItemsByPoId.get(p.id) || [],
+      };
+    });
+    setPurchaseOrders(mappedPurchaseOrders);
 
     const mainClientRow =
       (clientRelRes.data || []).find((r: any) => r.relationship_type === 'MAIN_CLIENT') ||
@@ -632,7 +776,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toko_kontak: t.toko_kontak || undefined,
         total_nota_fisik: t.total_nota_fisik != null ? Number(t.total_nota_fisik) : undefined,
         lampiran_nota_urls: Array.isArray(t.lampiran_nota_urls) ? t.lampiran_nota_urls : [],
-        receipt_id: t.receipt_id || undefined
+        receipt_id: t.receipt_id || undefined,
+        po_id: t.po_id || undefined,
+        po_item_id: t.po_item_id || undefined
       };
     });
 
@@ -876,7 +1022,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const isRevoked = Boolean(d.is_batal || d.is_ganti || d.status === 'REVOKED' || d.status_dokumen === 'BATAL' || d.status_dokumen === 'DIGANTI');
       const docType = (d.document_type || 'MUTASI_STOK') as DokumenLaporan['jenis'];
       const defaultPov: DocumentAudiencePov =
-        docType === 'MUTASI_KAS' ? 'KONTRAKTOR' : docType === 'MUTASI_STOK' ? 'UMUM' : 'KONTRAKTOR';
+        docType === 'MUTASI_KAS' || docType === 'PO_PENGADAAN'
+          ? 'KONTRAKTOR'
+          : docType === 'MUTASI_STOK'
+          ? 'UMUM'
+          : 'KONTRAKTOR';
 
       return {
         id: d.document_no || d.id,
@@ -990,7 +1140,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         created_by_name: `${user.name} (${activeRole})`,
         harga_satuan_beli: data.harga_satuan_beli != null ? data.harga_satuan_beli : null,
         status_harga: data.status_harga || null,
-        nama_item_aktual: data.nama_item_aktual || null
+        nama_item_aktual: data.nama_item_aktual || null,
+        po_id: data.po_id || null,
+        po_item_id: data.po_item_id || null
       });
 
       if (error) throw error;
@@ -1569,10 +1721,524 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // ============================================================================
+  // MODUL PENGADAAN MATERIAL & SURAT PESANAN PO TOKO (3-WAY MATCHING)
+  // ============================================================================
+  const saveProjectStore = async (store: Partial<SupplierStore> & { nama_toko: string }) => {
+    try {
+      if (!rolePermissions.canIssue) {
+        throw new Error('Hanya Clerk (Pelaksana) yang dapat menambah atau memperbarui direktori toko rekanan.');
+      }
+      const targetProj = activeProject || activeContext?.projects[0];
+      const prId = targetProj?.id || activeProjectId;
+      const saved = await saveSupplierStore({
+        ...store,
+        project_id: store.project_id || prId,
+      });
+      if (!saved) {
+        throw new Error('Gagal menyimpan data toko rekanan.');
+      }
+      await refreshData();
+      return { success: true, message: `Toko rekanan "${saved.nama_toko}" berhasil disimpan.`, store: saved };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Gagal menyimpan data toko rekanan.' };
+    }
+  };
+
+  const createPurchaseOrder = async (input: CreatePurchaseOrderInput) => {
+    try {
+      if (!rolePermissions.canIssue) {
+        throw new Error('Hanya Clerk (Pelaksana Administrasi) yang berwenang menerbitkan Surat Pesanan (PO) baru.');
+      }
+      if (!input.nama_toko?.trim()) {
+        throw new Error('Nama toko rekanan wajib diisi.');
+      }
+      const validItems = (input.items || []).filter(
+        (it) => it.nama_barang?.trim() && Number(it.qty_pesan) > 0
+      );
+      if (validItems.length === 0) {
+        throw new Error('Tambahkan minimal 1 material dengan kuantitas pesanan lebih dari 0.');
+      }
+
+      const client = getSupabaseClient();
+      const targetProj = activeProject || activeContext?.projects[0];
+      const wsId =
+        targetProj?.workspace_id ||
+        activeWorkspaceId ||
+        (activeContext?.workspaces.find((w) => w.type === 'COMPANY')?.id as string);
+      const prId = targetProj?.id || activeProjectId;
+
+      let resolvedStoreId = input.store_id || null;
+      if (!resolvedStoreId) {
+        const savedStore = await saveSupplierStore({
+          nama_toko: input.nama_toko.trim(),
+          telepon: input.toko_kontak?.trim(),
+          syarat_bayar_default: input.payment_terms,
+          project_id: prId,
+        });
+        if (savedStore?.id) resolvedStoreId = savedStore.id;
+      }
+
+      const poNo = input.po_no?.trim() || generateNextPoNumber(purchaseOrders, input.tanggal_po);
+      const totalAmountRp = Math.round(
+        validItems.reduce(
+          (sum, it) => sum + Math.max(0, Number(it.qty_pesan) || 0) * Math.max(0, Number(it.harga_satuan_po) || 0),
+          0
+        )
+      );
+      const dpAmountRp =
+        input.payment_terms === 'DP_PELUNASAN'
+          ? Math.min(totalAmountRp, Math.max(0, Math.round(Number(input.dp_amount_rp) || 0)))
+          : 0;
+      const dueDate =
+        input.jatuh_tempo_bayar !== undefined
+          ? input.jatuh_tempo_bayar
+          : computeDueDateFromTerms(input.tanggal_po, input.payment_terms);
+
+      const { data: insertedPo, error: poErr } = await client
+        .from('purchase_orders')
+        .insert({
+          workspace_id: wsId || null,
+          project_id: prId,
+          po_no: poNo,
+          store_id: resolvedStoreId,
+          nama_toko: input.nama_toko.trim(),
+          toko_kontak: input.toko_kontak?.trim() || null,
+          tanggal_po: input.tanggal_po || new Date().toISOString(),
+          estimasi_tiba: input.estimasi_tiba || null,
+          payment_terms: input.payment_terms || 'TUNAI_SAAT_TIBA',
+          jatuh_tempo_bayar: dueDate || null,
+          dp_amount_rp: dpAmountRp,
+          total_amount_rp: totalAmountRp,
+          catatan_toko: input.catatan_toko?.trim() || null,
+          created_by: user.id || null,
+          created_by_name: `${user.name} (${activeRole})`,
+          status_dokumen: 'DITERBITKAN',
+        })
+        .select()
+        .single();
+
+      if (poErr || !insertedPo) throw poErr || new Error('Gagal membuat header Surat Pesanan.');
+
+      const itemRows = validItems.map((it, idx) => ({
+        po_id: insertedPo.id,
+        project_id: prId,
+        boq_item_id: it.boq_item_id || null,
+        nama_barang: it.nama_barang.trim(),
+        satuan: it.satuan?.trim() || 'Unit',
+        qty_pesan: Number(it.qty_pesan),
+        harga_satuan_po: Math.max(0, Number(it.harga_satuan_po) || 0),
+        harga_pagu_boq: Math.max(0, Number(it.harga_pagu_boq) || 0),
+        subtotal_rp: Math.round(Number(it.qty_pesan) * Math.max(0, Number(it.harga_satuan_po) || 0)),
+        catatan: it.catatan?.trim() || null,
+        sort_order: idx,
+      }));
+
+      const { data: insertedItems, error: itemsErr } = await client
+        .from('purchase_order_items')
+        .insert(itemRows)
+        .select();
+
+      if (itemsErr) throw itemsErr;
+
+      await refreshData();
+      const createdPo: PurchaseOrder = {
+        ...insertedPo,
+        dp_amount_rp: Number(insertedPo.dp_amount_rp) || 0,
+        total_amount_rp: Number(insertedPo.total_amount_rp) || 0,
+        items: (insertedItems || []).map((pi: any) => ({
+          ...pi,
+          qty_pesan: Number(pi.qty_pesan) || 0,
+          harga_satuan_po: Number(pi.harga_satuan_po) || 0,
+          harga_pagu_boq: Number(pi.harga_pagu_boq) || 0,
+          subtotal_rp: Number(pi.subtotal_rp) || 0,
+        })),
+      };
+      return {
+        success: true,
+        message: `Surat Pesanan ${poNo} berhasil diterbitkan dan masuk antrean pengesahan berantai.`,
+        po: createdPo,
+      };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Gagal menerbitkan Surat Pesanan (PO).' };
+    }
+  };
+
+  const advancePurchaseOrderWorkflow = async (
+    poId: string,
+    nextStatus: StatusDokumenWorkflow,
+    customActorRole?: ImpersonateRole
+  ) => {
+    try {
+      const client = getSupabaseClient();
+      const targetPo = purchaseOrders.find((p) => p.id === poId);
+      if (!targetPo) throw new Error('Surat Pesanan (PO) tidak ditemukan.');
+      const serialErr = validateSerialWorkflowTransition(targetPo.status_dokumen, nextStatus);
+      if (serialErr) throw new Error(serialErr);
+
+      const effectiveRole = customActorRole || activeRole;
+      const effectivePerms = getRolePermissions(effectiveRole);
+      const actorTag = `${user.name} (${effectiveRole}) · ${new Date().toLocaleString('id-ID')}`;
+      const payload: Record<string, any> = {
+        status_dokumen: nextStatus,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (nextStatus === 'DIPERIKSA') {
+        if (!effectivePerms.canCheck) {
+          throw new Error('Jabatan Anda tidak memiliki hak untuk Memeriksa PO ini.');
+        }
+        payload.diperiksa_oleh = actorTag;
+      } else if (nextStatus === 'DISETUJUI') {
+        if (!effectivePerms.canApprove) {
+          throw new Error('Jabatan Anda tidak memiliki hak untuk Menyetujui PO ini.');
+        }
+        payload.disetujui_oleh = actorTag;
+      } else if (nextStatus === 'MENGETAHUI') {
+        if (!effectivePerms.canAcknowledge) {
+          throw new Error('Jabatan Anda tidak memiliki hak untuk Mengesahkan (TTE/QR) PO ini.');
+        }
+        payload.mengetahui_oleh = actorTag;
+        payload.tte_qr_code = `TTE-PO-${activeCompany.npwp || 'NA'}-${targetPo.po_no}-${Date.now()}`;
+      }
+
+      const { error } = await client.from('purchase_orders').update(payload).eq('id', poId);
+      if (error) throw error;
+      await refreshData();
+      return {
+        success: true,
+        message:
+          nextStatus === 'MENGETAHUI'
+            ? `Surat Pesanan ${targetPo.po_no} resmi DISAHKAN (TTE/QR) dan siap dikirim ke toko rekanan!`
+            : `Status Surat Pesanan ${targetPo.po_no} berhasil dinaikkan menjadi ${nextStatus}.`,
+      };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Gagal memperbarui status pengesahan PO.' };
+    }
+  };
+
+  const markPurchaseOrderSent = async (poId: string) => {
+    try {
+      if (!rolePermissions.canIssue) {
+        throw new Error('Hanya Clerk (Pelaksana) yang dapat menandai PO telah dikirim ke toko.');
+      }
+      const targetPo = purchaseOrders.find((p) => p.id === poId);
+      if (!targetPo) throw new Error('Surat Pesanan tidak ditemukan.');
+      if (targetPo.status_dokumen !== 'MENGETAHUI') {
+        throw new Error('PO wajib disahkan hingga tahap Mengetahui (TTE/QR) sebelum dikirim ke toko.');
+      }
+      const client = getSupabaseClient();
+      const nowIso = new Date().toISOString();
+      const { error } = await client
+        .from('purchase_orders')
+        .update({ sent_to_store_at: nowIso, updated_at: nowIso })
+        .eq('id', poId);
+      if (error) throw error;
+      await refreshData();
+      return {
+        success: true,
+        message: `Surat Pesanan ${targetPo.po_no} ditandai terkirim ke ${targetPo.nama_toko}.`,
+      };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Gagal memperbarui status pengiriman PO.' };
+    }
+  };
+
+  const receivePurchaseOrderItems = async (input: ReceivePurchaseOrderInput) => {
+    try {
+      if (!rolePermissions.canIssue) {
+        throw new Error('Hanya Clerk (Pelaksana) yang dapat mencatat penerimaan barang PO ke gudang.');
+      }
+      const targetPo = purchaseOrders.find((p) => p.id === input.poId);
+      if (!targetPo) throw new Error('Surat Pesanan (PO) tidak ditemukan.');
+      if (targetPo.is_batal || targetPo.is_ganti || targetPo.status_dokumen === 'BATAL' || targetPo.status_dokumen === 'DIGANTI') {
+        throw new Error('PO yang dibatalkan atau diganti tidak dapat menerima barang.');
+      }
+      if (targetPo.status_dokumen !== 'MENGETAHUI') {
+        throw new Error('PO harus disahkan (TTE/QR) terlebih dahulu sebelum mencatat penerimaan barang.');
+      }
+
+      const receiveProg = computePoReceiveProgress(targetPo, stockMutations);
+      const progByItemId = new Map(receiveProg.itemProgress.map((p) => [p.item.id, p]));
+
+      const rowsToReceive = (input.items || []).filter((x) => Number(x.qty_terima) > 0);
+      if (rowsToReceive.length === 0) {
+        throw new Error('Masukkan kuantitas barang tiba pada minimal 1 material.');
+      }
+
+      for (const r of rowsToReceive) {
+        const p = progByItemId.get(r.po_item_id);
+        if (!p) throw new Error('Item PO tidak dikenali.');
+        if (Number(r.qty_terima) > p.qtySisaTerima + 0.0001) {
+          throw new Error(
+            `Kuantitas diterima untuk "${p.item.nama_barang}" (${r.qty_terima}) melebihi sisa pesanan (${p.qtySisaTerima} ${p.item.satuan}).`
+          );
+        }
+      }
+
+      const client = getSupabaseClient();
+      const targetProj = activeProject || activeContext?.projects[0];
+      const wsId =
+        targetProj?.workspace_id ||
+        activeWorkspaceId ||
+        (activeContext?.workspaces.find((w) => w.type === 'COMPANY')?.id as string);
+      const prId = targetProj?.id || activeProjectId;
+
+      const totalBatchValueRp = Math.round(
+        rowsToReceive.reduce((sum, r) => {
+          const p = progByItemId.get(r.po_item_id)!;
+          return sum + Number(r.qty_terima) * (Number(p.item.harga_satuan_po) || 0);
+        }, 0)
+      );
+
+      let receiptId: string | null = null;
+      const cleanSj = input.nomor_surat_jalan?.trim() || '';
+      const urls = (input.lampiran_nota_urls || []).filter(Boolean);
+      if (cleanSj || urls.length > 0) {
+        const createdRc = await createProjectReceipt({
+          project_id: prId,
+          reference_no: cleanSj || `SJ-${targetPo.po_no}`,
+          nama_toko: targetPo.nama_toko,
+          toko_kontak: targetPo.toko_kontak,
+          tanggal_nota: (input.tanggal || new Date().toISOString()).slice(0, 10),
+          total_nota_fisik: totalBatchValueRp,
+          lampiran_nota_urls: urls,
+          notes: `Surat Jalan Penerimaan ${targetPo.po_no}${input.catatan ? ` · ${input.catatan.trim()}` : ''}`,
+          receipt_scope: 'BELANJA_BARANG',
+          created_by: user.id || undefined,
+          created_by_name: `${user.name} (${activeRole})`,
+        });
+        if (createdRc?.id) receiptId = createdRc.id;
+      }
+
+      const insertPayload = rowsToReceive.map((r) => {
+        const p = progByItemId.get(r.po_item_id)!;
+        const unitPrice = Math.max(0, Number(p.item.harga_satuan_po) || 0);
+        return {
+          idempotency_key: crypto.randomUUID(),
+          workspace_id: wsId,
+          project_id: prId,
+          item_id: p.item.boq_item_id || null,
+          nama_barang: p.item.nama_barang,
+          transaction_type: 'MASUK',
+          quantity: Number(r.qty_terima),
+          uom: p.item.satuan || 'Unit',
+          occurred_at: input.tanggal || new Date().toISOString(),
+          reference_no: cleanSj || targetPo.po_no,
+          counterparty: input.pic_penerima?.trim() || user.name || 'Gudang',
+          notes: input.catatan?.trim() || `Penerimaan barang dari ${targetPo.po_no} (${targetPo.nama_toko})`,
+          purpose: `Penerimaan ${targetPo.po_no} (${targetPo.nama_toko})`,
+          beban_biaya: 'PROYEK_BOQ',
+          is_custom_item: !p.item.boq_item_id,
+          source_name: targetPo.nama_toko,
+          recipient_name: input.pic_penerima?.trim() || user.name || 'Gudang',
+          owner_type: 'KONTRAKTOR',
+          status_dokumen: 'DITERBITKAN',
+          created_by_name: `${user.name} (${activeRole})`,
+          harga_satuan_beli: unitPrice,
+          status_harga: unitPrice > 0 ? 'TERCATAT' : 'BELUM_DIKETAHUI',
+          nama_toko: targetPo.nama_toko,
+          toko_kontak: targetPo.toko_kontak || null,
+          nomor_nota: cleanSj || targetPo.po_no,
+          tanggal_nota: (input.tanggal || new Date().toISOString()).slice(0, 10),
+          total_nota_fisik: totalBatchValueRp,
+          lampiran_nota_urls: urls,
+          receipt_id: receiptId,
+          po_id: targetPo.id,
+          po_item_id: p.item.id,
+        };
+      });
+
+      const { error: invErr } = await client.from('inventory_transactions').insert(insertPayload);
+      if (invErr) throw invErr;
+
+      if (!targetPo.sent_to_store_at) {
+        await client
+          .from('purchase_orders')
+          .update({ sent_to_store_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+          .eq('id', targetPo.id);
+      }
+
+      await refreshData();
+      return {
+        success: true,
+        message: `${rowsToReceive.length} jenis material dari ${targetPo.po_no} berhasil masuk gudang dengan harga PO terkunci.`,
+      };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Gagal mencatat penerimaan barang PO.' };
+    }
+  };
+
+  const payPurchaseOrder = async (input: PayPurchaseOrderInput) => {
+    try {
+      if (!rolePermissions.canIssue) {
+        throw new Error('Hanya Clerk (Pelaksana) yang dapat mencatat pembayaran PO dari kas proyek.');
+      }
+      const targetPo = purchaseOrders.find((p) => p.id === input.poId);
+      if (!targetPo) throw new Error('Surat Pesanan (PO) tidak ditemukan.');
+      if (targetPo.is_batal || targetPo.is_ganti || targetPo.status_dokumen === 'BATAL' || targetPo.status_dokumen === 'DIGANTI') {
+        throw new Error('PO yang dibatalkan atau diganti tidak dapat dibayar.');
+      }
+      if (targetPo.status_dokumen !== 'MENGETAHUI') {
+        throw new Error('PO wajib disahkan (TTE/QR) sebelum melakukan pembayaran.');
+      }
+
+      const amount = Math.round(Number(input.jumlah_rp) || 0);
+      if (amount <= 0) throw new Error('Nominal pembayaran harus lebih dari Rp 0.');
+
+      const payProg = computePoPaymentProgress(targetPo, cashMutations);
+      if (amount > payProg.sisaBayarRp + 1) {
+        throw new Error(
+          `Nominal bayar melebihi sisa tagihan PO (sisa: Rp ${payProg.sisaBayarRp.toLocaleString('id-ID')}).`
+        );
+      }
+      if (amount > currentCashBalance) {
+        throw new Error(
+          `Saldo kas proyek saat ini (Rp ${currentCashBalance.toLocaleString('id-ID')}) tidak mencukupi. Catat dana masuk terlebih dahulu.`
+        );
+      }
+
+      const jenisLabel =
+        input.jenis_bayar === 'DP'
+          ? 'Pembayaran Uang Muka (DP)'
+          : amount >= payProg.sisaBayarRp
+            ? 'Pelunasan'
+            : 'Pembayaran Sebagian';
+      const urls = (input.lampiran_nota_urls || []).filter(Boolean);
+
+      const res = await addCashMutation({
+        jenis: 'KELUAR',
+        jumlah_rp: amount,
+        untuk_apa: `${jenisLabel} ${targetPo.po_no} — ${targetPo.nama_toko}`,
+        kategori_keperluan: 'Material',
+        beban_biaya: 'PROYEK_BOQ',
+        pic: input.pic?.trim() || user.name || 'Clerk',
+        nomor_kuitansi: input.nomor_kuitansi?.trim() || targetPo.po_no,
+        tanggal: input.tanggal || new Date().toISOString(),
+        payment_method: input.payment_method || 'TRANSFER',
+        status_bukti: urls.length > 0 ? 'TERLAMPIR' : 'BUKTI_MENYUSUL',
+        lampiran_nota_urls: urls,
+        nama_toko: targetPo.nama_toko,
+        toko_kontak: targetPo.toko_kontak,
+        source_module: 'PO_PENGADAAN',
+        source_entity_id: targetPo.id,
+        source_entity_no: targetPo.po_no,
+        catatan: input.catatan?.trim() || `Pembayaran otomatis tertaut ke Surat Pesanan ${targetPo.po_no}`,
+      });
+
+      if (!res.success) return res;
+      return {
+        success: true,
+        message: `${jenisLabel} ${targetPo.po_no} sebesar Rp ${amount.toLocaleString('id-ID')} berhasil dicatat ke Mutasi Dana.`,
+      };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Gagal mencatat pembayaran PO.' };
+    }
+  };
+
+  const batalPurchaseOrder = async (poId: string, reason: string) => {
+    try {
+      if (!rolePermissions.canInitiateBatalGanti && !rolePermissions.canInstructBatalGanti) {
+        throw new Error('Jabatan Anda tidak memiliki akses untuk membatalkan Surat Pesanan.');
+      }
+      if (!reason || reason.trim().length < 5) {
+        throw new Error('Alasan pembatalan PO minimal 5 karakter.');
+      }
+      const targetPo = purchaseOrders.find((p) => p.id === poId);
+      if (!targetPo) throw new Error('Surat Pesanan tidak ditemukan.');
+
+      const receiveProg = computePoReceiveProgress(targetPo, stockMutations);
+      const payProg = computePoPaymentProgress(targetPo, cashMutations);
+      if (receiveProg.totalQtyDiterima > 0 || payProg.totalDibayarRp > 0) {
+        throw new Error(
+          'PO tidak dapat dibatalkan karena sudah memiliki penerimaan barang gudang atau pembayaran kas aktif. Batalkan mutasi terkait terlebih dahulu.'
+        );
+      }
+
+      const client = getSupabaseClient();
+      const { error } = await client
+        .from('purchase_orders')
+        .update({
+          is_batal: true,
+          status_dokumen: 'BATAL',
+          alasan_batal_ganti: `Dibatalkan oleh ${user.name} (${activeRole}). Alasan: ${reason.trim()}`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', poId);
+
+      if (error) throw error;
+      await refreshData();
+      return {
+        success: true,
+        message: `Surat Pesanan ${targetPo.po_no} berhasil dibatalkan. Kuota pemesanan BOQ otomatis dikembalikan.`,
+      };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Gagal membatalkan Surat Pesanan.' };
+    }
+  };
+
+  const gantiPurchaseOrder = async (
+    poId: string,
+    newInput: CreatePurchaseOrderInput,
+    reason: string
+  ) => {
+    try {
+      if (!rolePermissions.canInitiateBatalGanti && !rolePermissions.canInstructBatalGanti) {
+        throw new Error('Jabatan Anda tidak memiliki akses untuk mengganti Surat Pesanan.');
+      }
+      if (!reason || reason.trim().length < 5) {
+        throw new Error('Alasan penggantian PO minimal 5 karakter.');
+      }
+      const oldPo = purchaseOrders.find((p) => p.id === poId);
+      if (!oldPo) throw new Error('Surat Pesanan lama tidak ditemukan.');
+
+      const receiveProg = computePoReceiveProgress(oldPo, stockMutations);
+      const payProg = computePoPaymentProgress(oldPo, cashMutations);
+      if (receiveProg.totalQtyDiterima > 0 || payProg.totalDibayarRp > 0) {
+        throw new Error(
+          'PO yang sudah memiliki penerimaan barang atau pembayaran kas tidak dapat diganti langsung. Buat PO susulan baru atau batalkan mutasi terkait terlebih dahulu.'
+        );
+      }
+
+      const revSuffix = `REV${Math.floor(10 + Math.random() * 89)}`;
+      const revPoNo = `${oldPo.po_no}-${revSuffix}`;
+      const created = await createPurchaseOrder({ ...newInput, po_no: revPoNo });
+      if (!created.success || !created.po) {
+        throw new Error(created.message || 'Gagal menerbitkan PO revisi pengganti.');
+      }
+
+      const client = getSupabaseClient();
+      await client
+        .from('purchase_orders')
+        .update({ referensi_ganti_id: oldPo.id })
+        .eq('id', created.po.id);
+
+      const { error: updErr } = await client
+        .from('purchase_orders')
+        .update({
+          is_ganti: true,
+          status_dokumen: 'DIGANTI',
+          referensi_ganti_id: created.po.id,
+          alasan_batal_ganti: `Digantikan oleh ${revPoNo} oleh ${user.name} (${activeRole}). Alasan: ${reason.trim()}`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', oldPo.id);
+
+      if (updErr) throw updErr;
+      await refreshData();
+      return {
+        success: true,
+        message: `Surat Pesanan ${oldPo.po_no} ditandai DIGANTI dan revisi baru ${revPoNo} berhasil diterbitkan.`,
+      };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Gagal mengganti Surat Pesanan.' };
+    }
+  };
+
+  // ============================================================================
   // DOKUMEN RESMI & PERSETUJUAN BERANTAI (SERIAL APPROVAL + CHECKSUM SHA-256 ASLI)
   // ============================================================================
   const issueOfficialDocument = async (params: {
-    jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP' | 'GABUNGAN_PROYEK';
+    jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'PO_PENGADAAN' | 'INVENTARIS_LENGKAP' | 'GABUNGAN_PROYEK';
     judul: string;
     periode: string;
     ringkasan: string;
@@ -1594,6 +2260,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ? 'BA-STOK'
           : params.jenis === 'MUTASI_KAS'
           ? 'BA-KAS'
+          : params.jenis === 'PO_PENGADAAN'
+          ? 'BA-PO'
           : params.jenis === 'GABUNGAN_PROYEK'
           ? 'BA-PROYEK'
           : 'BA-INV';
@@ -1601,7 +2269,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const issuedAt = new Date().toISOString();
       const resolvedAudience: DocumentAudiencePov =
         params.audience_pov ||
-        (params.jenis === 'MUTASI_KAS' ? 'KONTRAKTOR' : params.jenis === 'MUTASI_STOK' ? 'UMUM' : 'KONTRAKTOR');
+        (params.jenis === 'MUTASI_KAS' || params.jenis === 'PO_PENGADAAN'
+          ? 'KONTRAKTOR'
+          : params.jenis === 'MUTASI_STOK'
+          ? 'UMUM'
+          : 'KONTRAKTOR');
 
       const snapshotObj: Record<string, unknown> = {
         document_no: docCode,
@@ -1745,7 +2417,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const gantiOfficialDocument = async (
     docDbId: string,
     newParams: {
-      jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP' | 'GABUNGAN_PROYEK';
+      jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'PO_PENGADAAN' | 'INVENTARIS_LENGKAP' | 'GABUNGAN_PROYEK';
       judul: string;
       periode: string;
       ringkasan: string;
@@ -1770,6 +2442,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ? 'BA-STOK-REV'
           : newParams.jenis === 'MUTASI_KAS'
           ? 'BA-KAS-REV'
+          : newParams.jenis === 'PO_PENGADAAN'
+          ? 'BA-PO-REV'
           : newParams.jenis === 'GABUNGAN_PROYEK'
           ? 'BA-PROYEK-REV'
           : 'BA-INV-REV';
@@ -1779,7 +2453,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const resolvedAudience: DocumentAudiencePov =
         newParams.audience_pov ||
         oldDoc?.audience_pov ||
-        (newParams.jenis === 'MUTASI_KAS' ? 'KONTRAKTOR' : newParams.jenis === 'MUTASI_STOK' ? 'UMUM' : 'KONTRAKTOR');
+        (newParams.jenis === 'MUTASI_KAS' || newParams.jenis === 'PO_PENGADAAN'
+          ? 'KONTRAKTOR'
+          : newParams.jenis === 'MUTASI_STOK'
+          ? 'UMUM'
+          : 'KONTRAKTOR');
 
       const snapshotObj: Record<string, unknown> = {
         document_no: newDocCode,
@@ -1975,6 +2653,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [cashMutations, stockMutations, projectReceipts, cashEvalContext]
   );
 
+  const procurementSummary = useMemo(
+    () =>
+      computeProcurementSummaryMetrics(
+        purchaseOrders,
+        items,
+        stockMutations,
+        cashMutations,
+        activeRole
+      ),
+    [purchaseOrders, items, stockMutations, cashMutations, activeRole]
+  );
+
   const currentCashBalance = cashSummaryMetrics.saldoSaatIni;
   const cashHasEntries = cashSummaryMetrics.activeCount > 0;
   const cashCriticalAlertCount = cashSummaryMetrics.isCashCritical ? 1 : 0;
@@ -1995,6 +2685,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [cashMutations, documents, activeRole]
   );
 
+  const pendingPoApprovalCount = useMemo(
+    () =>
+      activeRole === 'Viewer/Pengamat'
+        ? 0
+        : countPendingPoApprovals(purchaseOrders, activeRole) +
+          countPendingDocumentApprovals(documents, activeRole, 'PO_PENGADAAN'),
+    [purchaseOrders, documents, activeRole]
+  );
+
   const pendingDocumentApprovalCount = useMemo(
     () =>
       activeRole === 'Viewer/Pengamat'
@@ -2004,7 +2703,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const pendingApprovalCount =
-    pendingStockApprovalCount + pendingCashApprovalCount + pendingDocumentApprovalCount;
+    pendingStockApprovalCount +
+    pendingCashApprovalCount +
+    pendingPoApprovalCount +
+    pendingDocumentApprovalCount;
 
   const cashActionBadgeCount = useMemo(() => {
     if (activeRole === 'Viewer/Pengamat') return 0;
@@ -2034,9 +2736,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         boqSections,
         stockMutations,
         cashMutations,
+        purchaseOrders,
+        supplierStores,
         documents,
         projectReceipts,
         refreshProjectReceipts,
+        saveProjectStore,
+        createPurchaseOrder,
+        advancePurchaseOrderWorkflow,
+        markPurchaseOrderSent,
+        receivePurchaseOrderItems,
+        payPurchaseOrder,
+        batalPurchaseOrder,
+        gantiPurchaseOrder,
         user,
         supabaseConfig,
         currentView,
@@ -2070,16 +2782,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         lowStockCount,
         availableStockCount,
         cashSummaryMetrics,
+        procurementSummary,
         cashCriticalAlertCount,
         cashActionBadgeCount,
         pendingStockApprovalCount,
         pendingCashApprovalCount,
+        pendingPoApprovalCount,
         pendingDocumentApprovalCount,
         pendingApprovalCount,
         cashTargetTab,
         setCashTargetTab,
         stockTargetTab,
         setStockTargetTab,
+        procurementTargetTab,
+        setProcurementTargetTab,
         theme,
         toggleTheme,
         dataReady,

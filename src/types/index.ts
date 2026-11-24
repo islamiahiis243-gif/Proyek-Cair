@@ -113,7 +113,16 @@ export interface MutasiBarang {
   total_nota_fisik?: number;
   lampiran_nota_urls?: string[];
   receipt_id?: string;
+  po_id?: string;
+  po_item_id?: string;
 }
+
+export type PoPaymentTerms =
+  | 'TUNAI_SAAT_TIBA'
+  | 'DP_PELUNASAN'
+  | 'TEMPO_7'
+  | 'TEMPO_14'
+  | 'TEMPO_30';
 
 export interface SupplierStore {
   id: string;
@@ -122,7 +131,59 @@ export interface SupplierStore {
   telepon?: string;
   alamat?: string;
   kategori?: string;
+  pic_toko?: string;
+  syarat_bayar_default?: PoPaymentTerms;
+  catatan?: string;
+  is_active?: boolean;
   created_at?: string;
+}
+
+export interface PurchaseOrderItem {
+  id: string;
+  po_id: string;
+  project_id?: string;
+  boq_item_id?: string | null;
+  nama_barang: string;
+  satuan: string;
+  qty_pesan: number;
+  harga_satuan_po: number;
+  harga_pagu_boq: number;
+  subtotal_rp: number;
+  catatan?: string;
+  sort_order?: number;
+  created_at?: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  workspace_id?: string;
+  project_id: string;
+  po_no: string;
+  store_id?: string | null;
+  nama_toko: string;
+  toko_kontak?: string;
+  tanggal_po: string; // ISO string
+  estimasi_tiba?: string | null; // YYYY-MM-DD
+  payment_terms: PoPaymentTerms;
+  jatuh_tempo_bayar?: string | null; // YYYY-MM-DD
+  dp_amount_rp: number;
+  total_amount_rp: number;
+  catatan_toko?: string;
+  sent_to_store_at?: string | null;
+  created_by?: string;
+  created_by_name?: string;
+  status_dokumen?: StatusDokumenWorkflow;
+  diperiksa_oleh?: string;
+  disetujui_oleh?: string;
+  mengetahui_oleh?: string;
+  tte_qr_code?: string;
+  is_batal?: boolean;
+  is_ganti?: boolean;
+  referensi_ganti_id?: string;
+  alasan_batal_ganti?: string;
+  created_at?: string;
+  updated_at?: string;
+  items: PurchaseOrderItem[];
 }
 
 export type JenisMutasiKas = 'MASUK' | 'KELUAR';
@@ -207,7 +268,7 @@ export interface MutasiKas {
 export interface DokumenLaporan {
   id: string; // document_no legacy key used by the internal checksum route
   judul: string;
-  jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'GABUNGAN_PROYEK';
+  jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'PO_PENGADAAN' | 'GABUNGAN_PROYEK';
   status: string;
   periode_awal: string;
   periode_akhir: string;

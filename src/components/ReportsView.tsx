@@ -43,6 +43,7 @@ import {
   buildIntegratedProjectReport,
   filterDocumentsForPov,
 } from '../lib/projectReportEngine';
+import { buildPoModuleContribution } from '../lib/procurementEngine';
 import { DocumentAudiencePov, MutasiKas } from '../types';
 import { ExportSettingsModal, ExportSettingsConfig } from './ExportSettingsModal';
 
@@ -61,6 +62,7 @@ export const ReportsView: React.FC = () => {
     physicalMaterials,
     items,
     cashMutations,
+    purchaseOrders,
     projectReceipts,
     documents,
     activeProject,
@@ -129,6 +131,9 @@ export const ReportsView: React.FC = () => {
         cashMutations,
         projectReceipts,
         documents,
+        externalContributions: [
+          buildPoModuleContribution(purchaseOrders, stockMutations, cashMutations),
+        ],
         branding: {
           projectName: activeProject?.name || tenantBranding.projectName || 'Proyek Aktif',
           contractorName: tenantBranding.contractorName,
@@ -143,6 +148,7 @@ export const ReportsView: React.FC = () => {
       physicalMaterials,
       stockMutations,
       cashMutations,
+      purchaseOrders,
       projectReceipts,
       documents,
       activeProject?.name,
