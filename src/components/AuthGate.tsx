@@ -140,6 +140,54 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
+  // Smart-Gesture: Usap kartu ke kiri/kanan untuk beralih mode Masuk / Daftar
+  const handleSwipeLeft = useCallback(() => {
+    if (mode === 'signin') {
+      setMode('signup');
+      setNotice('Beralih ke Formulir Pendaftaran (Smart-Gesture)');
+      setTimeout(() => setNotice(''), 2500);
+    } else if (mode === 'signup') {
+      setMode('signin');
+      setNotice('Beralih ke Formulir Masuk (Smart-Gesture)');
+      setTimeout(() => setNotice(''), 2500);
+    }
+  }, [mode]);
+
+  const handleSwipeRight = useCallback(() => {
+    if (mode === 'signup') {
+      setMode('signin');
+      setNotice('Beralih ke Formulir Masuk (Smart-Gesture)');
+      setTimeout(() => setNotice(''), 2500);
+    } else if (mode === 'signin') {
+      setLoginMethod((prev) => (prev === 'email' ? 'npwp' : 'email'));
+      setError('');
+    }
+  }, [mode]);
+
+  const { gestureProps } = useSmartGesture({
+    threshold: 40,
+    enableMouseDrag: false,
+    onSwipeLeft: handleSwipeLeft,
+    onSwipeRight: handleSwipeRight
+  });
+
+  // Pintasan Keyboard Cerdas (Alt+M / Alt+D / Esc)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 'm' || e.key === 'M')) {
+        e.preventDefault();
+        setMode('signin');
+      } else if (e.altKey && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault();
+        setMode('signup');
+      } else if (e.key === 'Escape' && showRecoveryForm) {
+        setShowRecoveryForm(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showRecoveryForm]);
+
   useEffect(() => {
     const client = getSupabaseClient();
     let disposed = false;
@@ -406,54 +454,6 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
       </div>
     );
   }
-
-  // Smart-Gesture: Usap kartu ke kiri/kanan untuk beralih mode Masuk / Daftar
-  const handleSwipeLeft = useCallback(() => {
-    if (mode === 'signin') {
-      setMode('signup');
-      setNotice('Beralih ke Formulir Pendaftaran (Smart-Gesture)');
-      setTimeout(() => setNotice(''), 2500);
-    } else if (mode === 'signup') {
-      setMode('signin');
-      setNotice('Beralih ke Formulir Masuk (Smart-Gesture)');
-      setTimeout(() => setNotice(''), 2500);
-    }
-  }, [mode]);
-
-  const handleSwipeRight = useCallback(() => {
-    if (mode === 'signup') {
-      setMode('signin');
-      setNotice('Beralih ke Formulir Masuk (Smart-Gesture)');
-      setTimeout(() => setNotice(''), 2500);
-    } else if (mode === 'signin') {
-      setLoginMethod((prev) => (prev === 'email' ? 'npwp' : 'email'));
-      setError('');
-    }
-  }, [mode]);
-
-  const { gestureProps } = useSmartGesture({
-    threshold: 40,
-    enableMouseDrag: false,
-    onSwipeLeft: handleSwipeLeft,
-    onSwipeRight: handleSwipeRight
-  });
-
-  // Pintasan Keyboard Cerdas (Alt+M / Alt+D / Esc)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey && (e.key === 'm' || e.key === 'M')) {
-        e.preventDefault();
-        setMode('signin');
-      } else if (e.altKey && (e.key === 'd' || e.key === 'D')) {
-        e.preventDefault();
-        setMode('signup');
-      } else if (e.key === 'Escape' && showRecoveryForm) {
-        setShowRecoveryForm(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showRecoveryForm]);
 
   if (authed) return <>{children}</>;
 
