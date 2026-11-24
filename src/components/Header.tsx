@@ -374,7 +374,12 @@ export const Header: React.FC = () => {
           <img
             src="/words_PNG2.png"
             alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
-            className="h-7 sm:h-8 w-auto object-contain opacity-95 group-hover:opacity-100 transition-opacity shrink-0"
+            className="h-8 sm:h-9 md:h-10 w-auto object-contain opacity-95 group-hover:opacity-100 transition-all shrink-0 dark:block hidden"
+          />
+          <img
+            src="/words_light.png"
+            alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
+            className="h-8 sm:h-9 md:h-10 w-auto object-contain opacity-95 group-hover:opacity-100 transition-all shrink-0 dark:hidden block"
           />
         </button>
 

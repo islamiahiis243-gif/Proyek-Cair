@@ -361,12 +361,12 @@ export const VerificationPortal: React.FC = () => {
                 <img
                   src="/mascot_3d.png"
                   alt="Proyek Cair"
-                  className="w-10 h-10 object-contain drop-shadow-md shrink-0"
+                  className="w-10 h-10 sm:w-12 sm:h-12 object-contain drop-shadow-md shrink-0"
                 />
                 <img
-                  src="/words_light.png"
+                  src="/words_PNG2.png"
                   alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
-                  className="h-7 w-auto max-w-[200px] object-contain shrink-0"
+                  className="h-9 sm:h-11 w-auto max-w-[220px] sm:max-w-[260px] object-contain shrink-0 drop-shadow-md"
                 />
               </div>
 

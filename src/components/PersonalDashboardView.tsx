@@ -52,12 +52,12 @@ export const PersonalDashboardView: React.FC = () => {
             <img
               src="/words_PNG2.png"
               alt="Proyek Cair"
-              className="h-14 sm:h-18 lg:h-22 w-auto max-w-[240px] sm:max-w-[320px] lg:max-w-[380px] object-contain drop-shadow-md dark:block hidden"
+              className="h-16 sm:h-20 lg:h-24 xl:h-28 w-auto max-w-[260px] sm:max-w-[340px] lg:max-w-[420px] xl:max-w-[480px] object-contain drop-shadow-md dark:block hidden transition-all hover:scale-[1.02]"
             />
             <img
               src="/words_light.png"
               alt="Proyek Cair"
-              className="h-14 sm:h-18 lg:h-22 w-auto max-w-[240px] sm:max-w-[320px] lg:max-w-[380px] object-contain drop-shadow-md dark:hidden block"
+              className="h-16 sm:h-20 lg:h-24 xl:h-28 w-auto max-w-[260px] sm:max-w-[340px] lg:max-w-[420px] xl:max-w-[480px] object-contain drop-shadow-md dark:hidden block transition-all hover:scale-[1.02]"
             />
           </div>
         </div>

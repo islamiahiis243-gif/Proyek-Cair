@@ -49,9 +49,9 @@ const AuthBrandingPanel: React.FC = React.memo(() => {
             alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
             loading="eager"
             decoding="async"
-            width={260}
-            height={90}
-            className="w-full max-w-[200px] sm:max-w-[230px] h-auto object-contain drop-shadow-xl"
+            width={280}
+            height={95}
+            className="w-full max-w-[220px] sm:max-w-[250px] h-auto object-contain drop-shadow-xl"
           />
         </div>
 

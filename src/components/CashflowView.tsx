@@ -1198,12 +1198,12 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                 <img
                   src="/words_PNG2.png"
                   alt="Proyek Cair"
-                  className="h-10 sm:h-12 w-auto max-w-[170px] object-contain drop-shadow-md dark:block hidden"
+                  className="h-12 sm:h-14 lg:h-16 w-auto max-w-[180px] sm:max-w-[240px] lg:max-w-[280px] object-contain drop-shadow-md dark:block hidden transition-transform hover:scale-105"
                 />
                 <img
                   src="/words_light.png"
                   alt="Proyek Cair"
-                  className="h-10 sm:h-12 w-auto max-w-[170px] object-contain drop-shadow-md dark:hidden block"
+                  className="h-12 sm:h-14 lg:h-16 w-auto max-w-[180px] sm:max-w-[240px] lg:max-w-[280px] object-contain drop-shadow-md dark:hidden block transition-transform hover:scale-105"
                 />
               </div>
             </div>
