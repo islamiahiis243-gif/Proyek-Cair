@@ -636,62 +636,78 @@ export const ProcurementView: React.FC = () => {
             </p>
           </div>
 
-          {/* Aksi Cepat Smart-Header */}
-          <div className="flex flex-wrap items-center gap-2">
-            {evalCtx.canIssue ? (
-              <>
-                {procurementSummary.needOrderItemsCount > 0 && activeTab !== 'NEEDS_STORES' && (
+          {/* Aksi Cepat Smart-Header & Banner Branding Resmi */}
+          <div className="flex flex-wrap items-center gap-3 lg:justify-end">
+            <div className="flex flex-wrap items-center gap-2">
+              {evalCtx.canIssue ? (
+                <>
+                  {procurementSummary.needOrderItemsCount > 0 && activeTab !== 'NEEDS_STORES' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('NEEDS_STORES');
+                        setNeedFilter('PERLU_DIPESAN');
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-950/50 dark:hover:bg-amber-900/50 dark:text-amber-300 dark:border-amber-800 transition-colors cursor-pointer"
+                    >
+                      <ShoppingBag className="w-3.5 h-3.5" />
+                      {procurementSummary.needOrderItemsCount} Material Perlu Dipesan →
+                    </button>
+                  )}
+                  {pendingDeliveryPos.length > 0 && activeTab !== 'DELIVERIES' && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('DELIVERIES')}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/50 dark:text-indigo-300 dark:border-indigo-800 transition-colors cursor-pointer"
+                    >
+                      <Truck className="w-3.5 h-3.5" />
+                      {pendingDeliveryPos.length} PO Menunggu Tiba →
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => openNewPoWizard()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Buat Surat Pesanan (PO)
+                  </button>
+                </>
+              ) : (
+                procurementSummary.pendingMyApprovalCount > 0 ? (
                   <button
                     type="button"
                     onClick={() => {
-                      setActiveTab('NEEDS_STORES');
-                      setNeedFilter('PERLU_DIPESAN');
+                      setActiveTab('PO_LIST');
+                      setPoStatusFilter('PENDING_APPROVAL');
                     }}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-950/50 dark:hover:bg-amber-900/50 dark:text-amber-300 dark:border-amber-800 transition-colors"
+                    className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-sm transition-colors cursor-pointer ${supervisorQueueColor}`}
                   >
-                    <ShoppingBag className="w-3.5 h-3.5" />
-                    {procurementSummary.needOrderItemsCount} Material Perlu Dipesan →
+                    <Bell className="w-4 h-4" />
+                    {procurementSummary.pendingMyApprovalCount} PO Menunggu {supervisorQueueLabel} →
                   </button>
-                )}
-                {pendingDeliveryPos.length > 0 && activeTab !== 'DELIVERIES' && (
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('DELIVERIES')}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/50 dark:text-indigo-300 dark:border-indigo-800 transition-colors"
-                  >
-                    <Truck className="w-3.5 h-3.5" />
-                    {pendingDeliveryPos.length} PO Menunggu Tiba →
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => openNewPoWizard()}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  Buat Surat Pesanan (PO)
-                </button>
-              </>
-            ) : (
-              procurementSummary.pendingMyApprovalCount > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('PO_LIST');
-                    setPoStatusFilter('PENDING_APPROVAL');
-                  }}
-                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-sm transition-colors ${supervisorQueueColor}`}
-                >
-                  <Bell className="w-4 h-4" />
-                  {procurementSummary.pendingMyApprovalCount} PO Menunggu {supervisorQueueLabel} →
-                </button>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800">
-                  <CheckCircle2 className="w-4 h-4" />
-                  Semua PO Terverifikasi
-                </span>
-              )
-            )}
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800">
+                    <CheckCircle2 className="w-4 h-4" />
+                    Semua PO Terverifikasi
+                  </span>
+                )
+              )}
+            </div>
+
+            {/* Banner Rata Kanan: words_PNG2 (Dark) & words_light (Light) */}
+            <div className="flex items-center justify-end self-center shrink-0">
+              <img
+                src="/words_PNG2.png"
+                alt="Proyek Cair"
+                className="h-10 sm:h-12 w-auto max-w-[150px] sm:max-w-[180px] lg:max-w-[200px] object-contain drop-shadow-md dark:block hidden"
+              />
+              <img
+                src="/words_light.png"
+                alt="Proyek Cair"
+                className="h-10 sm:h-12 w-auto max-w-[150px] sm:max-w-[180px] lg:max-w-[200px] object-contain drop-shadow-md dark:hidden block"
+              />
+            </div>
           </div>
         </div>
       </div>
