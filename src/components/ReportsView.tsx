@@ -317,7 +317,10 @@ export const ReportsView: React.FC = () => {
           customTitle: config.customTitle || 'LAPORAN KONTROL PEMENUHAN MATERIAL KONTRAK BOQ',
           customNotes: config.customNotes,
           selectedColumns: config.selectedColumns,
-          orientation: config.orientation || 'landscape'
+          orientation: config.orientation || 'landscape',
+          mutations: stockMutations,
+          physicalMaterials,
+          role: activeRole
         });
 
         setGenerationSuccess(`Dokumen Laporan Pemenuhan BOQ ${docId} berhasil dicetak dan diunduh.`);
@@ -333,6 +336,7 @@ export const ReportsView: React.FC = () => {
           customTitle: config.customTitle || 'LAPORAN REKAPITULASI STOK FISIK GUDANG PROYEK',
           customNotes: config.customNotes,
           selectedColumns: config.selectedColumns,
+          role: activeRole,
           orientation: config.orientation || 'landscape'
         });
 

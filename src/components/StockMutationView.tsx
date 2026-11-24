@@ -46,7 +46,10 @@ import {
   RefreshCw,
   Info,
   ChevronUp,
-  ArrowLeft
+  ArrowLeft,
+  ClipboardCheck,
+  Bell,
+  Package
 } from 'lucide-react';
 import { formatDateTime, formatRupiah, generateBOQReportPDF, generateStockMutationPDF, generateWarehouseSummaryPDF } from '../lib/pdfGenerator';
 import {
@@ -57,6 +60,16 @@ import {
   summarizeMaterialIncomingDiscrepancy,
   toLocalDateInput
 } from '../lib/stockMutationEngine';
+import {
+  evaluateBoqPos,
+  evaluateWarehouseMaterial,
+  resolveEvalContext,
+  getActionVariantClass,
+  getResidualChipClass,
+  BoqPosEvaluation,
+  WarehouseRowEvaluation,
+  BoqPosStatusKey
+} from '../lib/boqExecutionEngine';
 import { StockMutationWizardModal } from './StockMutationWizardModal';
 import { ExportSettingsModal, ExportTargetType, ExportSettingsConfig } from './ExportSettingsModal';
 import { BatchReceiptModal } from './BatchReceiptModal';
@@ -131,6 +144,41 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     }),
     [tenantBranding.contractorName, tenantBranding.clientName]
   );
+
+  const evalContext = useMemo(() => {
+    return resolveEvalContext(activeRole, rolePermissions.canIssue, tenantBranding);
+  }, [activeRole, rolePermissions.canIssue, tenantBranding]);
+
+  // Antrean persetujuan mutasi yang menunggu giliran peran aktif (Foreman / Spv / Pengesah)
+  const pendingWorkflowCount = useMemo(() => {
+    return stockMutations.filter((m) => {
+      if (m.is_batal || m.is_ganti || m.status_dokumen === 'BATAL' || m.status_dokumen === 'DIGANTI') {
+        return false;
+      }
+      if (activeRole === 'Foreman') return m.status_dokumen === 'DITERBITKAN';
+      if (activeRole === 'Spv.') return m.status_dokumen === 'DIPERIKSA';
+      if (
+        activeRole === 'Dept. Manager' ||
+        activeRole === 'KTT/Proj. Manager' ||
+        activeRole === 'CEO/Direktur'
+      ) {
+        return m.status_dokumen === 'DISETUJUI';
+      }
+      return false;
+    }).length;
+  }, [stockMutations, activeRole]);
+
+  // Pos Jatah Klien yang belum diserahkan ke proyek (S-1 / S-4 jatah klien untuk POV Klien)
+  const pendingClientDeliveriesCount = useMemo(() => {
+    return items.filter((it) => {
+      if (!isClientProvidedRemark(it.keterangan, tenantBranding.clientName)) return false;
+      const pm = physicalMaterials.find(
+        (p) => p.id === it.id || p.budget_lines.some((bl) => bl.id === it.id)
+      );
+      const evalPos = evaluateBoqPos(it, pm, stockMutations, evalContext);
+      return evalPos.statusKey === 'BELUM_SERAH';
+    }).length;
+  }, [items, physicalMaterials, stockMutations, evalContext, tenantBranding.clientName]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -262,7 +310,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   const deferredBoqSearchQuery = useDeferredValue(boqSearchQuery);
   const [boqProviderFilter, setBoqProviderFilter] = useState<'ALL' | 'KONTRAKTOR' | 'IMK'>('ALL');
   const deferredBoqProviderFilter = useDeferredValue(boqProviderFilter);
-  const [boqStatusFilter, setBoqStatusFilter] = useState<'ALL' | 'Belum dipenuhi' | 'Dalam pemenuhan' | 'Terpenuhi' | 'Melebihi BOQ'>('ALL');
+  const [boqStatusFilter, setBoqStatusFilter] = useState<'ALL' | BoqPosStatusKey | 'Belum dipenuhi' | 'Dalam pemenuhan' | 'Terpenuhi' | 'Melebihi BOQ'>('ALL');
   const deferredBoqStatusFilter = useDeferredValue(boqStatusFilter);
   const [collapsedDivisions, setCollapsedDivisions] = useState<Set<string>>(new Set());
   const [collapsedSubSections, setCollapsedSubSections] = useState<Set<string>>(new Set());
@@ -517,7 +565,15 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       const isClientItem = isClientProvidedRemark(item.keterangan, tenantBranding.clientName);
       if (deferredBoqProviderFilter === 'IMK' && !isClientItem) return false;
       if (deferredBoqProviderFilter === 'KONTRAKTOR' && isClientItem) return false;
-      if (deferredBoqStatusFilter !== 'ALL' && item.status_pemenuhan !== deferredBoqStatusFilter) return false;
+      if (deferredBoqStatusFilter !== 'ALL') {
+        const pm = physicalMaterials.find(
+          (p) => p.id === item.id || p.budget_lines.some((bl) => bl.id === item.id)
+        );
+        const evalPos = evaluateBoqPos(item, pm, stockMutations, evalContext);
+        if (evalPos.statusKey !== deferredBoqStatusFilter && item.status_pemenuhan !== deferredBoqStatusFilter) {
+          return false;
+        }
+      }
       if (q) {
         const matchName = item.nama_barang.toLowerCase().includes(q);
         const matchCode = (item.kode_boq || '').toLowerCase().includes(q);
@@ -660,7 +716,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     });
 
     return divisions;
-  }, [items, deferredBoqSearchQuery, deferredBoqProviderFilter, deferredBoqStatusFilter, deferredBoqSort, tenantBranding.clientName]);
+  }, [items, physicalMaterials, stockMutations, evalContext, deferredBoqSearchQuery, deferredBoqProviderFilter, deferredBoqStatusFilter, deferredBoqSort, tenantBranding.clientName]);
 
   // Memoized daftar item BOQ yang lolos filter layar untuk mencegah kalkulasi berat berulang
   const visibleBoqItems = useMemo(() => {
@@ -1126,38 +1182,39 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     }
   };
 
-  // Badge Status Pos Pekerjaan BOQ (Khusus POV "Bedakan Keluar" per Pos Pekerjaan)
-  const renderBoqStatusBadge = (item: ItemBarang) => {
-    switch (item.status_pemenuhan) {
-      case 'Terpenuhi':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
+  // Badge Status Pos Pekerjaan BOQ (Multi-POV Engine Dinamis)
+  const renderBoqStatusBadge = (item: ItemBarang, evalPos?: BoqPosEvaluation) => {
+    if (evalPos) {
+      return (
+        <span
+          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${evalPos.statusBadgeClass}`}
+          title={evalPos.statusDescription}
+        >
+          {evalPos.statusKey === 'TUNTAS' ? (
             <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-            <span>Terpenuhi</span>
-          </span>
-        );
-      case 'Dalam pemenuhan':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800">
-            <TrendingUp className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-            <span>Dalam Proses</span>
-          </span>
-        );
-      case 'Melebihi BOQ':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800">
+          ) : evalPos.statusKey === 'PROSES' ? (
+            <TrendingUp className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+          ) : evalPos.statusKey === 'HABIS' ? (
+            <AlertTriangle className="w-3 h-3 text-orange-600 dark:text-orange-400" />
+          ) : evalPos.statusKey === 'LEBIH' ? (
             <AlertTriangle className="w-3 h-3 text-purple-600 dark:text-purple-400" />
-            <span>Melebihi BOQ</span>
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700">
+          ) : evalPos.statusKey === 'SIAP_PAKAI' ? (
+            <CheckCircle2 className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
+          ) : evalPos.statusKey === 'BELUM_SERAH' ? (
+            <Package className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+          ) : (
             <Clock className="w-3 h-3 text-slate-500 dark:text-slate-300" />
-            <span>Belum Dipakai</span>
-          </span>
-        );
+          )}
+          <span>{evalPos.statusLabel}</span>
+        </span>
+      );
     }
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700">
+        <Clock className="w-3 h-3 text-slate-500 dark:text-slate-300" />
+        <span>{item.status_pemenuhan}</span>
+      </span>
+    );
   };
 
   const handleOpenNewModal = (type: JenisMutasiBarang = 'MASUK') => {
@@ -1602,7 +1659,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           stockMutations,
           branding: tenantBranding,
           selectedColumns: config.selectedColumns,
-          providerScope: config.filterScope.providerScope
+          providerScope: config.filterScope.providerScope,
+          role: activeRole
         });
         setNoticeMessage(`PDF Rekap Gudang (${materialsToExport.length} material · ${config.selectedColumns.length} kolom) berhasil diunduh.`);
       } catch (err: any) {
@@ -1663,7 +1721,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           customTitle: config.customTitle,
           customNotes: config.customNotes,
           selectedColumns: config.selectedColumns,
-          orientation: config.orientation || 'landscape'
+          orientation: config.orientation || 'landscape',
+          mutations: stockMutations,
+          physicalMaterials,
+          role: activeRole
         });
         setNoticeMessage(`PDF Realisasi BOQ (${itemsToExport.length} pos · ${config.selectedColumns.length} kolom) berhasil diunduh.`);
       } catch (err: any) {
@@ -1843,28 +1904,86 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
               </p>
             </div>
 
-            {/* Tombol Terbitkan (Hanya untuk Clerk atau Admin) + Banner Rata Kanan */}
+            {/* Smart-Header Adaptif Multi-POV (Anti Tombol Mati di Header) */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 shrink-0">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleOpenNewModal('MASUK')}
-                  disabled={!rolePermissions.canIssue}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-40 transition-colors shadow-sm"
-                  title={rolePermissions.canIssue ? 'Catat Penerimaan Barang' : 'Hanya Clerk yang dapat menerbitkan dokumen'}
-                >
-                  <ArrowDownLeft className="w-4 h-4" />
-                  <span>+ Catat Masuk</span>
-                </button>
-                <button
-                  onClick={() => handleOpenNewModal('KELUAR')}
-                  disabled={!rolePermissions.canIssue}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-rose-600 rounded-xl hover:bg-rose-700 disabled:opacity-40 transition-colors shadow-sm"
-                  title={rolePermissions.canIssue ? 'Catat Pengeluaran Barang' : 'Hanya Clerk yang dapat menerbitkan dokumen'}
-                >
-                  <ArrowUpRight className="w-4 h-4" />
-                  <span>- Catat Keluar</span>
-                </button>
-              </div>
+              {evalContext.authority === 'EKSEKUTOR' ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleOpenNewModal('MASUK')}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 active:scale-95 transition-colors shadow-xs cursor-pointer"
+                    title="Catat Penerimaan Barang Masuk ke Gudang"
+                  >
+                    <ArrowDownLeft className="w-4 h-4" />
+                    <span>+ Catat Masuk</span>
+                  </button>
+                  <button
+                    onClick={() => handleOpenNewModal('KELUAR')}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-rose-600 rounded-xl hover:bg-rose-700 active:scale-95 transition-colors shadow-xs cursor-pointer"
+                    title="Catat Pengeluaran Barang ke Area Proyek"
+                  >
+                    <ArrowUpRight className="w-4 h-4" />
+                    <span>- Catat Keluar</span>
+                  </button>
+                </div>
+              ) : evalContext.authority === 'PENGAWAS_INTERNAL' ? (
+                <div className="flex items-center gap-2">
+                  {pendingWorkflowCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        startTransition(() => {
+                          setActiveTab('MUTATION_HISTORY');
+                          setSearchQuery('');
+                        });
+                      }}
+                      className={`inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-xl active:scale-95 transition-all shadow-xs cursor-pointer ${
+                        activeRole === 'Foreman'
+                          ? 'bg-sky-600 hover:bg-sky-700 text-white'
+                          : activeRole === 'Spv.'
+                          ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                          : 'bg-teal-600 hover:bg-teal-700 text-white'
+                      }`}
+                      title="Buka tab riwayat mutasi untuk memeriksa / menyetujui transaksi yang menunggu giliran Anda"
+                    >
+                      <Bell className="w-4 h-4 animate-bounce" />
+                      <span>
+                        {pendingWorkflowCount} Mutasi Menunggu{' '}
+                        {activeRole === 'Foreman' ? 'Periksa' : activeRole === 'Spv.' ? 'Setuju' : 'Sahkan'} →
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800 text-xs font-bold">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                      <span>Semua Mutasi Terverifikasi</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  {pendingClientDeliveriesCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        startTransition(() => {
+                          setActiveTab('BOQ_MONITOR');
+                          setBoqProviderFilter('IMK');
+                          setBoqStatusFilter('BELUM_SERAH');
+                        });
+                      }}
+                      className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-xl active:scale-95 transition-all shadow-xs cursor-pointer"
+                      title="Lihat pos material Jatah Klien yang belum diserahkan ke proyek"
+                    >
+                      <Package className="w-4 h-4" />
+                      <span>{pendingClientDeliveriesCount} Jatah Klien Belum Serah →</span>
+                    </button>
+                  ) : (
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-800 dark:text-purple-200 border border-purple-200 dark:border-purple-800 text-xs font-bold">
+                      <CheckCircle2 className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                      <span>Seluruh Jatah Klien Telah Diserahkan</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Banner Rata Kanan: words_PNG2 */}
               <div className="flex items-center justify-end self-center shrink-0">
@@ -2088,7 +2207,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                             'center'
                           )}
                         </th>
-                        <th className="py-3 px-3.5 text-center">Aksi Cepat</th>
+                        <th className="py-3 px-3.5 text-center">{evalContext.partyPov === 'KLIEN' ? 'Riwayat' : 'Aksi Cepat'}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -2100,10 +2219,11 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                         </tr>
                       ) : (
                         filteredWarehouseMaterials.map((pm, idx) => {
+                          const evalRow = evaluateWarehouseMaterial(pm, stockMutations, evalContext);
                           const totalTarget = pm.total_qty_boq || 0;
                           const totalMasuk = pm.total_qty_masuk || 0;
                           const totalKeluar = pm.total_qty_keluar || 0;
-                          const sisaBelumTiba = Math.max(0, totalTarget - totalMasuk);
+                          const sisaBelumTiba = evalRow.sisaBelumTiba;
                           const pctTiba = totalTarget > 0 ? Math.round((totalMasuk / totalTarget) * 100) : 0;
                           const posCount = pm.budget_lines.length;
                           const matDiscrepancy = summarizeMaterialIncomingDiscrepancy(pm, stockMutations, providerLabels);
@@ -2113,10 +2233,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                               key={pm.id}
                               className={`hover:bg-slate-50/90 dark:hover:bg-slate-800/60 transition-colors ${
                                 matDiscrepancy.hasMismatch
-                                  ? 'bg-amber-50/50 dark:bg-amber-950/20'
-                                  : totalMasuk > 0
-                                  ? 'bg-emerald-50/20 dark:bg-emerald-950/10'
-                                  : ''
+                                    ? 'bg-amber-50/50 dark:bg-amber-950/20'
+                                    : totalMasuk > 0
+                                    ? 'bg-emerald-50/20 dark:bg-emerald-950/10'
+                                    : ''
                               }`}
                             >
                               <td className="py-3 px-3.5 text-center font-mono text-[11px] text-slate-600 dark:text-slate-300 font-medium">
@@ -2161,7 +2281,21 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                 </div>
                               </td>
                               <td className="py-3 px-3 text-right font-mono text-slate-700 dark:text-slate-300 font-medium">
-                                {sisaBelumTiba.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
+                                {evalRow.canQuickAddResidual ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenWarehouseMaterialIn(pm)}
+                                    title={`Pintasan 1-klik: Catat kedatangan sisa ${sisaBelumTiba.toLocaleString('id-ID')} ${pm.satuan}`}
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-xs font-bold ${getResidualChipClass(
+                                      evalRow.residualChipVariant || 'emerald'
+                                    )}`}
+                                  >
+                                    <span>{sisaBelumTiba.toLocaleString('id-ID', { maximumFractionDigits: 3 })}</span>
+                                    <span className="text-[10px]">+</span>
+                                  </button>
+                                ) : (
+                                  sisaBelumTiba.toLocaleString('id-ID', { maximumFractionDigits: 3 })
+                                )}
                               </td>
                               <td className="py-3 px-3 text-right font-mono font-semibold text-rose-600 dark:text-rose-400">
                                 {totalKeluar.toLocaleString('id-ID', { maximumFractionDigits: 3 })}
@@ -2209,74 +2343,113 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                 </>
                               )}
                               <td className="py-3 px-3 text-center">
-                                {pm.stok_fisik > 0 ? (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-                                    <CheckCircle2 className="w-3 h-3" /> Tersedia ({pm.stok_fisik.toLocaleString('id-ID')} {pm.satuan})
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                    evalRow.statusKey === 'TERSEDIA'
+                                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                      : evalRow.statusKey === 'BELUM_SERAH'
+                                      ? 'bg-purple-100 text-purple-800 border border-purple-300 dark:bg-purple-950/60 dark:text-purple-200 dark:border-purple-700'
+                                      : evalRow.statusKey === 'TUNTAS'
+                                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-800'
+                                      : evalRow.statusKey === 'HABIS'
+                                      ? 'bg-orange-100 text-orange-800 border border-orange-300 dark:bg-orange-950/60 dark:text-orange-200 dark:border-orange-700'
+                                      : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                  }`}
+                                >
+                                  {evalRow.statusKey === 'TERSEDIA' && <CheckCircle2 className="w-3 h-3" />}
+                                  <span>
+                                    {evalRow.statusKey === 'TERSEDIA'
+                                      ? `Tersedia (${pm.stok_fisik.toLocaleString('id-ID', { maximumFractionDigits: 3 })} ${pm.satuan})`
+                                      : evalRow.statusLabel}
                                   </span>
-                                ) : totalMasuk > 0 ? (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                                    Habis
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                                    Belum Masuk
-                                  </span>
-                                )}
+                                </span>
                               </td>
                               <td className="py-3 px-3.5 text-center">
                                 <div className="flex items-center justify-center gap-1.5 flex-nowrap">
-                                  {(() => {
-                                    // Aturan Tombol Tunggal Cerdas (Smart Single Dynamic Button):
-                                    // 1. Jika ada saldo fisik di gudang -> Tombol TUNGGAL: Pakai
-                                    // 2. Jika saldo fisik kosong dan tuntas seluruhnya -> Badge: Tuntas
-                                    // 3. Jika saldo fisik kosong dan butuh kiriman -> Tombol TUNGGAL: Masuk
-                                    if (pm.stok_fisik > 0) {
-                                      return (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleOpenWarehouseMaterialOut(pm)}
-                                          disabled={!rolePermissions.canIssue}
-                                          title={`Keluarkan / gunakan ${pm.nama_barang} ke pekerjaan lapangan (Saldo fisik: ${pm.stok_fisik} ${pm.satuan})`}
-                                          className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-bold disabled:opacity-40 transition-colors cursor-pointer shadow-xs whitespace-nowrap"
-                                        >
-                                          Pakai
-                                        </button>
-                                      );
-                                    }
-
-                                    const isTuntas = sisaBelumTiba <= 0 && totalMasuk > 0;
-                                    if (isTuntas) {
-                                      return (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                          Tuntas
-                                        </span>
-                                      );
-                                    }
-
-                                    return (
+                                  {evalRow.actionType === 'RIWAYAT' ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleViewItemHistory(pm.nama_barang)}
+                                      title={evalRow.actionTooltip}
+                                      className="inline-flex items-center justify-center gap-1.5 min-w-[114px] h-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer active:scale-95 border border-slate-200/60 dark:border-slate-700/60"
+                                    >
+                                      <History className="w-3 h-3" />
+                                      <span>Riwayat</span>
+                                    </button>
+                                  ) : evalRow.actionType === 'APPROVE' ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (evalRow.pendingApprovalMutationId) {
+                                            startTransition(() => {
+                                              setActiveTab('MUTATION_HISTORY');
+                                              setSearchQuery(pm.nama_barang);
+                                            });
+                                          }
+                                        }}
+                                        title={evalRow.actionTooltip}
+                                        className={`inline-flex items-center justify-center gap-1 min-w-[82px] h-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${getActionVariantClass(
+                                          evalRow.actionVariant
+                                        )}`}
+                                      >
+                                        <CheckCircle2 className="w-3 h-3" />
+                                        <span>{evalRow.actionLabel}</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleViewItemHistory(pm.nama_barang)}
+                                        title="Lihat riwayat transaksi material ini"
+                                        className="w-7 h-7 sm:w-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center active:scale-95"
+                                      >
+                                        <History className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  ) : evalRow.actionType === 'PAKAI' ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenWarehouseMaterialOut(pm)}
+                                        title={evalRow.actionTooltip}
+                                        className={`inline-flex items-center justify-center gap-1 min-w-[82px] h-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${getActionVariantClass(
+                                          'rose'
+                                        )}`}
+                                      >
+                                        <ArrowUpRight className="w-3 h-3" />
+                                        <span>Pakai</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleViewItemHistory(pm.nama_barang)}
+                                        title="Lihat riwayat transaksi material ini"
+                                        className="w-7 h-7 sm:w-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center active:scale-95"
+                                      >
+                                        <History className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
                                       <button
                                         type="button"
                                         onClick={() => handleOpenWarehouseMaterialIn(pm)}
-                                        disabled={!rolePermissions.canIssue}
-                                        title={
-                                          sisaBelumTiba > 0
-                                            ? `Catat kedatangan sisa ${sisaBelumTiba.toLocaleString('id-ID')} ${pm.satuan} dari pemasok`
-                                            : `Catat penerimaan ${pm.nama_barang} masuk ke gudang`
-                                        }
-                                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold disabled:opacity-40 transition-colors cursor-pointer shadow-xs whitespace-nowrap"
+                                        title={evalRow.actionTooltip}
+                                        className={`inline-flex items-center justify-center gap-1 min-w-[82px] h-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${getActionVariantClass(
+                                          evalRow.actionVariant
+                                        )}`}
                                       >
-                                        Masuk
+                                        <ArrowDownLeft className="w-3 h-3" />
+                                        <span>Masuk</span>
                                       </button>
-                                    );
-                                  })()}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleViewItemHistory(pm.nama_barang)}
-                                    title="Lihat riwayat transaksi material ini"
-                                    className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
-                                  >
-                                    <History className="w-3.5 h-3.5" />
-                                  </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleViewItemHistory(pm.nama_barang)}
+                                        title="Lihat riwayat transaksi material ini"
+                                        className="w-7 h-7 sm:w-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center active:scale-95"
+                                      >
+                                        <History className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -2423,7 +2596,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                             </span>
                           </div>
                           <div className="mt-1.5 text-xl sm:text-2xl font-black text-purple-300 font-mono tracking-tight">
-                            Free-Issue Klien
+                            Jatah Klien
                           </div>
                           <div className="mt-2 pt-2 border-t border-purple-800/30 space-y-1 text-xs">
                             <div className="flex items-center justify-between text-slate-300">
@@ -2563,7 +2736,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                             </span>
                           </div>
                           <div className="mt-1.5 text-xl sm:text-2xl font-black text-purple-300 font-mono tracking-tight">
-                            {clientObligationStats.totalNominal > 0 ? formatRupiah(clientObligationStats.totalNominal) : 'Free-Issue Klien'}
+                            {clientObligationStats.totalNominal > 0 ? formatRupiah(clientObligationStats.totalNominal) : 'Jatah Klien'}
                           </div>
                           <div className="mt-2 pt-2 border-t border-purple-800/30 space-y-1 text-xs">
                             <div className="flex items-center justify-between text-slate-300">
@@ -2648,7 +2821,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                           : 'text-slate-700 dark:text-slate-200'
                       }`}
                     >
-                      👤 {tenantBranding.clientName}
+                      👤 Jatah Klien ({tenantBranding.clientName})
                     </button>
                   </div>
 
@@ -2662,10 +2835,26 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     className="px-2.5 py-1.5 text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-hidden"
                   >
                     <option value="ALL">Semua Status Pos</option>
-                    <option value="Belum dipenuhi">Belum Dipakai</option>
-                    <option value="Dalam pemenuhan">Dalam Proses</option>
-                    <option value="Terpenuhi">Terpenuhi</option>
-                    <option value="Melebihi BOQ">Melebihi BOQ</option>
+                    {evalContext.partyPov === 'KLIEN' ? (
+                      <>
+                        <option value="BELUM_SERAH">Belum Serah</option>
+                        <option value="SIAP_PAKAI">Siap Pakai</option>
+                        <option value="PROSES">Proses</option>
+                        <option value="HABIS">Habis</option>
+                        <option value="TUNTAS">Tuntas</option>
+                        <option value="LEBIH">Lebih</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="BELUM_MASUK">Belum Masuk</option>
+                        <option value="BELUM_JALAN">Belum Jalan</option>
+                        <option value="SIAP_PAKAI">Siap Pakai</option>
+                        <option value="PROSES">Proses</option>
+                        <option value="HABIS">Habis</option>
+                        <option value="TUNTAS">Tuntas</option>
+                        <option value="LEBIH">Lebih</option>
+                      </>
+                    )}
                   </select>
 
                   <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-700 pl-2">
@@ -2738,7 +2927,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                             'center'
                           )}
                         </th>
-                        <th className="py-3 px-3.5 text-center w-28">Aksi Cepat</th>
+                        <th className="py-3 px-3.5 text-center w-28">{evalContext.partyPov === 'KLIEN' ? 'Riwayat' : 'Aksi Cepat'}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -2803,6 +2992,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                         sub.items.map((item) => {
                                           const isImk = isClientProvidedRemark(item.keterangan, tenantBranding.clientName);
                                           const keluarPosPct = item.qty_boq > 0 ? Math.round((item.qty_keluar_total / item.qty_boq) * 100) : 0;
+                                          const pm = physicalMaterials.find(
+                                            (p) => p.id === item.id || p.budget_lines.some((bl) => bl.id === item.id)
+                                          );
+                                          const evalPos = evaluateBoqPos(item, pm, stockMutations, evalContext);
 
                                           return (
                                             <tr
@@ -2821,8 +3014,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                                 {isImk ? (
                                                   <div className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">
                                                     {activeRole === 'Viewer/Pengamat'
-                                                      ? `Material Disediakan Klien (${tenantBranding.clientName})`
-                                                      : `Beban Kontraktor: Rp 0 (Disediakan Klien ${tenantBranding.clientName})`}
+                                                      ? `Material Jatah Klien (${tenantBranding.clientName})`
+                                                      : `Beban Kontraktor: Rp 0 (Jatah Klien ${tenantBranding.clientName})`}
                                                   </div>
                                                 ) : activeRole === 'Viewer/Pengamat' ? null : (
                                                   <div className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">
@@ -2871,45 +3064,140 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
                                                     — (Pos Jasa / Langsung)
                                                   </span>
+                                                ) : evalPos.providerStockLabel ? (
+                                                  <div>
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-cyan-50 text-cyan-800 dark:bg-cyan-950/50 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/70">
+                                                      {evalPos.providerStockLabel}
+                                                    </span>
+                                                    {evalPos.providerStockSubLabel && (
+                                                      <div className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                                        {evalPos.providerStockSubLabel}
+                                                      </div>
+                                                    )}
+                                                  </div>
                                                 ) : item.stok_saat_ini > 0 ? (
                                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/70">
-                                                    Ada:{item.stok_saat_ini.toLocaleString('id-ID', { maximumFractionDigits: 3 })} {item.satuan} siap pakai
+                                                    Ada: {item.stok_saat_ini.toLocaleString('id-ID', { maximumFractionDigits: 3 })} {item.satuan} siap pakai
                                                   </span>
                                                 ) : (
                                                   <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">
-                                                    Ada:0 {item.satuan}
+                                                    Ada: 0 {item.satuan}
                                                   </span>
                                                 )}
                                               </td>
 
                                               <td className="py-2.5 px-3 text-center">
-                                                {renderBoqStatusBadge(item)}
+                                                {renderBoqStatusBadge(item, evalPos)}
                                               </td>
 
                                               <td className="py-2.5 px-3.5 text-center">
-                                                <div className="flex items-center justify-center gap-1">
-                                                  {item.qty_pemenuhan_sisa <= 0 && item.qty_keluar_total >= item.qty_boq ? (
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                                      Tuntas
-                                                    </span>
-                                                  ) : (
+                                                <div className="flex items-center justify-center gap-1.5 flex-nowrap">
+                                                  {evalPos.actionType === 'RIWAYAT' ? (
                                                     <button
-                                                      onClick={() => handleOpenItemMutation(item, 'KELUAR')}
-                                                      disabled={!rolePermissions.canIssue}
-                                                      title="Catat pemakaian (keluar) khusus untuk pos pekerjaan BOQ ini"
-                                                      className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-bold disabled:opacity-40 transition-colors cursor-pointer shadow-xs whitespace-nowrap"
+                                                      type="button"
+                                                      onClick={() => handleViewItemHistory(item.nama_barang)}
+                                                      title={evalPos.actionTooltip}
+                                                      className="inline-flex items-center justify-center gap-1.5 min-w-[114px] h-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer active:scale-95 border border-slate-200/60 dark:border-slate-700/60"
                                                     >
-                                                      Pakai
+                                                      <History className="w-3 h-3" />
+                                                      <span>Riwayat</span>
                                                     </button>
+                                                  ) : evalPos.actionType === 'APPROVE' ? (
+                                                    <>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                          if (evalPos.pendingApprovalMutationId) {
+                                                            startTransition(() => {
+                                                              setActiveTab('MUTATION_HISTORY');
+                                                              setSearchQuery(item.nama_barang);
+                                                            });
+                                                          }
+                                                        }}
+                                                        title={evalPos.actionTooltip}
+                                                        className={`inline-flex items-center justify-center gap-1 min-w-[82px] h-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${getActionVariantClass(
+                                                          evalPos.actionVariant
+                                                        )}`}
+                                                      >
+                                                        <CheckCircle2 className="w-3 h-3" />
+                                                        <span>{evalPos.actionLabel}</span>
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleViewItemHistory(item.nama_barang)}
+                                                        title="Lihat riwayat transaksi item ini"
+                                                        className="w-7 h-7 sm:w-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center active:scale-95"
+                                                      >
+                                                        <History className="w-3.5 h-3.5" />
+                                                      </button>
+                                                    </>
+                                                  ) : evalPos.actionType === 'CATAT_JASA' ? (
+                                                    <>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleOpenItemMutation(item, 'KELUAR')}
+                                                        title={evalPos.actionTooltip}
+                                                        className={`inline-flex items-center justify-center gap-1 min-w-[82px] h-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${getActionVariantClass(
+                                                          'indigo'
+                                                        )}`}
+                                                      >
+                                                        <ClipboardCheck className="w-3 h-3" />
+                                                        <span>Catat</span>
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleViewItemHistory(item.nama_barang)}
+                                                        title="Lihat riwayat transaksi item ini"
+                                                        className="w-7 h-7 sm:w-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center active:scale-95"
+                                                      >
+                                                        <History className="w-3.5 h-3.5" />
+                                                      </button>
+                                                    </>
+                                                  ) : evalPos.actionType === 'PAKAI' ? (
+                                                    <>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleOpenItemMutation(item, 'KELUAR')}
+                                                        title={evalPos.actionTooltip}
+                                                        className={`inline-flex items-center justify-center gap-1 min-w-[82px] h-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${getActionVariantClass(
+                                                          'rose'
+                                                        )}`}
+                                                      >
+                                                        <ArrowUpRight className="w-3 h-3" />
+                                                        <span>Pakai</span>
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleViewItemHistory(item.nama_barang)}
+                                                        title="Lihat riwayat transaksi item ini"
+                                                        className="w-7 h-7 sm:w-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center active:scale-95"
+                                                      >
+                                                        <History className="w-3.5 h-3.5" />
+                                                      </button>
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleOpenItemMutation(item, 'MASUK')}
+                                                        title={evalPos.actionTooltip}
+                                                        className={`inline-flex items-center justify-center gap-1 min-w-[82px] h-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${getActionVariantClass(
+                                                          evalPos.actionVariant
+                                                        )}`}
+                                                      >
+                                                        <ArrowDownLeft className="w-3 h-3" />
+                                                        <span>Masuk</span>
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleViewItemHistory(item.nama_barang)}
+                                                        title="Lihat riwayat transaksi item ini"
+                                                        className="w-7 h-7 sm:w-7 sm:h-7 min-h-[28px] max-sm:min-h-[34px] p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center active:scale-95"
+                                                      >
+                                                        <History className="w-3.5 h-3.5" />
+                                                      </button>
+                                                    </>
                                                   )}
-                                                  <button
-                                                    onClick={() => handleViewItemHistory(item.nama_barang)}
-                                                    aria-label="Lihat riwayat mutasi material ini"
-                                                    title="Lihat riwayat mutasi material ini"
-                                                    className="p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-lg transition-colors cursor-pointer"
-                                                  >
-                                                    <History className="w-3.5 h-3.5" />
-                                                  </button>
                                                 </div>
                                               </td>
                                             </tr>

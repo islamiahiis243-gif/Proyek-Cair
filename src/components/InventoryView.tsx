@@ -1,17 +1,19 @@
 import React,{useMemo,useState} from 'react';
 import {useApp} from '../context/AppContext';
 import {ItemBarang,AvailabilityStatus} from '../types';
-import {Search,Package,ArrowDownLeft,ArrowUpRight,AlertCircle,CheckCircle2,XCircle,ClipboardList,History,X,ArrowLeft} from 'lucide-react';
+import {Search,Package,ArrowDownLeft,ArrowUpRight,AlertCircle,CheckCircle2,XCircle,ClipboardList,History,X,ArrowLeft,ClipboardCheck} from 'lucide-react';
 import {formatRupiah} from '../lib/pdfGenerator';
 import {getSupabaseClient} from '../lib/supabase';
 import {makeBoqCsv,parseBoqCsv} from '../lib/boqCsv';
+import {resolveEvalContext,evaluateBoqPos,getActionVariantClass,BoqPosEvaluation} from '../lib/boqExecutionEngine';
 interface InventoryViewProps{onQuickMutate:(item:ItemBarang,type:'MASUK'|'KELUAR')=>void;canMutate:boolean;}
 export const InventoryView:React.FC<InventoryViewProps>=({onQuickMutate,canMutate})=>{
- const {items,boqSections,stockMutations,dataReady,dataError,user,activeProject,activeWorkspaceId,refreshData,activeRole,setCurrentView,goBack}=useApp();
+ const {items,boqSections,stockMutations,physicalMaterials,tenantBranding,dataReady,dataError,user,activeProject,activeWorkspaceId,refreshData,activeRole,setCurrentView,goBack}=useApp();
  const isViewer=activeRole==='Viewer/Pengamat';
  const canReadBoq=Boolean(activeProject?.permissions.includes('boq.read'));
-  const canReadInventory=Boolean(activeProject?.permissions.includes('inventory.read'));
-  const canImport=Boolean(activeProject?.permissions.includes('boq.create'));
+ const canReadInventory=Boolean(activeProject?.permissions.includes('inventory.read'));
+ const canImport=Boolean(activeProject?.permissions.includes('boq.create'));
+ const evalContext=useMemo(()=>resolveEvalContext(activeRole,canMutate,tenantBranding),[activeRole,canMutate,tenantBranding]);
  const [historyItem,setHistoryItem]=useState<ItemBarang|null>(null);
  const [query,setQuery]=useState('');
  const [scope,setScope]=useState<'ALL'|'STOCK'|'SERVICE'>('ALL');
@@ -38,7 +40,125 @@ export const InventoryView:React.FC<InventoryViewProps>=({onQuickMutate,canMutat
   finally{setImportBusy(false);}
  };
 
- const badge=(status:AvailabilityStatus)=>status==='Tersedia'?<span className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700"><CheckCircle2 className="h-3 w-3"/>Tersedia</span>:status==='Stok Menipis'?<span className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700"><AlertCircle className="h-3 w-3"/>Menipis</span>:<span className="inline-flex items-center gap-1 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700"><XCircle className="h-3 w-3"/>Belum ada stok</span>;
+ const renderBoqStatusBadge = (item: ItemBarang, evalPos: BoqPosEvaluation) => (
+  <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border shadow-xs ${evalPos.statusBadgeClass}`}>
+   {evalPos.statusKey === 'TUNTAS' || evalPos.statusKey === 'LEBIH' ? (
+    <CheckCircle2 className="w-3 h-3" />
+   ) : evalPos.statusKey === 'PROSES' || evalPos.statusKey === 'SIAP_PAKAI' ? (
+    <AlertCircle className="w-3 h-3" />
+   ) : evalPos.statusKey === 'HABIS' ? (
+    <XCircle className="w-3 h-3" />
+   ) : null}
+   <span>{evalPos.statusLabel}</span>
+  </span>
+ );
+
+ const renderActionButtons = (item: ItemBarang, evalPos: BoqPosEvaluation) => {
+  if (!canMutate) return <span className="text-[10px] text-slate-400">Tidak berlaku</span>;
+  if (evalPos.actionType === 'RIWAYAT') {
+   return (
+    <button
+     type="button"
+     onClick={() => setHistoryItem(item)}
+     title={evalPos.actionTooltip}
+     className="inline-flex items-center justify-center gap-1.5 min-w-[100px] h-7 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer active:scale-95 border border-slate-200/60 dark:border-slate-700/60"
+    >
+     <History className="w-3 h-3" />
+     <span>Riwayat</span>
+    </button>
+   );
+  }
+  if (evalPos.actionType === 'APPROVE') {
+   return (
+    <div className="flex items-center justify-center gap-1">
+     <button
+      type="button"
+      onClick={() => setHistoryItem(item)}
+      title={evalPos.actionTooltip}
+      className={`inline-flex items-center justify-center gap-1 min-w-[76px] h-7 px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${getActionVariantClass(evalPos.actionVariant)}`}
+     >
+      <CheckCircle2 className="w-3 h-3" />
+      <span>{evalPos.actionLabel}</span>
+     </button>
+     <button
+      type="button"
+      onClick={() => setHistoryItem(item)}
+      title="Lihat riwayat transaksi item ini"
+      className="w-7 h-7 p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center active:scale-95"
+     >
+      <History className="w-3.5 h-3.5" />
+     </button>
+    </div>
+   );
+  }
+  if (evalPos.actionType === 'CATAT_JASA') {
+   return (
+    <div className="flex items-center justify-center gap-1">
+     <button
+      type="button"
+      onClick={() => onQuickMutate(item, 'KELUAR')}
+      title={evalPos.actionTooltip}
+      className={`inline-flex items-center justify-center gap-1 min-w-[76px] h-7 px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${getActionVariantClass('indigo')}`}
+     >
+      <ClipboardCheck className="w-3 h-3" />
+      <span>Catat</span>
+     </button>
+     <button
+      type="button"
+      onClick={() => setHistoryItem(item)}
+      title="Lihat riwayat transaksi item ini"
+      className="w-7 h-7 p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center active:scale-95"
+     >
+      <History className="w-3.5 h-3.5" />
+     </button>
+    </div>
+   );
+  }
+  if (evalPos.actionType === 'PAKAI') {
+   return (
+    <div className="flex items-center justify-center gap-1">
+     <button
+      type="button"
+      onClick={() => onQuickMutate(item, 'KELUAR')}
+      title={evalPos.actionTooltip}
+      className={`inline-flex items-center justify-center gap-1 min-w-[76px] h-7 px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${getActionVariantClass('rose')}`}
+     >
+      <ArrowUpRight className="w-3 h-3" />
+      <span>Pakai</span>
+     </button>
+     <button
+      type="button"
+      onClick={() => setHistoryItem(item)}
+      title="Lihat riwayat transaksi item ini"
+      className="w-7 h-7 p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center active:scale-95"
+     >
+      <History className="w-3.5 h-3.5" />
+     </button>
+    </div>
+   );
+  }
+  return (
+   <div className="flex items-center justify-center gap-1">
+    <button
+     type="button"
+     onClick={() => onQuickMutate(item, 'MASUK')}
+     title={evalPos.actionTooltip}
+     className={`inline-flex items-center justify-center gap-1 min-w-[76px] h-7 px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${getActionVariantClass(evalPos.actionVariant)}`}
+    >
+     <ArrowDownLeft className="w-3 h-3" />
+     <span>Masuk</span>
+    </button>
+    <button
+     type="button"
+     onClick={() => setHistoryItem(item)}
+     title="Lihat riwayat transaksi item ini"
+     className="w-7 h-7 p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center active:scale-95"
+    >
+     <History className="w-3.5 h-3.5" />
+    </button>
+   </div>
+  );
+ };
 
  const [expanded,setExpanded]=useState<Set<string>>(new Set());
  const sectionChildren=(id:string)=>boqSections.filter(s=>s.parent_id===id).sort((a,b)=>a.sort_order-b.sort_order);
@@ -64,13 +184,32 @@ export const InventoryView:React.FC<InventoryViewProps>=({onQuickMutate,canMutat
     <td className="px-3 py-2 text-right font-mono">{section.source_qty==null?'—':Number(section.source_qty).toLocaleString('id-ID',{maximumFractionDigits:4})}</td>
     <td className="px-3 py-2">{section.source_uom||Object.keys(section.quantities_by_uom||{}).join(', ')||'—'}</td>
     <td colSpan={2} className="px-3 py-2 text-right font-semibold">{isViewer ? `${section.item_count} item` : formatRupiah(Number(section.calculated_total_price||0))}</td>
-    <td colSpan={5} className="px-3 py-2 text-[10px]">{isViewer ? 'Akses Fisik QTY' : (Math.abs(Number(section.source_total_variance||0))>1?'Selisih subtotal sumber: '+formatRupiah(Number(section.source_total_variance)) :'Subtotal sesuai sumber') + ` · Free-Issue Klien: ${formatRupiah(Number(section.imk_total_price||0))}`}</td>
+    <td colSpan={5} className="px-3 py-2 text-[10px]">{isViewer ? 'Akses Fisik QTY' : (Math.abs(Number(section.source_total_variance||0))>1?'Selisih subtotal sumber: '+formatRupiah(Number(section.source_total_variance)) :'Subtotal sesuai sumber') + ` · Jatah Klien: ${formatRupiah(Number(section.imk_total_price||0))}`}</td>
    </tr>
    {isOpen&&children.map(child=>renderSection(child,depth+1))}
-   {isOpen&&ownItems.map(x=><tr key={x.id} className="border-b border-slate-100 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800/40">
-    <td className="px-3 py-2 font-mono text-[10px]">{x.kode_boq}</td><td className="px-3 py-2"><div className="font-semibold">{x.nama_barang}</div>{!isViewer&&<div className="text-[10px] text-slate-400">{formatRupiah(x.harga_satuan)} / {x.satuan}</div>}</td>
-    <td className="px-3 py-2 text-[10px]">{x.keterangan||'—'}</td><td className="px-3 py-2 text-right font-mono">{x.qty_boq.toLocaleString('id-ID',{maximumFractionDigits:4})}</td><td className="px-3 py-2">{x.satuan}</td><td className="px-3 py-2 text-right font-mono text-emerald-600">{canReadInventory?(x.is_stock_item?x.qty_masuk_total.toLocaleString('id-ID',{maximumFractionDigits:4}):(x.qty_masuk_total>0?x.qty_masuk_total.toLocaleString('id-ID',{maximumFractionDigits:4}):'—')):'—'}</td><td className="px-3 py-2 text-right font-mono text-rose-600">{canReadInventory?(x.qty_keluar_total>0?x.qty_keluar_total.toLocaleString('id-ID',{maximumFractionDigits:4}):(x.is_stock_item?'0':'—')):'—'}</td><td className="px-3 py-2 text-right font-mono">{canReadInventory?x.qty_pemenuhan_sisa.toLocaleString('id-ID',{maximumFractionDigits:4}):'—'}</td><td className="px-3 py-2 text-right font-mono">{canReadInventory&&x.is_stock_item?x.stok_saat_ini.toLocaleString('id-ID',{maximumFractionDigits:4}):canReadInventory?'— (Jasa)':'—'}</td><td className="px-3 py-2 text-[10px]">{canReadInventory?(x.is_stock_item||x.qty_keluar_total>0?x.status_pemenuhan:'Jasa / non-stok'):'—'}</td><td className="px-3 py-2">{canReadInventory&&x.is_stock_item?badge(x.status):<span className="text-[10px] text-slate-400">{canReadInventory?'Non-stok':'—'}</span>}</td><td className="px-3 py-2">{canMutate?<div className="flex gap-1">{canReadInventory&&<button title="Riwayat" onClick={()=>setHistoryItem(x)} className="rounded bg-slate-100 p-1.5"><History className="h-3 w-3"/></button>}{x.is_stock_item&&<button title="Masuk" onClick={()=>onQuickMutate(x,'MASUK')} className="rounded bg-emerald-50 p-1.5 text-emerald-700"><ArrowDownLeft className="h-3 w-3"/></button>}<button title={x.is_stock_item?'Keluar':'Catat Realisasi Jasa'} onClick={()=>onQuickMutate(x,'KELUAR')} className={`rounded bg-rose-50 p-1.5 text-rose-700 flex items-center gap-0.5 ${!x.is_stock_item?'px-2 text-[10px] font-bold':''}`}><ArrowUpRight className="h-3 w-3"/>{!x.is_stock_item&&<span>Realisasi</span>}</button></div>:'—'}</td>
-   </tr>)}
+   {isOpen&&ownItems.map(x=>{
+    const pm = (physicalMaterials || []).find((p) => p.id === x.id || (p.budget_lines && p.budget_lines.some((bl) => bl.id === x.id)) || p.nama_barang === x.nama_barang);
+    const evalPos = evaluateBoqPos(x, pm, stockMutations, evalContext);
+    return (
+     <tr key={x.id} className="border-b border-slate-100 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800/40">
+      <td className="px-3 py-2 font-mono text-[10px]">{x.kode_boq}</td>
+      <td className="px-3 py-2">
+       <div className="font-semibold">{x.nama_barang}</div>
+       {!isViewer&&<div className="text-[10px] text-slate-400">{formatRupiah(x.harga_satuan)} / {x.satuan}</div>}
+      </td>
+      <td className="px-3 py-2 text-[10px]">{x.keterangan||'—'}</td>
+      <td className="px-3 py-2 text-right font-mono">{x.qty_boq.toLocaleString('id-ID',{maximumFractionDigits:4})}</td>
+      <td className="px-3 py-2">{x.satuan}</td>
+      <td className="px-3 py-2 text-right font-mono text-emerald-600">{canReadInventory?(x.is_stock_item?x.qty_masuk_total.toLocaleString('id-ID',{maximumFractionDigits:4}):(x.qty_masuk_total>0?x.qty_masuk_total.toLocaleString('id-ID',{maximumFractionDigits:4}):'—')):'—'}</td>
+      <td className="px-3 py-2 text-right font-mono text-rose-600">{canReadInventory?(x.qty_keluar_total>0?x.qty_keluar_total.toLocaleString('id-ID',{maximumFractionDigits:4}):(x.is_stock_item?'0':'—')):'—'}</td>
+      <td className="px-3 py-2 text-right font-mono">{canReadInventory?x.qty_pemenuhan_sisa.toLocaleString('id-ID',{maximumFractionDigits:4}):'—'}</td>
+      <td className="px-3 py-2 text-right font-mono">{canReadInventory&&x.is_stock_item?x.stok_saat_ini.toLocaleString('id-ID',{maximumFractionDigits:4}):canReadInventory?'— (Jasa)':'—'}</td>
+      <td className="px-3 py-2 text-[10px]">{canReadInventory?(x.is_stock_item||x.qty_keluar_total>0?x.status_pemenuhan:'Jasa / non-stok'):'—'}</td>
+      <td className="px-3 py-2 text-center">{canReadInventory?renderBoqStatusBadge(x, evalPos):<span className="text-[10px] text-slate-400">—</span>}</td>
+      <td className="px-3 py-2 text-center">{renderActionButtons(x, evalPos)}</td>
+     </tr>
+    );
+   })}
   </React.Fragment>;
  };
  if(!dataReady)return <div role="status" aria-live="polite" className="rounded-xl border bg-white p-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Memuat Master BOQ dan data stok Project aktif…</div>;
@@ -135,10 +274,36 @@ export const InventoryView:React.FC<InventoryViewProps>=({onQuickMutate,canMutat
    </div>}
    {importMessage&&<p role="status" aria-live="polite" className="mt-2 text-[11px] text-blue-700">{importMessage}</p>}
   </div>
-  {dataReady&&boqSections.length>0&&<div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between border-b p-4 dark:border-slate-700"><div><h2 className="text-sm font-bold">Struktur Master BOQ</h2><p className="text-[10px] text-slate-500">4 level hierarki; subtotal kelompok dihitung dari item turunan. Warna mengikuti master Excel.</p></div><button onClick={()=>setExpanded(expanded.size===boqSections.length?new Set():new Set(boqSections.map(x=>x.id)))} className="rounded border px-3 py-1.5 text-[10px]">{expanded.size===boqSections.length?'Tutup semua':'Buka semua'}</button></div><div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead className="bg-slate-50 text-[10px] uppercase text-slate-500 dark:bg-slate-800"><tr><th className="px-3 py-2">Kode / Kelompok / Item</th><th className="px-3 py-2">Uraian</th><th className="px-3 py-2">Kepemilikan</th><th className="px-3 py-2 text-right">Qty BOQ</th><th className="px-3 py-2">UOM</th><th className="px-3 py-2 text-right">Masuk</th><th className="px-3 py-2 text-right">Keluar</th><th className="px-3 py-2 text-right">Sisa penuhi</th><th className="px-3 py-2 text-right">Saldo</th><th className="px-3 py-2">Pemenuhan</th><th className="px-3 py-2">Stok</th><th className="px-3 py-2">Mutasi</th></tr></thead><tbody>{boqSections.filter(x=>!x.parent_id).sort((a,b)=>a.sort_order-b.sort_order).map(x=>renderSection(x))}</tbody></table></div></div>}
+  {dataReady&&boqSections.length>0&&<div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between border-b p-4 dark:border-slate-700"><div><h2 className="text-sm font-bold">Struktur Master BOQ</h2><p className="text-[10px] text-slate-500">4 level hierarki; subtotal kelompok dihitung dari item turunan. Warna mengikuti master Excel.</p></div><button onClick={()=>setExpanded(expanded.size===boqSections.length?new Set():new Set(boqSections.map(x=>x.id)))} className="rounded border px-3 py-1.5 text-[10px]">{expanded.size===boqSections.length?'Tutup semua':'Buka semua'}</button></div><div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead className="bg-slate-50 text-[10px] uppercase text-slate-500 dark:bg-slate-800"><tr><th className="px-3 py-2">Kode / Kelompok / Item</th><th className="px-3 py-2">Uraian</th><th className="px-3 py-2">Kepemilikan</th><th className="px-3 py-2 text-right">Qty BOQ</th><th className="px-3 py-2">UOM</th><th className="px-3 py-2 text-right">Masuk</th><th className="px-3 py-2 text-right">Keluar</th><th className="px-3 py-2 text-right">Sisa penuhi</th><th className="px-3 py-2 text-right">Saldo</th><th className="px-3 py-2">Serapan</th><th className="px-3 py-2 text-center">Status Pos</th><th className="px-3 py-2 text-center">Aksi Cepat</th></tr></thead><tbody>{boqSections.filter(x=>!x.parent_id).sort((a,b)=>a.sort_order-b.sort_order).map(x=>renderSection(x))}</tbody></table></div></div>}
   {!canReadInventory&&<p className="sr-only">Permission inventory.read belum diberikan; data stok tidak ditampilkan.</p>}
   {!dataReady?<div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Memuat master BOQ dari Supabase…</div>:visible.length===0?<div role="status" className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">{items.length===0?'Belum ada data Master BOQ pada Project aktif.':'Tidak ada baris BOQ yang cocok dengan filter.'}</div>:
-  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="overflow-x-auto"><table className="w-full border-collapse text-left text-xs"><thead><tr className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-800"><th className="px-3 py-3">Kode / Baris</th><th className="px-3 py-3">Uraian BOQ</th><th className="px-3 py-3">Kategori / Kepemilikan</th><th className="px-3 py-3 text-right">Target BOQ</th><th className="px-3 py-3">UOM</th><th className="px-3 py-3 text-right">Total Masuk Fisik</th><th className="px-3 py-3 text-right">Terpakai di Pos</th><th className="px-3 py-3 text-right">Sisa Anggaran Pos</th><th className="px-3 py-3 text-right">Saldo Fisik Gudang</th><th className="px-3 py-3">Serapan Pos BOQ</th><th className="px-3 py-3">Status Stok</th><th className="px-3 py-3">Mutasi</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{visible.map(x=><tr key={x.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40"><td className="whitespace-nowrap px-3 py-3"><div className="font-mono font-semibold text-slate-800 dark:text-slate-200">{x.kode_boq}</div><div className="text-[10px] text-slate-400">Baris Excel {x.source_excel_row??x.source_row}</div></td><td className="min-w-[240px] px-3 py-3"><div className="font-semibold text-slate-900 dark:text-white">{x.nama_barang}</div>{!isViewer&&<div className="mt-1 text-[10px] text-slate-500">{formatRupiah(x.harga_satuan)} / {x.satuan}</div>}</td><td className="min-w-[190px] px-3 py-3"><div className="text-slate-600 dark:text-slate-300">{x.kategori}</div><div className={`mt-1 text-[10px] font-semibold ${x.keterangan?.toLowerCase().includes('imk')?'text-violet-600':'text-slate-400'}`}>{x.keterangan||'Kepemilikan belum ditandai'}</div><div className="mt-1 text-[10px] text-slate-400">{x.is_stock_item?(canMutate?'Dikontrol mutasi fisik':'Material stok • hanya baca'):'Jasa / non-stok'}</div></td><td className="px-3 py-3 text-right font-mono font-semibold text-slate-800 dark:text-slate-200">{x.qty_boq.toLocaleString('id-ID',{maximumFractionDigits:4})}</td><td className="px-3 py-3 font-mono text-slate-600 dark:text-slate-300">{x.satuan}</td><td className="px-3 py-3 text-right font-mono font-semibold text-emerald-700 dark:text-emerald-400">{canReadInventory?(x.is_stock_item?x.qty_masuk_total.toLocaleString('id-ID',{maximumFractionDigits:4}):(x.qty_masuk_total>0?x.qty_masuk_total.toLocaleString('id-ID',{maximumFractionDigits:4}):'—')):'—'}</td><td className="px-3 py-3 text-right font-mono text-rose-700 dark:text-rose-400">{canReadInventory?(x.qty_keluar_total>0?x.qty_keluar_total.toLocaleString('id-ID',{maximumFractionDigits:4}):(x.is_stock_item?'0':'—')):'—'}</td><td className="px-3 py-3 text-right font-mono font-semibold text-amber-700 dark:text-amber-400">{canReadInventory?x.qty_pemenuhan_sisa.toLocaleString('id-ID',{maximumFractionDigits:4}):'—'}</td><td className="px-3 py-3 text-right font-mono font-semibold text-slate-900 dark:text-white">{canReadInventory&&x.is_stock_item?x.stok_saat_ini.toLocaleString('id-ID',{maximumFractionDigits:4}):canReadInventory?'— (Jasa)':'—'}</td><td className="min-w-[145px] px-3 py-3">{!canReadInventory?<span className="text-[10px] text-slate-400">—</span>:x.is_stock_item||x.qty_keluar_total>0?<div><div className="flex items-center justify-between gap-2 text-[10px]"><span className="font-semibold text-slate-700 dark:text-slate-200">{x.status_pemenuhan}</span><span className="font-mono text-slate-500">{x.progress_pemenuhan.toLocaleString('id-ID',{maximumFractionDigits:1})}%</span></div><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700"><div className={`h-full rounded-full ${x.status_pemenuhan==='Terpenuhi'?'bg-emerald-500':x.status_pemenuhan==='Melebihi BOQ'?'bg-violet-500':'bg-blue-500'}`} style={{width:`${Math.min(x.progress_pemenuhan,100)}%`}}/></div><div className="mt-1 text-[9px] text-slate-400">{x.is_stock_item?'Masuk kumulatif ÷ Qty BOQ':'Realisasi keluar ÷ Qty BOQ'}</div></div>:<span className="text-[10px] text-slate-400">Belum ada realisasi</span>}</td><td className="px-3 py-3">{canReadInventory&&x.is_stock_item?badge(x.status):<span className="text-[10px] text-slate-400">{canReadInventory?'Non-stok':'—'}</span>}</td><td className="px-3 py-3">{canMutate?<div className="flex gap-1">{canReadInventory&&<button title="Riwayat mutasi item" onClick={()=>setHistoryItem(x)} className="rounded bg-slate-100 p-1.5 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-white"><History className="h-3.5 w-3.5"/></button>}{x.is_stock_item&&<button title="Catat stok masuk" onClick={()=>onQuickMutate(x,'MASUK')} className="rounded bg-emerald-50 p-1.5 text-emerald-700 hover:bg-emerald-100"><ArrowDownLeft className="h-3.5 w-3.5"/></button>}<button title={x.is_stock_item?'Catat stok keluar':'Catat realisasi pos jasa/upah'} onClick={()=>onQuickMutate(x,'KELUAR')} className={`rounded bg-rose-50 p-1.5 text-rose-700 hover:bg-rose-100 flex items-center gap-1 ${!x.is_stock_item?'px-2 font-bold text-[10px]':''}`}><ArrowUpRight className="h-3.5 w-3.5"/>{!x.is_stock_item&&<span>Realisasi</span>}</button></div>:<span className="text-[10px] text-slate-400">Tidak berlaku</span>}</td></tr>)}</tbody></table></div><div className="flex items-center gap-2 border-t border-slate-100 px-4 py-3 text-[10px] text-slate-500 dark:border-slate-800"><ClipboardList className="h-3.5 w-3.5"/>Prinsip operasional terpadu: Pemasukan disatukan (penerimaan fisik bertambah di kartu stok gudang tanpa pemecahan pos fiktif), sedangkan pengeluaran dirincikan (pemakaian memotong saldo fisik gudang sekaligus mencatat serapan riil pada pos anggaran BOQ terkait).</div></div>}
+  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="overflow-x-auto"><table className="w-full border-collapse text-left text-xs"><thead><tr className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-800"><th className="px-3 py-3">Kode / Baris</th><th className="px-3 py-3">Uraian BOQ</th><th className="px-3 py-3">Kategori / Kepemilikan</th><th className="px-3 py-3 text-right">Target BOQ</th><th className="px-3 py-3">UOM</th><th className="px-3 py-3 text-right">Total Masuk Fisik</th><th className="px-3 py-3 text-right">Terpakai di Pos</th><th className="px-3 py-3 text-right">Sisa Anggaran Pos</th><th className="px-3 py-3 text-right">Saldo Fisik Gudang</th><th className="px-3 py-3">Serapan Pos BOQ</th><th className="px-3 py-3 text-center">Status Pos</th><th className="px-3 py-3 text-center">Aksi Cepat</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{visible.map(x=>{
+    const pm = (physicalMaterials || []).find((p) => p.id === x.id || (p.budget_lines && p.budget_lines.some((bl) => bl.id === x.id)) || p.nama_barang === x.nama_barang);
+    const evalPos = evaluateBoqPos(x, pm, stockMutations, evalContext);
+    const isImk = x.keterangan?.toLowerCase().includes('imk') || x.kategori?.toLowerCase().includes('imk');
+    return (
+     <tr key={x.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+      <td className="whitespace-nowrap px-3 py-3"><div className="font-mono font-semibold text-slate-800 dark:text-slate-200">{x.kode_boq}</div><div className="text-[10px] text-slate-400">Baris Excel {x.source_excel_row??x.source_row}</div></td>
+      <td className="min-w-[240px] px-3 py-3"><div className="font-semibold text-slate-900 dark:text-white">{x.nama_barang}</div>{!isViewer&&<div className="mt-1 text-[10px] text-slate-500">{formatRupiah(x.harga_satuan)} / {x.satuan}</div>}</td>
+      <td className="min-w-[190px] px-3 py-3">
+       <div className="text-slate-600 dark:text-slate-300">{x.kategori}</div>
+       <div className={`mt-1 text-[10px] font-semibold ${isImk ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`}>
+        {isImk ? `Jatah Klien (${tenantBranding?.clientName || 'Klien'})` : (x.keterangan || 'Kepemilikan Kontraktor')}
+       </div>
+       <div className="mt-1 text-[10px] text-slate-400">{x.is_stock_item?(canMutate?'Dikontrol mutasi fisik':'Material stok • hanya baca'):'Jasa / non-stok'}</div>
+      </td>
+      <td className="px-3 py-3 text-right font-mono font-semibold text-slate-800 dark:text-slate-200">{x.qty_boq.toLocaleString('id-ID',{maximumFractionDigits:4})}</td>
+      <td className="px-3 py-3 font-mono text-slate-600 dark:text-slate-300">{x.satuan}</td>
+      <td className="px-3 py-3 text-right font-mono font-semibold text-emerald-700 dark:text-emerald-400">{canReadInventory?(x.is_stock_item?x.qty_masuk_total.toLocaleString('id-ID',{maximumFractionDigits:4}):(x.qty_masuk_total>0?x.qty_masuk_total.toLocaleString('id-ID',{maximumFractionDigits:4}):'—')):'—'}</td>
+      <td className="px-3 py-3 text-right font-mono text-rose-700 dark:text-rose-400">{canReadInventory?(x.qty_keluar_total>0?x.qty_keluar_total.toLocaleString('id-ID',{maximumFractionDigits:4}):(x.is_stock_item?'0':'—')):'—'}</td>
+      <td className="px-3 py-3 text-right font-mono font-semibold text-amber-700 dark:text-amber-400">{canReadInventory?x.qty_pemenuhan_sisa.toLocaleString('id-ID',{maximumFractionDigits:4}):'—'}</td>
+      <td className="px-3 py-3 text-right font-mono font-semibold text-slate-900 dark:text-white">{canReadInventory&&x.is_stock_item?x.stok_saat_ini.toLocaleString('id-ID',{maximumFractionDigits:4}):canReadInventory?'— (Jasa)':'—'}</td>
+      <td className="min-w-[145px] px-3 py-3">{!canReadInventory?<span className="text-[10px] text-slate-400">—</span>:x.is_stock_item||x.qty_keluar_total>0?<div><div className="flex items-center justify-between gap-2 text-[10px]"><span className="font-semibold text-slate-700 dark:text-slate-200">{x.status_pemenuhan}</span><span className="font-mono text-slate-500">{x.progress_pemenuhan.toLocaleString('id-ID',{maximumFractionDigits:1})}%</span></div><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700"><div className={`h-full rounded-full ${x.status_pemenuhan==='Terpenuhi'?'bg-emerald-500':x.status_pemenuhan==='Melebihi BOQ'?'bg-violet-500':'bg-blue-500'}`} style={{width:`${Math.min(x.progress_pemenuhan,100)}%`}}/></div><div className="mt-1 text-[9px] text-slate-400">{x.is_stock_item?'Masuk kumulatif ÷ Qty BOQ':'Realisasi keluar ÷ Qty BOQ'}</div></div>:<span className="text-[10px] text-slate-400">Belum ada realisasi</span>}</td>
+      <td className="px-3 py-3 text-center">{canReadInventory?renderBoqStatusBadge(x, evalPos):<span className="text-[10px] text-slate-400">—</span>}</td>
+      <td className="px-3 py-3 text-center">{renderActionButtons(x, evalPos)}</td>
+     </tr>
+    );
+   })}</tbody></table></div><div className="flex items-center gap-2 border-t border-slate-100 px-4 py-3 text-[10px] text-slate-500 dark:border-slate-800"><ClipboardList className="h-3.5 w-3.5"/>Prinsip operasional terpadu: Pemasukan disatukan (penerimaan fisik bertambah di kartu stok gudang tanpa pemecahan pos fiktif), sedangkan pengeluaran dirincikan (pemakaian memotong saldo fisik gudang sekaligus mencatat serapan riil pada pos anggaran BOQ terkait).</div></div>}
   {historyItem&&canReadInventory&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4"><div className="max-h-[85vh] w-full max-w-4xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900"><div className="flex items-center justify-between border-b p-4 dark:border-slate-700"><div><h2 className="text-sm font-bold text-slate-900 dark:text-white">Histori mutasi item</h2><p className="text-xs text-slate-500">{historyItem.kode_boq} · {historyItem.nama_barang}</p></div><button onClick={()=>setHistoryItem(null)} className="rounded p-2 hover:bg-slate-100 dark:hover:bg-slate-800"><X className="h-4 w-4"/></button></div><div className="max-h-[70vh] overflow-auto"><table className="w-full text-left text-xs"><thead className="sticky top-0 bg-slate-50 dark:bg-slate-800"><tr><th className="p-3">Waktu</th><th className="p-3">Jenis</th><th className="p-3">Qty</th><th className="p-3">Asal</th><th className="p-3">Tujuan</th><th className="p-3">Pihak</th><th className="p-3">Dicatat oleh</th><th className="p-3">Referensi / Catatan</th></tr></thead><tbody>{stockMutations.filter(m=>m.barang_id===historyItem.id).map(m=><tr key={m.id} className="border-t dark:border-slate-800"><td className="p-3 whitespace-nowrap">{new Date(m.tanggal).toLocaleString('id-ID')}</td><td className="p-3">{m.jenis}</td><td className="p-3 font-mono">{m.jumlah} {m.satuan}</td><td className="p-3">{m.source_name||'—'}</td><td className="p-3">{m.destination_name||m.tujuan_keperluan||'—'}</td><td className="p-3">{m.pic_penerima_penyerah}</td><td className="p-3">{m.created_by_name||'—'}</td><td className="p-3">{m.nomor_surat_jalan||m.catatan||'—'}</td></tr>)}</tbody></table>{stockMutations.filter(m=>m.barang_id===historyItem.id).length===0&&<p className="p-8 text-center text-xs text-slate-500">Belum ada histori mutasi untuk item ini.</p>}</div></div></div>}
  </div>;
 };

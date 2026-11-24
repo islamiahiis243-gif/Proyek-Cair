@@ -562,12 +562,14 @@ export const createInitialWizardAnswers = (
       (explicitLineId && preselectedPm.budget_lines.find((bl) => bl.id === explicitLineId)) ||
       preselectedPm.budget_lines[0] ||
       null;
+    const isLineClient = matchedLine ? isClientProvidedRemark(matchedLine.keterangan, labels?.clientName) : false;
+    const resolvedAsal: AsalBarang = type === 'MASUK' ? (isLineClient ? 'KLIEN' : prov.defaultAsal) : 'KONTRAKTOR';
 
     return {
       ...base,
       itemSource: 'BOQ',
       physicalMaterial: preselectedPm,
-      asalBarang: type === 'MASUK' ? prov.defaultAsal : 'KONTRAKTOR',
+      asalBarang: resolvedAsal,
       selectedBudgetLineId: matchedLine?.id || ''
     };
   }

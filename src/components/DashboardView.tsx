@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { formatRupiah, formatDateTime } from '../lib/pdfGenerator';
 import { isClientProvidedRemark } from '../lib/stockMutationEngine';
+import { resolveEvalContext, evaluateBoqPos } from '../lib/boqExecutionEngine';
 
 interface DashboardViewProps {
   onOpenStockModal: (type?: 'MASUK' | 'KELUAR') => void;
@@ -127,12 +128,38 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const bruto = total + clientFreeIssue;
     return { material, manpower, total, clientFreeIssue, bruto };
   }, [items, tenantBranding.clientName]);
-  const fulfilledOrArrivedCount = useMemo(() => {
-    return items.filter((it) => Math.max(it.qty_masuk_total || 0, it.qty_keluar_total || 0) > 0).length;
-  }, [items]);
-  const pendingDeliveryCount = useMemo(() => {
-    return items.filter((it) => Math.max(it.qty_masuk_total || 0, it.qty_keluar_total || 0) === 0).length;
-  }, [items]);
+  const evalContext = useMemo(
+    () => resolveEvalContext(activeRole, false, tenantBranding),
+    [activeRole, tenantBranding]
+  );
+
+  const boqPosCounts = useMemo(() => {
+    let tuntas = 0;
+    let proses = 0;
+    let siapPakai = 0;
+    let belumMasukAtauSerah = 0;
+    let habis = 0;
+
+    items.forEach((it) => {
+      const pm = (physicalMaterials || []).find(
+        (p) => p.id === it.id || (p.budget_lines && p.budget_lines.some((bl) => bl.id === it.id)) || p.nama_barang === it.nama_barang
+      );
+      const ev = evaluateBoqPos(it, pm, stockMutations, evalContext);
+      if (ev.statusKey === 'TUNTAS' || ev.statusKey === 'LEBIH') {
+        tuntas++;
+      } else if (ev.statusKey === 'PROSES') {
+        proses++;
+      } else if (ev.statusKey === 'SIAP_PAKAI') {
+        siapPakai++;
+      } else if (ev.statusKey === 'HABIS') {
+        habis++;
+      } else {
+        belumMasukAtauSerah++;
+      }
+    });
+
+    return { tuntas, proses, siapPakai, belumMasukAtauSerah, habis };
+  }, [items, physicalMaterials, stockMutations, evalContext]);
 
   const totalBoqValue = useMemo(() => {
     return items.reduce((sum, it) => sum + (Number(it.qty_boq || 0) * Number(it.harga_satuan || 0)), 0);
@@ -597,11 +624,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 font-medium flex items-center gap-1">
             <span className="font-semibold text-blue-600 dark:text-blue-400 inline-block min-w-[7rem]">{contractorItemCount} {tenantBranding.contractorName}</span>
             <span>·</span>
-            <span className="font-semibold text-purple-600 dark:text-purple-400">{imkItemCount} Free-Issue Klien</span>
+            <span className="font-semibold text-purple-600 dark:text-purple-400">{imkItemCount} Jatah Klien</span>
           </div>
           <div className="mt-2 flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-300 border-t border-slate-100 dark:border-slate-800 pt-2">
-            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{fulfilledOrArrivedCount} Terealisasi</span>
-            <span className="text-amber-600 dark:text-amber-400 font-semibold">{pendingDeliveryCount} Belum Tiba</span>
+            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{boqPosCounts.tuntas} Tuntas · {boqPosCounts.proses} Proses</span>
+            <span className="text-sky-600 dark:text-sky-400 font-semibold">{boqPosCounts.siapPakai} Siap Pakai · {boqPosCounts.belumMasukAtauSerah} Belum Tiba</span>
           </div>
         </div>
 

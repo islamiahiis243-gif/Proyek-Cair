@@ -1,12 +1,13 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import QRCode from 'qrcode';
-import { DokumenLaporan, MutasiBarang, MutasiKas, UserProfile, ItemBarang, PhysicalMaterialItem, TenantBranding } from '../types';
+import { DokumenLaporan, MutasiBarang, MutasiKas, UserProfile, ItemBarang, PhysicalMaterialItem, TenantBranding, ImpersonateRole } from '../types';
 import {
   analyzeIncomingProviderDiscrepancy,
   isClientProvidedRemark,
   summarizeMaterialIncomingDiscrepancy
 } from './stockMutationEngine';
+import { resolveEvalContext, evaluateBoqPos, evaluateWarehouseMaterial } from './boqExecutionEngine';
 
 function stableStringify(value: any): string {
   if (Array.isArray(value)) return '[' + value.map(stableStringify).join(',') + ']';
@@ -1028,6 +1029,9 @@ export async function generateBOQReportPDF(params: {
   customNotes?: string;
   selectedColumns?: string[];
   orientation?: 'portrait' | 'landscape';
+  mutations?: MutasiBarang[];
+  physicalMaterials?: PhysicalMaterialItem[];
+  role?: ImpersonateRole;
 }): Promise<DokumenLaporan> {
   const {
     docId,
@@ -1041,9 +1045,13 @@ export async function generateBOQReportPDF(params: {
     customTitle,
     customNotes,
     selectedColumns,
-    orientation: requestedOrientation
+    orientation: requestedOrientation,
+    mutations,
+    physicalMaterials,
+    role
   } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
+  const evalContext = resolveEvalContext(role || (hideFinancials ? 'Viewer/Pengamat' : 'Foreman'), false, b);
   const doc = new jsPDF({
     orientation: requestedOrientation || 'landscape',
     unit: 'mm',
@@ -1170,7 +1178,7 @@ export async function generateBOQReportPDF(params: {
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(6.5);
     doc.setTextColor(126, 34, 206);
-    doc.text(`* Material Klien (Free-Issue ${b.clientName}): ${clientItemsCount} Pos`, pageWidth - 18, 53, { align: 'right' });
+    doc.text(`* Material Klien (Jatah Klien ${b.clientName}): ${clientItemsCount} Pos`, pageWidth - 18, 53, { align: 'right' });
   } else {
     doc.setFontSize(7);
     doc.setFont('helvetica', 'bold');
@@ -1180,7 +1188,7 @@ export async function generateBOQReportPDF(params: {
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(6.5);
     doc.setTextColor(126, 34, 206);
-    doc.text(`* Pengadaan Klien (Free-Issue ${b.clientName}): ${formatRupiah(clientFreeIssue)} (Beban Kontraktor: Rp 0)`, pageWidth - 18, 52.5, { align: 'right' });
+    doc.text(`* Pengadaan Klien (Jatah Klien ${b.clientName}): ${formatRupiah(clientFreeIssue)} (Beban Kontraktor: Rp 0)`, pageWidth - 18, 52.5, { align: 'right' });
 
     // Garis pemisah tipis antar baris
     doc.setDrawColor(226, 232, 240);
@@ -1278,7 +1286,21 @@ export async function generateBOQReportPDF(params: {
     total_kontrak: { header: 'Total Kontrak (Rp)', width: 32, align: 'right', getValue: (it, isClient) => isClient ? '0 (Klien)' : formatRupiah(it.harga_satuan * it.qty_boq) },
     qty_masuk: { header: 'Realisasi Masuk', width: 25, align: 'right', getValue: (it) => `${(it.is_stock_item ? it.qty_masuk_total : Math.max(it.qty_masuk_total, it.qty_keluar_total)).toLocaleString('id-ID')} ${it.satuan}` },
     qty_sisa: { header: 'Sisa Belum Tiba', width: 25, align: 'right', getValue: (it) => `${it.qty_pemenuhan_sisa.toLocaleString('id-ID')} ${it.satuan}` },
-    status: { header: 'Status', width: 22, align: 'center', getValue: (it) => it.status_pemenuhan }
+    status: {
+      header: 'Status',
+      width: 22,
+      align: 'center',
+      getValue: (it) => {
+        if (mutations && physicalMaterials) {
+          const pm = physicalMaterials.find(
+            (p) => p.id === it.id || (p.budget_lines && p.budget_lines.some((bl) => bl.id === it.id)) || p.nama_barang === it.nama_barang
+          );
+          const ev = evaluateBoqPos(it, pm, mutations, evalContext);
+          return ev.statusLabel;
+        }
+        return it.status_pemenuhan;
+      }
+    }
   };
 
   const defaultBOQCols = hideFinancials
@@ -1502,6 +1524,7 @@ export async function generateWarehouseSummaryPDF(params: {
   selectedColumns?: string[];
   providerScope?: 'ALL' | 'KONTRAKTOR' | 'IMK';
   orientation?: 'portrait' | 'landscape';
+  role?: ImpersonateRole;
 }): Promise<DokumenLaporan> {
   const {
     docId,
@@ -1515,9 +1538,11 @@ export async function generateWarehouseSummaryPDF(params: {
     branding: rawBranding,
     selectedColumns,
     providerScope = 'ALL',
-    orientation: requestedOrientation
+    orientation: requestedOrientation,
+    role
   } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
+  const evalContext = resolveEvalContext(role || 'Foreman', false, b);
   const providerLabels = { contractorName: b.contractorName, clientName: b.clientName };
 
   const doc = new jsPDF({
@@ -1670,11 +1695,10 @@ export async function generateWarehouseSummaryPDF(params: {
       width: 26,
       align: 'center',
       getValue: (pm) => {
+        const ev = evaluateWarehouseMaterial(pm, stockMutations, evalContext);
         return pm.stok_fisik > 0
           ? `Tersedia (${pm.stok_fisik.toLocaleString('id-ID', { maximumFractionDigits: 3 })})`
-          : (pm.total_qty_masuk || 0) > 0
-          ? 'Habis'
-          : 'Belum Masuk';
+          : ev.statusLabel;
       }
     }
   };

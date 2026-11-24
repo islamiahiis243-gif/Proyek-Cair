@@ -586,22 +586,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         remainingReceivedPool.set(key, Math.max(0, poolAvailable - masukKePosIni));
       }
 
-      // Sisa Belum Tiba / Belum Terealisasi di level pos
-      const sisaBelumTibaPos = Math.max(0, baseTarget - Math.max(masukKePosIni, terpakaiDiPosIni));
+      // Sisa Kebutuhan Pemakaian di level pos (Dimensi Realisasi BOQ: target - terpakai)
+      const sisaKebutuhanPos = Math.max(0, baseTarget - terpakaiDiPosIni);
+      // Sisa Belum Tiba di Gudang (Dimensi Pengadaan: total target BOQ gabungan - total fisik masuk)
       const sisaBelumTibaGudang = Math.max(0, totalBoqGabungan - masukGudangTotal);
       
       const EPS = 0.0001;
-      // Status Pemenuhan Pos yang cerdas & akurat:
+      // Status Pemenuhan Pos BOQ (Baku & Murni Berdasarkan Realisasi Lapangan):
+      // Pos baru 'Terpenuhi' jika terpasang/terpakai >= target, bukan sekadar barang baru tiba di gudang
       let statusPemenuhan: ItemBarang['status_pemenuhan'] = 'Belum dipenuhi';
       if (terpakaiDiPosIni >= baseTarget - EPS && baseTarget > 0) {
         statusPemenuhan = terpakaiDiPosIni > baseTarget + EPS ? 'Melebihi BOQ' : 'Terpenuhi';
-      } else if (masukKePosIni >= baseTarget - EPS && baseTarget > 0) {
-        statusPemenuhan = masukKePosIni > baseTarget + EPS ? 'Melebihi BOQ' : 'Terpenuhi';
-      } else if (masukKePosIni > 0 || terpakaiDiPosIni > 0) {
+      } else if (terpakaiDiPosIni > 0) {
         statusPemenuhan = 'Dalam pemenuhan';
       }
 
-      const progress = baseTarget > 0 ? Math.min((Math.max(masukKePosIni, terpakaiDiPosIni) / baseTarget) * 100, 100) : 0;
+      const progress = baseTarget > 0 ? Math.min((terpakaiDiPosIni / baseTarget) * 100, 100) : 0;
 
       return {
         id: b.id,
@@ -621,7 +621,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         has_stock_history: stockHistory.has(b.id) || masukGudangTotal > 0 || terpakaiDiPosIni > 0,
         qty_masuk_total: masukKePosIni,
         qty_keluar_total: terpakaiDiPosIni,
-        qty_pemenuhan_sisa: sisaBelumTibaPos,
+        qty_pemenuhan_sisa: sisaKebutuhanPos,
         total_boq_material_gabungan: totalBoqGabungan,
         jumlah_pos_material_gabungan: jumlahPosGabungan,
         sisa_belum_tiba_gudang: sisaBelumTibaGudang,
@@ -1343,12 +1343,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const cashHasEntries = cashMutations.length > 0;
   const recordedStockCount = stockItems.filter(x => x.has_stock_history).length;
   const unrecordedStockCount = stockItems.length - recordedStockCount;
-  // Item yang benar-benar butuh perhatian pengadaan:
-  // Masih ada sisa alokasi pekerjaan BOQ (qty_pemenuhan_sisa > 0), tetapi stok fisik gudang kosong (stok_saat_ini <= 0).
-  // Jika pekerjaan BOQ sudah 100% terpenuhi & terpasang ke fisik bangunan (qty_pemenuhan_sisa <= 0), saldo gudang 0 adalah Tuntas/Selesai, BUKAN defisit!
-  const outOfStockCount = stockItems.filter(x => x.qty_pemenuhan_sisa > 0 && x.stok_saat_ini <= 0).length;
-  const lowStockCount = stockItems.filter(x => x.qty_pemenuhan_sisa > 0 && x.stok_saat_ini > 0 && x.stok_saat_ini <= x.stok_minimum).length;
-  const availableStockCount = stockItems.filter(x => x.has_stock_history && (x.stok_saat_ini > x.stok_minimum || x.qty_pemenuhan_sisa <= 0)).length;
+  // Item yang benar-benar butuh perhatian pengadaan darurat (Kondisi S-4: Habis):
+  // HANYA menghitung pos material fisik yang belum tuntas (qty_pemenuhan_sisa > 0.0001),
+  // pernah memiliki histori stok masuk/keluar (has_stock_history === true && qty_keluar_total > 0),
+  // dan saldo fisiknya saat ini habis (stok_saat_ini <= 0).
+  // Pos S-1 yang pekerjaannya belum dimulai DILARANG memicu alarm palsu!
+  const outOfStockCount = stockItems.filter(
+    x => x.has_stock_history && x.qty_keluar_total > 0 && x.qty_pemenuhan_sisa > 0.0001 && x.stok_saat_ini <= 0
+  ).length;
+  const lowStockCount = stockItems.filter(
+    x => x.has_stock_history && x.qty_pemenuhan_sisa > 0.0001 && x.stok_saat_ini > 0 && x.stok_saat_ini <= x.stok_minimum
+  ).length;
+  const availableStockCount = stockItems.filter(
+    x => x.has_stock_history && (x.stok_saat_ini > x.stok_minimum || x.qty_pemenuhan_sisa <= 0.0001)
+  ).length;
 
   const updateCompanyLogo = async (logoUrl: string) => {
     const targetCompanyId = activeCompany.id || activeContext?.workspaces.find(w => w.type === 'COMPANY')?.company_id;
