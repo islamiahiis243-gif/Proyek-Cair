@@ -251,7 +251,6 @@ interface AppContextType {
     },
     reason: string
   ) => Promise<{ success: boolean; message: string }>;
-  addDocument: (doc: DokumenLaporan) => Promise<void>;
   logout: () => Promise<void>;
   updateUserProfile: (updates: Partial<UserProfile>) => Promise<void>;
   totalStockAssetValue: number;
@@ -2532,7 +2531,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const reverseStockMutation = batalStockMutation;
   const reverseCashMutation = batalCashMutation;
-  const addDocument = async (_doc: DokumenLaporan) => {};
 
   const logout = async () => {
     try {
@@ -2606,7 +2604,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const tenantBranding: TenantBranding = {
-    projectId: activeProjectId || activeProject?.id || '2506245e-ff3f-4313-b821-920ab368a5df',
+    projectId: activeProjectId || activeProject?.id || '',
     contractorName:
       activeProject?.company_name ||
       (activeCompany.id ? activeCompany.name : '') ||
@@ -2773,7 +2771,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         advanceDocumentWorkflow,
         batalOfficialDocument,
         gantiOfficialDocument,
-        addDocument,
         logout,
         updateUserProfile,
         totalStockAssetValue,

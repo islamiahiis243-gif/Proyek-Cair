@@ -300,7 +300,7 @@ const CoretaxWelcomeCard: React.FC<CoretaxWelcomeCardProps> = React.memo(({
           <div className="text-[11px] text-slate-600 dark:text-slate-400 font-medium flex items-center gap-2">
             <span className="font-bold text-slate-700 dark:text-slate-300">Penugasan Badan Usaha Anda:</span>
             <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[10px]">
-              {activeCompany.name || 'CV. MENARA MEGAH'} · {activeProject?.name || activeContext.projects[0].name}
+              {activeCompany.name || activeContext.projects[0]?.company_name || 'Perusahaan Aktif'} · {activeProject?.name || activeContext.projects[0].name}
             </span>
           </div>
           <div className="flex items-center gap-2">

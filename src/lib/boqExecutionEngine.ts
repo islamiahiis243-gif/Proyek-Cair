@@ -127,8 +127,8 @@ export function resolveEvalContext(
     authority = 'PENGAWAS_INTERNAL';
   }
 
-  const contractorName = branding.contractorName?.trim() || 'CV. MENARA MEGAH';
-  const clientName = branding.clientName?.trim() || 'PT INDO MURO KENCANA';
+  const contractorName = branding.contractorName?.trim() || 'Kontraktor';
+  const clientName = branding.clientName?.trim() || 'Klien';
   const canViewFinancials = partyPov === 'KONTRAKTOR';
 
   return {

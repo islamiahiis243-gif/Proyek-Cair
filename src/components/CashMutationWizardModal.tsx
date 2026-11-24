@@ -288,7 +288,7 @@ export const CashMutationWizardModal: React.FC<CashMutationWizardModalProps> = (
       for (const file of toUpload) {
         const url = await uploadReceiptFile(
           file,
-          activeProjectId || tenantBranding.projectId || 'default_project',
+          activeProjectId || tenantBranding.projectId || '',
           answers.nomor_kuitansi || 'kuitansi_kas'
         );
         uploaded.push(url);
@@ -901,7 +901,7 @@ export const CashMutationWizardModal: React.FC<CashMutationWizardModalProps> = (
                       list="cash-wizard-stores"
                       value={answers.nama_toko}
                       onChange={(e) => setAnswers((p) => ({ ...p, nama_toko: e.target.value }))}
-                      placeholder="Contoh: TB Sinar Jaya / PT Indo Muro"
+                      placeholder="Contoh: TB Sinar Bangunan / Nama Pihak Lawan"
                       className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                     />
                     <datalist id="cash-wizard-stores">

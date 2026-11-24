@@ -51,7 +51,6 @@ export const SettingsView: React.FC = () => {
   // Local state for editing personal profile
   const [fullName, setFullName] = useState(user.name || '');
   const [avatarUrl, setAvatarUrl] = useState(user.avatar_url || '');
-  const [showAvatarPresets, setShowAvatarPresets] = useState(false);
   const [isCropperOpen, setIsCropperOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -62,14 +61,6 @@ export const SettingsView: React.FC = () => {
   });
 
   const activeWorkspace = activeContext?.workspaces.find((w) => w.id === activeWorkspaceId) || null;
-
-  // Preset avatars for quick selection
-  const avatarPresets = [
-    { label: 'Helm Proyek', url: 'https://images.unsplash.com/photo-1541888946425-d0fbb186156f?w=150&auto=format&fit=crop&q=80' },
-    { label: 'Insinyur Lapangan', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80' },
-    { label: 'Manajer Proyek', url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80' },
-    { label: 'Administrasi / Clerk', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80' }
-  ];
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -290,43 +281,18 @@ export const SettingsView: React.FC = () => {
                   <Camera className="w-3.5 h-3.5" />
                   <span>Ambil / Unggah Foto (Potong 1:1)</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAvatarPresets(!showAvatarPresets)}
-                  className="px-3 py-2 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
-                >
-                  Pilih Preset
-                </button>
+                {avatarUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setAvatarUrl('')}
+                    className="px-3 py-2 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                  >
+                    Gunakan Inisial Nama
+                  </button>
+                )}
               </div>
             </div>
           </div>
-
-          {/* Pilihan Preset Avatar Cepat */}
-          {showAvatarPresets && (
-            <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-2">
-              <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                Pilih Avatar Proyek Siap Pakai:
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {avatarPresets.map((preset) => (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => {
-                      setAvatarUrl(preset.url);
-                      setShowAvatarPresets(false);
-                    }}
-                    className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-blue-500 text-left transition-all"
-                  >
-                    <img src={preset.url} alt={preset.label} className="w-8 h-8 rounded-lg object-cover" />
-                    <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300 truncate">
-                      {preset.label}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Input Nama Lengkap & Email */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

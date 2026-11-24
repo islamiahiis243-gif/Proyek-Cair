@@ -2,7 +2,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { SupabaseConfig, UserProfile } from '../types';
 
 const STORAGE_KEY_USER = 'proyek_cair_user';
-export const DEFAULT_USER: UserProfile = { id:'', name:'Pengguna', email:'', role:'User', provider:'guest' };
+export const DEFAULT_USER: UserProfile = { id:'', name:'Pengguna', email:'', role:'User', provider:'email' };
 const env = (import.meta as any).env || {};
 const SUPABASE_URL = (env.VITE_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || env.SUPABASE_URL) as string | undefined;
 const SUPABASE_KEY = (env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || env.SUPABASE_PUBLISHABLE_KEY) as string | undefined;
@@ -10,7 +10,7 @@ const SUPABASE_KEY = (env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANO
 let supabaseInstance: SupabaseClient | null = null;
 export function getSupabaseClient(): SupabaseClient {
   if (!SUPABASE_URL || !SUPABASE_KEY) {
-    throw new Error('Konfigurasi Supabase belum tersedia. Hubungi administrator UDU.');
+    throw new Error('Konfigurasi Supabase belum tersedia. Hubungi administrator sistem.');
   }
   if (!supabaseInstance) {
     supabaseInstance = createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -31,7 +31,7 @@ export function getStoredUser(): UserProfile {
     const raw = localStorage.getItem(STORAGE_KEY_USER);
     if (raw) return JSON.parse(raw);
   } catch {}
-  return { id: '', name: 'Pengguna', email: '', role: 'Viewer', provider: 'guest' };
+  return { id: '', name: 'Pengguna', email: '', role: 'Viewer', provider: 'email' };
 }
 export function saveStoredUser(user: UserProfile): void {
   localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
@@ -52,7 +52,7 @@ export async function testSupabaseConnection(_url?: string, _anonKey?: string): 
   try {
     const { error } = await getSupabaseClient().from('boq_items').select('id').limit(1);
     if (error) return { success:false, message:error.message };
-    return { success:true, message:'Terhubung ke database UDU.' };
+    return { success:true, message:'Terhubung ke database Proyek Cair.' };
   } catch (error:any) {
     return { success:false, message:error.message || 'Koneksi gagal.' };
   }

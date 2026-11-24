@@ -328,7 +328,7 @@ export interface UserProfile {
   email: string;
   avatar_url?: string;
   role: string;
-  provider: 'google' | 'guest';
+  provider: 'google' | 'email';
   personalWorkspaceId?: string;
   workspaceType?: 'PERSONAL' | 'COMPANY';
 }

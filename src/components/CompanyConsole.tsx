@@ -926,7 +926,7 @@ export const CompanyConsole: React.FC = () => {
                         maxLength={40}
                         value={projectCode}
                         onChange={e => setProjectCode(e.target.value.toUpperCase())}
-                        placeholder="Contoh: UDU-02"
+                        placeholder="Contoh: PRJ-01"
                         className="w-full rounded-lg border border-slate-300 bg-white p-2.5 uppercase dark:border-slate-700 dark:bg-slate-950 font-mono"
                       />
                     </div>
@@ -938,7 +938,7 @@ export const CompanyConsole: React.FC = () => {
                         maxLength={160}
                         value={projectName}
                         onChange={e => setProjectName(e.target.value)}
-                        placeholder="Contoh: Proyek Pembangunan Office UDU"
+                        placeholder="Contoh: Pembangunan Gedung Kantor Proyek"
                         className="w-full rounded-lg border border-slate-300 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-950"
                       />
                     </div>

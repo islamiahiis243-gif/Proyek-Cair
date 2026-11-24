@@ -53,7 +53,7 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
   onClose,
   albumItems,
   currentUser,
-  projectId = 'default_project',
+  projectId = '',
   onOpenReceiptViewer,
   onOpenCashReceiptViewer,
   onSelectForLinking,

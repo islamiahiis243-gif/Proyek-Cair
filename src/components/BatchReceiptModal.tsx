@@ -312,12 +312,15 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
         typeof val === 'string' &&
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
-      // Tentukan target Project ID yang valid
+      // Tentukan target Project ID yang valid dari konteks proyek aktif
       const targetProjectId = isValidUuid(projectId)
         ? projectId
         : isValidUuid((targetMutations[0] as any)?.project_id)
         ? (targetMutations[0] as any).project_id
-        : '2506245e-ff3f-4313-b821-920ab368a5df';
+        : '';
+      if (!targetProjectId) {
+        throw new Error('Proyek aktif belum dipilih. Pilih proyek terlebih dahulu sebelum menyimpan nota.');
+      }
 
       // 1. Tentukan berkas lampiran (Jika memilih dari album dan tidak ada file baru, pakai file yang ada di album!)
       let finalAttachmentUrls: string[] = [];
@@ -436,7 +439,7 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
       await saveSupplierStore({
         nama_toko: cleanStoreName,
         telepon: storeContact.trim() || undefined,
-        project_id: isValidUuid(projectId) ? projectId : '2506245e-ff3f-4313-b821-920ab368a5df'
+        project_id: targetProjectId
       });
 
       // 4. Sukses

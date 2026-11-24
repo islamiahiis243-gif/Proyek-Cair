@@ -682,7 +682,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
       for (const file of files.slice(0, Math.max(0, 5 - proofUrls.length))) {
         const url = await uploadReceiptFile(
           file,
-          activeProjectId || tenantBranding.projectId || 'default_project',
+          activeProjectId || tenantBranding.projectId || '',
           proofReceiptNo || 'bukti_kas'
         );
         uploaded.push(url);
@@ -775,7 +775,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
       for (const file of files.slice(0, Math.max(0, 5 - lpjUrls.length))) {
         const url = await uploadReceiptFile(
           file,
-          activeProjectId || tenantBranding.projectId || 'default_project',
+          activeProjectId || tenantBranding.projectId || '',
           lpjReceiptNo || 'lpj_panjar'
         );
         uploaded.push(url);
@@ -3105,7 +3105,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
               {/* Pratinjau Dampak Otomatis Engine (Anti Double-Counting) */}
               {lpjPreviewPlan && (
                 <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-900 dark:text-emerald-200 space-y-1">
-                  <div className="font-extrabold">Simulasi Otomatis Engine (Bebas Hitung Ganda):</div>
+                  <div className="font-extrabold">Ringkasan Perhitungan Otomatis (Bebas Hitung Ganda):</div>
                   <p>{lpjPreviewPlan.summaryText}</p>
                 </div>
               )}

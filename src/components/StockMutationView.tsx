@@ -3485,7 +3485,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                             ? 'bg-purple-600 text-white shadow-xs'
                             : 'bg-white/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
                         }`}
-                        title="Pengadaan Kontraktor (CV Menara Megah)"
+                        title={`Pengadaan Kontraktor (${tenantBranding.contractorName})`}
                       >
                         <span className="text-[9px] font-medium opacity-80 truncate max-w-full">BOQ Kontrak</span>
                         <span className="font-extrabold">{mutationStats.boq}</span>
@@ -4754,7 +4754,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         availablePendingMutations={stockMutations.filter((m) => m.jenis === 'MASUK' && !m.is_batal && !m.is_ganti)}
         allStockMutations={stockMutations}
         currentUser={user}
-        projectId={activeProjectId || tenantBranding.projectId || '2506245e-ff3f-4313-b821-920ab368a5df'}
+        projectId={activeProjectId || tenantBranding.projectId || ''}
         onSuccess={async (count, receiptNo) => {
           await refreshData();
           setSelectedMutationIds([]);
@@ -4768,7 +4768,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         onClose={() => setIsProjectAlbumOpen(false)}
         albumItems={projectAlbumItems}
         currentUser={user}
-        projectId={activeProjectId || tenantBranding.projectId || '2506245e-ff3f-4313-b821-920ab368a5df'}
+        projectId={activeProjectId || tenantBranding.projectId || ''}
         hideCashDetails={isFinancialHidden}
         onOpenReceiptViewer={(primary, related) => {
           setViewerPrimaryMutation(primary);

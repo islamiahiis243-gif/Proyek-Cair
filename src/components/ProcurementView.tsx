@@ -373,7 +373,7 @@ export const ProcurementView: React.FC = () => {
     try {
       const uploaded: string[] = [];
       for (const f of files) {
-        const url = await uploadReceiptFile(f, tenantBranding.projectId || 'project', receiveSjNo || 'SJ_PO');
+        const url = await uploadReceiptFile(f, activeProjectId || tenantBranding.projectId || '', receiveSjNo || 'SJ_PO');
         if (url) uploaded.push(url);
       }
       setReceiveFiles((prev) => [...prev, ...uploaded]);
@@ -430,7 +430,7 @@ export const ProcurementView: React.FC = () => {
     try {
       const uploaded: string[] = [];
       for (const f of files) {
-        const url = await uploadReceiptFile(f, tenantBranding.projectId || 'project', payRefNo || 'BAYAR_PO');
+        const url = await uploadReceiptFile(f, activeProjectId || tenantBranding.projectId || '', payRefNo || 'BAYAR_PO');
         if (url) uploaded.push(url);
       }
       setPayFiles((prev) => [...prev, ...uploaded]);

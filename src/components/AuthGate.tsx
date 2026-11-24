@@ -195,7 +195,7 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
         role: 'User',
         personalWorkspaceId: personalWsId,
         workspaceType: 'PERSONAL',
-        provider: session.user.app_metadata?.provider === 'google' ? 'google' : 'guest'
+        provider: session.user.app_metadata?.provider === 'google' ? 'google' : 'email'
       });
       if (!isCurrent()) return;
       setError('');

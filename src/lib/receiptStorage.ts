@@ -122,14 +122,18 @@ export function fileToBase64(blob: Blob): Promise<string> {
  */
 export async function uploadReceiptFile(
   file: File,
-  projectId = 'default_project',
+  projectId: string,
   receiptNo = 'nota'
 ): Promise<string> {
+  const cleanProjectId = (projectId || '').trim();
+  if (!cleanProjectId) {
+    throw new Error('Proyek aktif belum dipilih. Tidak dapat mengunggah lampiran berkas.');
+  }
   const cleanReceipt = receiptNo.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30) || 'nota';
   const timestamp = Date.now();
   const isPdf = file.type === 'application/pdf';
   const ext = isPdf ? 'pdf' : 'jpg';
-  const filePath = `${projectId}/${cleanReceipt}_${timestamp}_${Math.random().toString(36).substring(2, 6)}.${ext}`;
+  const filePath = `${cleanProjectId}/${cleanReceipt}_${timestamp}_${Math.random().toString(36).substring(2, 6)}.${ext}`;
 
   try {
     const compressed = isPdf ? file : await compressReceiptImage(file);
