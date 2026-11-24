@@ -1,5 +1,5 @@
 import { CurrencyInput } from './CurrencyInput';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   X,
   Images,
@@ -24,8 +24,10 @@ import {
   Ban,
   ArrowRight,
   Camera,
-  Upload
+  Upload,
+  Sparkles
 } from 'lucide-react';
+import { useSmartGesture } from '../hooks/useSmartGesture';
 import { ProjectReceiptAlbumItem, MutasiBarang, MutasiKas, UserProfile, ReceiptScope } from '../types';
 import { formatDateTime } from '../lib/pdfGenerator';
 import { supersedeProjectReceipt, voidProjectReceipt, uploadReceiptFile } from '../lib/receiptStorage';
@@ -142,6 +144,32 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
     setZoomLevel(1);
     setRotation(0);
   };
+
+  // Smart-Gesture: Usap lembar nota pada inspeksi foto
+  const handleInspectPrev = useCallback(() => {
+    if (!inspectingItem || inspectingItem.attachmentUrls.length <= 1) return;
+    setInspectingPageIndex((prev) =>
+      prev > 0 ? prev - 1 : inspectingItem.attachmentUrls.length - 1
+    );
+    setZoomLevel(1);
+    setRotation(0);
+  }, [inspectingItem]);
+
+  const handleInspectNext = useCallback(() => {
+    if (!inspectingItem || inspectingItem.attachmentUrls.length <= 1) return;
+    setInspectingPageIndex((prev) =>
+      prev < inspectingItem.attachmentUrls.length - 1 ? prev + 1 : 0
+    );
+    setZoomLevel(1);
+    setRotation(0);
+  }, [inspectingItem]);
+
+  const { gestureProps: inspectGestureProps } = useSmartGesture({
+    threshold: 40,
+    enableMouseDrag: false,
+    onSwipeLeft: handleInspectNext,
+    onSwipeRight: handleInspectPrev
+  });
 
   // Buka form Ganti Nota
   const handleOpenReplaceModal = (item: ProjectReceiptAlbumItem, e: React.MouseEvent) => {
@@ -759,8 +787,11 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
                 )}
               </div>
 
-              {/* Viewport Gambar */}
-              <div className="flex-1 overflow-auto flex items-center justify-center p-4">
+              {/* Viewport Gambar dengan Smart-Gesture Touch Swipe */}
+              <div
+                {...inspectGestureProps}
+                className="flex-1 overflow-auto flex items-center justify-center p-4 touch-pan-y relative select-none"
+              >
                 {(() => {
                   const url = inspectingItem.attachmentUrls[inspectingPageIndex];
                   const isPdf = url?.toLowerCase().includes('.pdf') || url?.startsWith('data:application/pdf');
@@ -807,25 +838,31 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
 
               {/* Pagination Lembar Jika Multi Halaman */}
               {inspectingItem.attachmentUrls.length > 1 && (
-                <div className="p-3 bg-slate-900/90 border-t border-slate-800 flex items-center justify-center gap-2">
-                  {inspectingItem.attachmentUrls.map((_, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => {
-                        setInspectingPageIndex(idx);
-                        setZoomLevel(1);
-                        setRotation(0);
-                      }}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        inspectingPageIndex === idx
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                      }`}
-                    >
-                      Lembar #{idx + 1}
-                    </button>
-                  ))}
+                <div className="p-3 bg-slate-900/90 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 px-4">
+                  <span className="text-[10px] text-slate-400 inline-flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-cyan-400" />
+                    <span>Smart-Gesture: Usap layar ‹ › untuk membalik lembar nota</span>
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {inspectingItem.attachmentUrls.map((_, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setInspectingPageIndex(idx);
+                          setZoomLevel(1);
+                          setRotation(0);
+                        }}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          inspectingPageIndex === idx
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        }`}
+                      >
+                        Lembar #{idx + 1}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

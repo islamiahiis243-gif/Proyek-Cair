@@ -8,6 +8,7 @@ import {
   KeyRound,
   ShieldCheck,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   ArrowRight,
   Building2,
@@ -21,8 +22,12 @@ import {
   Check,
   Search,
   Briefcase,
-  User
+  User,
+  Sparkles,
+  Smartphone,
+  TableProperties
 } from 'lucide-react';
+import { useSmartGesture } from '../hooks/useSmartGesture';
 import { formatRupiah } from '../lib/pdfGenerator';
 
 /* =========================================================================
@@ -762,57 +767,239 @@ const PricingCalculatorSection: React.FC<PricingCalculatorSectionProps> = React.
 PricingCalculatorSection.displayName = 'PricingCalculatorSection';
 
 /* =========================================================================
-   6. SUBKOMPONEN 4: PERBANDINGAN EXCEL vs PROYEK CAIR (MEMOIZED STATIC TABLE)
+   6. SUBKOMPONEN 4: PERBANDINGAN EXCEL vs PROYEK CAIR (SMART-GESTURE & TABLE)
    ========================================================================= */
 
+const COMPARISON_ITEMS = [
+  {
+    id: 1,
+    aspek: 'Jejak Transaksi & Koreksi',
+    polaLama: 'Baris salah bisa dihapus sesuka hati; rawan manipulasi kasir/mandor.',
+    proyekCair: (
+      <>
+        Buku besar abadi (<i>Immutable</i>); koreksi sah via <b>Batal & Ganti</b> dengan jejak audit permanen.
+      </>
+    ),
+    badgeLama: 'Rawan Manipulasi',
+    badgeCair: 'Audit Permanen'
+  },
+  {
+    id: 2,
+    aspek: 'Pengelolaan Nota Fisik Toko',
+    polaLama: 'Nota toko tercecer, tinta pudar, sering nota yang sama diklaim dua kali.',
+    proyekCair: (
+      <>
+        <b>Album Galeri Terpusat</b>; tiap item belanja tertaut langsung ke foto nota riil toko.
+      </>
+    ),
+    badgeLama: 'Nota Tercecer',
+    badgeCair: 'Galeri Terpadu'
+  },
+  {
+    id: 3,
+    aspek: 'Persetujuan Berita Acara',
+    polaLama: 'Menunggu tanda tangan basah berhari-hari; rawan dipalsukan.',
+    proyekCair: (
+      <>
+        Alur digital 4 jenjang (Clerk ➔ Foreman ➔ Spv ➔ CEO) dengan <b>TTE & QR Code</b> terenkripsi.
+      </>
+    ),
+    badgeLama: 'Tanda Tangan Basah',
+    badgeCair: 'TTE & QR SHA-256'
+  },
+  {
+    id: 4,
+    aspek: 'Keterbukaan Terhadap Klien',
+    polaLama: 'Klien curiga markup harga; termin sering ditahan karena laporan tidak sinkron.',
+    proyekCair: (
+      <>
+        Tersedia <b>Mode Viewer / Pengamat</b> khusus owner untuk memantau progres fisik secara transparan.
+      </>
+    ),
+    badgeLama: 'Termin Tertahan',
+    badgeCair: 'Transparansi Penuh'
+  }
+];
+
 const ComparisonTableSection: React.FC = React.memo(() => {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [viewMode, setViewMode] = useState<'table' | 'smart_card'>('table');
+
+  const handlePrev = useCallback(() => {
+    setActiveIdx((prev) => (prev > 0 ? prev - 1 : COMPARISON_ITEMS.length - 1));
+  }, []);
+
+  const handleNext = useCallback(() => {
+    setActiveIdx((prev) => (prev < COMPARISON_ITEMS.length - 1 ? prev + 1 : 0));
+  }, []);
+
+  const { gestureProps } = useSmartGesture({
+    threshold: 35,
+    enableMouseDrag: true,
+    onSwipeLeft: handleNext,
+    onSwipeRight: handlePrev
+  });
+
+  const currentItem = COMPARISON_ITEMS[activeIdx];
+
   return (
     <section 
       style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 360px' }}
-      className="rounded-3xl bg-slate-900 text-white p-6 sm:p-8 lg:p-10 border border-slate-800 space-y-6"
+      className="rounded-3xl bg-slate-900 text-white p-5 sm:p-7 lg:p-8 border border-slate-800 space-y-5"
     >
-      <div className="text-center max-w-2xl mx-auto space-y-2">
-        <h2 className="text-2xl font-bold tracking-tight">
-          Mengapa Kontraktor Indonesia Beralih dari Excel ke Proyek Cair?
-        </h2>
-        <p className="text-xs text-slate-400">
-          Masalah klasik di lapangan yang membuat proyek bocor dan termin tertahan klien terselesaikan secara sistematis.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-4xl mx-auto">
+        <div className="text-left space-y-1">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-800/60 text-cyan-400 text-[10px] font-semibold">
+            <Sparkles className="w-3 h-3 animate-pulse" />
+            <span>Smart-Gesture Didukung</span>
+          </div>
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
+            Mengapa Kontraktor Indonesia Beralih dari Excel ke Proyek Cair?
+          </h2>
+          <p className="text-xs text-slate-400">
+            Masalah klasik di lapangan yang membuat proyek bocor dan termin tertahan klien terselesaikan secara sistematis.
+          </p>
+        </div>
+
+        {/* Tombol Pilihan Tampilan Cerdas (Tabel vs Kartu Geser) */}
+        <div className="inline-flex items-center rounded-xl bg-slate-800/90 p-1 border border-slate-700/80 self-start sm:self-center shrink-0 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setViewMode('table')}
+            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+              viewMode === 'table'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <TableProperties className="w-3.5 h-3.5" />
+            <span>Tabel Lengkap</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('smart_card')}
+            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+              viewMode === 'smart_card'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>Kartu Geser Cerdas</span>
+          </button>
+        </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs">
-          <thead>
-            <tr className="border-b border-slate-800 text-slate-400 font-semibold">
-              <th className="py-3 px-4">Aspek Operasional</th>
-              <th className="py-3 px-4 text-rose-400">Pola Lama (Excel / Kertas)</th>
-              <th className="py-3 px-4 text-emerald-400">Proyek Cair (Sistem Modular)</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/60 text-slate-300">
-            <tr>
-              <td className="py-3 px-4 font-bold text-white">Jejak Transaksi & Koreksi</td>
-              <td className="py-3 px-4 text-slate-400">Baris salah bisa dihapus sesuka hati; rawan manipulasi kasir/mandor.</td>
-              <td className="py-3 px-4 text-emerald-300 font-medium">Buku besar abadi (<i>Immutable</i>); koreksi sah via <b>Batal & Ganti</b> dengan jejak audit permanen.</td>
-            </tr>
-            <tr>
-              <td className="py-3 px-4 font-bold text-white">Pengelolaan Nota Fisik Toko</td>
-              <td className="py-3 px-4 text-slate-400">Nota toko tercecer, tinta pudar, sering nota yang sama diklaim dua kali.</td>
-              <td className="py-3 px-4 text-emerald-300 font-medium"><b>Album Galeri Terpusat</b>; tiap item belanja tertaut langsung ke foto nota riil toko.</td>
-            </tr>
-            <tr>
-              <td className="py-3 px-4 font-bold text-white">Persetujuan Berita Acara</td>
-              <td className="py-3 px-4 text-slate-400">Menunggu tanda tangan basah berhari-hari; rawan dipalsukan.</td>
-              <td className="py-3 px-4 text-emerald-300 font-medium">Alur digital 4 jenjang (Clerk ➔ Foreman ➔ Spv ➔ CEO) dengan <b>TTE & QR Code</b> terenkripsi.</td>
-            </tr>
-            <tr>
-              <td className="py-3 px-4 font-bold text-white">Keterbukaan Terhadap Klien</td>
-              <td className="py-3 px-4 text-slate-400">Klien curiga markup harga; termin sering ditahan karena laporan tidak sinkron.</td>
-              <td className="py-3 px-4 text-emerald-300 font-medium">Tersedia <b>Mode Viewer / Pengamat</b> khusus owner untuk memantau progres fisik secara transparan.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      {viewMode === 'smart_card' ? (
+        /* =========================================================================
+           KARTU GESER CERDAS (SMART-GESTURE SWIPE CARDS)
+           ========================================================================= */
+        <div className="space-y-3">
+          <div
+            {...gestureProps}
+            className="touch-pan-y select-none rounded-2xl bg-slate-950/70 border border-slate-800 p-4 sm:p-6 transition-all duration-200 cursor-grab active:cursor-grabbing hover:border-slate-700"
+          >
+            {/* Header Aspek */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <span className="text-xs font-bold text-cyan-300">
+                Aspek {activeIdx + 1} dari {COMPARISON_ITEMS.length}: {currentItem.aspek}
+              </span>
+              <span className="text-[10px] text-slate-400 hidden sm:inline-flex items-center gap-1">
+                <span>Usap / Drag untuk beralih</span>
+              </span>
+            </div>
+
+            {/* Perbandingan Berdampingan */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-4">
+              {/* Kolom Pola Lama */}
+              <div className="rounded-xl border border-rose-900/60 bg-rose-950/20 p-3.5 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-rose-400">Pola Lama (Excel / Kertas)</span>
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800/80">
+                    {currentItem.badgeLama}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {currentItem.polaLama}
+                </p>
+              </div>
+
+              {/* Kolom Proyek Cair */}
+              <div className="rounded-xl border border-emerald-900/60 bg-emerald-950/25 p-3.5 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-emerald-400">Proyek Cair (Sistem Modular)</span>
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800/80">
+                    {currentItem.badgeCair}
+                  </span>
+                </div>
+                <p className="text-xs text-emerald-200 leading-relaxed font-medium">
+                  {currentItem.proyekCair}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Kontrol Navigasi & Indikator Titik */}
+          <div className="flex items-center justify-between px-1">
+            <button
+              type="button"
+              onClick={handlePrev}
+              className="px-3 py-1.5 rounded-lg border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Sebelumnya</span>
+            </button>
+
+            {/* Titik Indikator Geser */}
+            <div className="flex items-center gap-1.5">
+              {COMPARISON_ITEMS.map((_, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setActiveIdx(idx)}
+                  className={`h-2 rounded-full transition-all cursor-pointer ${
+                    activeIdx === idx ? 'w-6 bg-blue-500' : 'w-2 bg-slate-700 hover:bg-slate-500'
+                  }`}
+                  aria-label={`Ke aspek ${idx + 1}`}
+                />
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleNext}
+              className="px-3 py-1.5 rounded-lg border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              <span>Selanjutnya</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* =========================================================================
+           TABEL KOMPARATIF PENUH (SEPERTI FOTO PENGGUNA)
+           ========================================================================= */
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-slate-800 text-slate-400 font-semibold">
+                <th className="py-3 px-4">Aspek Operasional</th>
+                <th className="py-3 px-4 text-rose-400">Pola Lama (Excel / Kertas)</th>
+                <th className="py-3 px-4 text-emerald-400">Proyek Cair (Sistem Modular)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 text-slate-300">
+              {COMPARISON_ITEMS.map((item) => (
+                <tr key={item.id} className="hover:bg-slate-800/30 transition-colors">
+                  <td className="py-3 px-4 font-bold text-white whitespace-nowrap">{item.aspek}</td>
+                  <td className="py-3 px-4 text-slate-400">{item.polaLama}</td>
+                  <td className="py-3 px-4 text-emerald-300 font-medium">{item.proyekCair}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 });

@@ -7,21 +7,41 @@ import {
   Lock,
   Mail,
   Building2,
-  ArrowRight
+  ArrowRight,
+  Sparkles
 } from 'lucide-react';
+import { useSmartGesture } from '../hooks/useSmartGesture';
 
 /* =========================================================================
    PANEL BRANDING KIRI (ISOLASI REACT.MEMO - ZERO LATENCY PADA INPUT KEYUP)
+   DENGAN SMART-GESTURE 3D PARALLAX TILT & LAYOUT KOMPAK TANPA GAP
    ========================================================================= */
 const AuthBrandingPanel: React.FC = React.memo(() => {
-  return (
-    <div className="lg:col-span-5 relative flex flex-col justify-between p-6 sm:p-8 lg:p-10 bg-linear-to-br from-slate-900 via-blue-950/70 to-slate-950 border-b lg:border-b-0 lg:border-r border-slate-800 overflow-hidden">
-      {/* Ambient Lighting Glow di Balik Maskot */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 -mt-10 w-72 h-72 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-0 right-0 -mb-10 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+  const [tilt, setTilt] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-      {/* Bagian Atas: Banner Logo Resmi & Maskot 3D 1:1 */}
-      <div className="relative z-10 space-y-6">
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    setTilt({ x: -(y * 14), y: x * 14 });
+  };
+
+  const handleMouseLeave = () => {
+    setTilt({ x: 0, y: 0 });
+  };
+
+  return (
+    <div
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      className="lg:col-span-5 relative flex flex-col justify-between p-4 sm:p-5 lg:p-6 lg:py-5 bg-linear-to-br from-slate-900 via-blue-950/70 to-slate-950 border-b lg:border-b-0 lg:border-r border-slate-800 overflow-hidden"
+    >
+      {/* Ambient Lighting Glow di Balik Maskot */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 -mt-10 w-64 h-64 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-0 right-0 -mb-10 w-56 h-56 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+      {/* Bagian Atas: Banner Logo Resmi & Maskot 3D Kompak */}
+      <div className="relative z-10 space-y-2 sm:space-y-2.5">
         {/* Banner Resmi (words_PNG2.png) */}
         <div className="w-full flex items-center justify-start">
           <img
@@ -29,59 +49,65 @@ const AuthBrandingPanel: React.FC = React.memo(() => {
             alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
             loading="eager"
             decoding="async"
-            width={320}
-            height={120}
-            className="w-full max-w-[280px] sm:max-w-[320px] h-auto object-contain drop-shadow-xl"
+            width={260}
+            height={90}
+            className="w-full max-w-[200px] sm:max-w-[230px] h-auto object-contain drop-shadow-xl"
           />
         </div>
 
-        {/* Container Maskot 3D: Rasio 1:1, Auto Shrink to Fit */}
-        <div className="w-full flex items-center justify-center py-2">
-          <div className="w-full max-w-[220px] sm:max-w-[260px] aspect-square flex items-center justify-center">
+        {/* Container Maskot 3D: Interaksi Parallax Smart-Gesture Lembut */}
+        <div className="w-full flex items-center justify-center py-0 my-0">
+          <div
+            style={{
+              transform: `perspective(600px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
+              transition: tilt.x === 0 && tilt.y === 0 ? 'transform 0.4s ease-out' : 'transform 0.08s ease-out'
+            }}
+            className="w-full max-w-[125px] sm:max-w-[140px] lg:max-w-[150px] aspect-square flex items-center justify-center will-change-transform"
+          >
             <img
               src="/mascot_3d.png"
               alt="Maskot Proyek Cair"
               loading="eager"
               decoding="async"
-              width={260}
-              height={260}
-              className="w-full h-full object-contain drop-shadow-[0_15px_30px_rgba(37,99,235,0.3)] hover:scale-105 transition-transform duration-500"
+              width={180}
+              height={180}
+              className="w-full h-full object-contain drop-shadow-[0_12px_24px_rgba(37,99,235,0.25)] hover:scale-105 transition-transform duration-300 pointer-events-none select-none"
             />
           </div>
         </div>
 
-        {/* Tagline Promosi Utama */}
-        <div className="space-y-2">
-          <h3 className="text-base sm:text-lg font-bold text-white leading-snug">
+        {/* Tagline Promosi Utama - Dekat Langsung ke Maskot 3D */}
+        <div className="space-y-1 mt-0.5">
+          <h3 className="text-sm sm:text-base font-bold text-white leading-snug">
             Kendalikan Arus Material & Keuangan Proyek{' '}
             <span className="text-transparent bg-clip-text bg-linear-to-r from-blue-400 via-cyan-300 to-emerald-400">
               Tanpa Celah Kebocoran.
             </span>
           </h3>
-          <p className="text-xs text-slate-300 leading-relaxed font-medium">
+          <p className="text-[11px] text-slate-300 leading-relaxed font-medium">
             Satu identitas terintegrasi untuk:
           </p>
         </div>
 
         {/* 3 Keunggulan Utama */}
-        <div className="space-y-2.5 pt-1 text-xs">
-          <div className="flex items-start gap-2.5 text-slate-300">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+        <div className="space-y-1.5 pt-0.5 text-[11px] leading-tight">
+          <div className="flex items-start gap-2 text-slate-300">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
             <span><b>Buku Besar Abadi:</b> Tata kelola CRU Batal & Ganti tanpa hapus data.</span>
           </div>
-          <div className="flex items-start gap-2.5 text-slate-300">
-            <Receipt className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 text-slate-300">
+            <Receipt className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
             <span><b>Album Nota Fisik:</b> Deteksi belanja fiktif & selisih harga toko.</span>
           </div>
-          <div className="flex items-start gap-2.5 text-slate-300">
-            <QrCode className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 text-slate-300">
+            <QrCode className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
             <span><b>TTE Digital Berjenjang:</b> Validasi checksum SHA-256 anti-pemalsuan.</span>
           </div>
         </div>
       </div>
 
       {/* Bagian Bawah: Badge Hak Cipta & Standar Keamanan */}
-      <div className="relative z-10 pt-6 mt-6 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
+      <div className="relative z-10 pt-2.5 mt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-500">
         <span>© Proyek Cair Ecosystem</span>
         <span className="inline-flex items-center gap-1 text-slate-400">
           <Lock className="w-3 h-3 text-emerald-400" />
@@ -381,26 +407,84 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
     );
   }
 
+  // Smart-Gesture: Usap kartu ke kiri/kanan untuk beralih mode Masuk / Daftar
+  const handleSwipeLeft = useCallback(() => {
+    if (mode === 'signin') {
+      setMode('signup');
+      setNotice('Beralih ke Formulir Pendaftaran (Smart-Gesture)');
+      setTimeout(() => setNotice(''), 2500);
+    } else if (mode === 'signup') {
+      setMode('signin');
+      setNotice('Beralih ke Formulir Masuk (Smart-Gesture)');
+      setTimeout(() => setNotice(''), 2500);
+    }
+  }, [mode]);
+
+  const handleSwipeRight = useCallback(() => {
+    if (mode === 'signup') {
+      setMode('signin');
+      setNotice('Beralih ke Formulir Masuk (Smart-Gesture)');
+      setTimeout(() => setNotice(''), 2500);
+    } else if (mode === 'signin') {
+      setLoginMethod((prev) => (prev === 'email' ? 'npwp' : 'email'));
+      setError('');
+    }
+  }, [mode]);
+
+  const { gestureProps } = useSmartGesture({
+    threshold: 40,
+    enableMouseDrag: false,
+    onSwipeLeft: handleSwipeLeft,
+    onSwipeRight: handleSwipeRight
+  });
+
+  // Pintasan Keyboard Cerdas (Alt+M / Alt+D / Esc)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 'm' || e.key === 'M')) {
+        e.preventDefault();
+        setMode('signin');
+      } else if (e.altKey && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault();
+        setMode('signup');
+      } else if (e.key === 'Escape' && showRecoveryForm) {
+        setShowRecoveryForm(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showRecoveryForm]);
+
   if (authed) return <>{children}</>;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-3 sm:p-6 lg:p-10 text-slate-100 selection:bg-blue-500 selection:text-white">
-      {/* KARTU UTAMA DENGAN DUA KOLOM PROMOSI & LOGIN */}
-      <div className="w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl grid grid-cols-1 lg:grid-cols-12">
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-2 sm:p-4 lg:p-6 text-slate-100 selection:bg-blue-500 selection:text-white">
+      {/* KARTU UTAMA DENGAN DUA KOLOM PROMOSI & LOGIN + SMART-GESTURE TOUCH */}
+      <div 
+        {...gestureProps}
+        className="w-full max-w-4xl lg:max-w-5xl overflow-hidden rounded-2xl sm:rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl grid grid-cols-1 lg:grid-cols-12 touch-pan-y"
+      >
         {/* KOLOM KIRI: BRANDING TERISOLASI MEMOIZED (ZERO RE-RENDER SAAT TYPING) */}
         <AuthBrandingPanel />
 
         {/* =========================================================================
             KOLOM KANAN: FORMULIR AUTENTIKASI (CLEAN, INTUITIF & RESPONSIF)
            ========================================================================= */}
-        <div className="lg:col-span-7 p-6 sm:p-8 lg:p-10 flex flex-col justify-center bg-slate-900">
-          <div className="max-w-md w-full mx-auto space-y-6">
+        <div className="lg:col-span-7 p-4 sm:p-6 lg:p-6 lg:py-5 flex flex-col justify-center bg-slate-900">
+          <div className="max-w-md w-full mx-auto space-y-3 sm:space-y-3.5">
             {/* Header Formulir */}
             <div>
-              <h2 className="text-2xl font-black text-white tracking-tight">
-                {mode === 'signin' ? 'Masuk ke Akun Anda' : 'Daftar Akun Baru'}
-              </h2>
-              <p className="mt-1 text-xs text-slate-400">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                  {mode === 'signin' ? 'Masuk ke Akun Anda' : 'Daftar Akun Baru'}
+                </h2>
+                {/* Indikator Cerdas Smart-Gesture */}
+                <span className="inline-flex items-center gap-1 text-[10px] text-cyan-400 bg-cyan-950/60 border border-cyan-800/60 px-2 py-0.5 rounded-full font-medium">
+                  <Sparkles className="w-2.5 h-2.5 animate-pulse" />
+                  <span>Smart-Gesture Aktif</span>
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-slate-400">
                 {mode === 'signin'
                   ? 'Gunakan akun personal Anda atau NPWP untuk login Company Super Admin.'
                   : 'Satu akun personal berlaku untuk seluruh penugasan proyek dan perusahaan.'}
@@ -409,14 +493,14 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
             {/* Tab Pilihan Metode Masuk (Email vs NPWP) */}
             {mode === 'signin' && (
-              <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-slate-800/80 p-1 border border-slate-700/60 text-xs font-semibold">
+              <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-800/80 p-1 border border-slate-700/60 text-xs font-semibold">
                 <button
                   type="button"
                   onClick={() => {
                     setLoginMethod('email');
                     setError('');
                   }}
-                  className={`rounded-lg py-2 transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  className={`rounded-lg py-1.5 transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                     loginMethod === 'email'
                       ? 'bg-blue-600 text-white shadow-xs'
                       : 'text-slate-400 hover:text-white'
@@ -431,7 +515,7 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
                     setLoginMethod('npwp');
                     setError('');
                   }}
-                  className={`rounded-lg py-2 transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  className={`rounded-lg py-1.5 transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                     loginMethod === 'npwp'
                       ? 'bg-blue-600 text-white shadow-xs'
                       : 'text-slate-400 hover:text-white'
@@ -444,7 +528,7 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
             )}
 
             {/* Formulir Input Data */}
-            <form onSubmit={submit} className="space-y-4">
+            <form onSubmit={submit} className="space-y-2.5 sm:space-y-3">
               {mode === 'signup' && (
                 <label className="block text-xs font-semibold text-slate-300">
                   Nama Lengkap
@@ -454,7 +538,7 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder="Contoh: Budi Santoso, S.T."
-                    className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800/90 px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                   />
                 </label>
               )}
@@ -469,7 +553,7 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="nama@perusahaan.com"
-                    className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800/90 px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                   />
                 </label>
               )}
@@ -486,9 +570,9 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
                     value={npwp}
                     onChange={(e) => setNpwp(e.target.value)}
                     placeholder="Contoh: 01.234.567.8-901.000"
-                    className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800/90 px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                   />
-                  <span className="mt-1 block text-[11px] text-slate-400">
+                  <span className="mt-0.5 block text-[10px] text-slate-400">
                     Khusus Company Super Admin yang telah mendaftarkan badan usaha (RFIN-A).
                   </span>
                 </label>
@@ -504,24 +588,24 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Minimal 8 karakter"
-                  className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800/90 px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                 />
               </label>
 
               {error && (
-                <div role="alert" className="rounded-xl border border-rose-800 bg-rose-950/50 p-3 text-xs text-rose-300 leading-relaxed">
+                <div role="alert" className="rounded-xl border border-rose-800 bg-rose-950/50 p-2.5 text-xs text-rose-300 leading-relaxed">
                   {error}
                 </div>
               )}
               {notice && (
-                <div role="status" className="rounded-xl border border-emerald-800 bg-emerald-950/50 p-3 text-xs text-emerald-300 leading-relaxed">
+                <div role="status" className="rounded-xl border border-emerald-800 bg-emerald-950/50 p-2.5 text-xs text-emerald-300 leading-relaxed">
                   {notice}
                 </div>
               )}
 
               <button
                 disabled={busy}
-                className="w-full rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-3 text-xs font-bold text-white transition-all shadow-md shadow-blue-600/30 disabled:opacity-50 cursor-pointer inline-flex items-center justify-center gap-2"
+                className="w-full rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-xs font-bold text-white transition-all shadow-md shadow-blue-600/30 disabled:opacity-50 cursor-pointer inline-flex items-center justify-center gap-2"
               >
                 <span>{busy ? 'Memproses…' : mode === 'signin' ? 'Masuk ke Aplikasi' : 'Daftarkan Akun'}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -530,7 +614,7 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
             {/* Lupa Kata Sandi */}
             {mode === 'signin' && (
-              <div className="pt-1">
+              <div className="pt-0.5">
                 <button
                   type="button"
                   onClick={() => {
@@ -539,14 +623,14 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
                     setError('');
                     setNotice('');
                   }}
-                  className="w-full text-xs font-medium text-blue-400 hover:underline cursor-pointer"
+                  className="w-full text-[11px] font-medium text-blue-400 hover:underline cursor-pointer"
                 >
                   Lupa kata sandi?
                 </button>
                 {showRecoveryForm && (
-                  <div className="mt-3 space-y-3 rounded-2xl border border-slate-700 bg-slate-800/50 p-4 animate-fade-in">
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      Tautan pemulihan akan dikirimkan ke email yang terdaftar. Pesan konfirmasi tidak mengungkap apakah email terdaftar atau tidak demi keamanan.
+                  <div className="mt-2 space-y-2.5 rounded-xl border border-slate-700 bg-slate-800/50 p-3 animate-fade-in">
+                    <p className="text-[10px] text-slate-400 leading-relaxed">
+                      Tautan pemulihan akan dikirimkan ke email terdaftar. Tekan Esc untuk menutup.
                     </p>
                     <label className="block text-xs font-semibold text-slate-300">
                       Email akun Anda
@@ -557,14 +641,14 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
                         value={recoveryEmail}
                         onChange={(e) => setRecoveryEmail(e.target.value)}
                         placeholder="nama@email.com"
-                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
                       />
                     </label>
                     <button
                       type="button"
                       disabled={busy}
                       onClick={sendPasswordRecovery}
-                      className="w-full rounded-xl border border-slate-700 hover:bg-slate-700/60 px-3 py-2 text-xs font-semibold text-slate-200 transition-colors cursor-pointer disabled:opacity-50"
+                      className="w-full rounded-xl border border-slate-700 hover:bg-slate-700/60 px-3 py-1.5 text-xs font-semibold text-slate-200 transition-colors cursor-pointer disabled:opacity-50"
                     >
                       {busy ? 'Mengirim…' : 'Kirim Tautan Pemulihan'}
                     </button>
@@ -574,19 +658,19 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
             )}
 
             {/* Pemisah Garis ATAU */}
-            <div className="flex items-center gap-3 text-[11px] text-slate-500">
+            <div className="flex items-center gap-3 text-[10px] text-slate-500 my-0.5">
               <span className="h-px flex-1 bg-slate-800" />
               <span>ATAU</span>
               <span className="h-px flex-1 bg-slate-800" />
             </div>
 
-            {/* Tombol Masuk Google (Portal Custodian Telah Dihapus Sesuai Permintaan) */}
-            <div className="space-y-2">
+            {/* Tombol Masuk Google */}
+            <div>
               <button
                 type="button"
                 onClick={google}
                 disabled={busy}
-                className="w-full rounded-xl border border-slate-700 hover:bg-slate-800 px-4 py-2.5 text-xs font-semibold text-white transition-colors cursor-pointer flex items-center justify-center gap-2"
+                className="w-full rounded-xl border border-slate-700 hover:bg-slate-800 px-3 py-2 text-xs font-semibold text-white transition-colors cursor-pointer flex items-center justify-center gap-2"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
                   <path
@@ -610,8 +694,11 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
               </button>
             </div>
 
-            {/* Alih Mode Sign In / Sign Up */}
-            <div className="pt-2 text-center">
+            {/* Alih Mode Sign In / Sign Up & Petunjuk Gestur Usap Cerdas */}
+            <div className="pt-1 flex items-center justify-between text-xs">
+              <span className="text-[10px] text-slate-500 hidden sm:inline-flex items-center gap-1">
+                <span>Usap ‹ › untuk beralih</span>
+              </span>
               <button
                 type="button"
                 onClick={() => {
@@ -621,7 +708,7 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
                   setError('');
                   setNotice('');
                 }}
-                className="text-xs font-semibold text-blue-400 hover:underline cursor-pointer"
+                className="w-full sm:w-auto text-xs font-semibold text-blue-400 hover:underline cursor-pointer text-center sm:text-right"
               >
                 {mode === 'signin'
                   ? 'Belum punya akun? Daftar Sekarang'
