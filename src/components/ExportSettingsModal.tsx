@@ -24,7 +24,9 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
-export type ExportTargetType = 'BOQ' | 'WAREHOUSE' | 'STOCK_JOURNAL' | 'CASH';
+export type ExportTargetType = 'BOQ' | 'WAREHOUSE' | 'STOCK_JOURNAL' | 'CASH' | 'PROJECT_INTEGRATED';
+
+export type CashExportPresetKey = 'CASH_FULL' | 'CASH_OUT_RECEIPT' | 'CASH_KASBON' | 'CASH_CLIENT_CLAIM';
 
 export interface ExportColumnDef {
   key: string;
@@ -42,6 +44,11 @@ export interface ExportFilterScope {
   onlyMismatch: boolean;
   onlyActive: boolean;
   onlyPendingInvoice?: boolean;
+  onlyKasbon?: boolean;
+  onlyClientClaim?: boolean;
+  onlyPendingReceipt?: boolean;
+  hideRunningBalance?: boolean;
+  cashPreset?: CashExportPresetKey;
 }
 
 export interface ExportSortConfig {
@@ -66,6 +73,7 @@ export interface ExportSettingsModalProps {
   title: string;
   totalOriginalCount: number;
   initialIncludeFinancials?: boolean;
+  initialCashPreset?: CashExportPresetKey;
   currentFilterLabel?: string;
   currentSortLabel?: string;
   onConfirmExport: (config: ExportSettingsConfig) => Promise<void>;
@@ -78,6 +86,7 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
   title,
   totalOriginalCount,
   initialIncludeFinancials = true,
+  initialCashPreset,
   currentFilterLabel,
   currentSortLabel,
   onConfirmExport
@@ -136,14 +145,29 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
         return [
           { key: 'no', label: 'Nomor Urut (No)', defaultSelected: true },
           { key: 'tanggal', label: 'Waktu Transaksi', defaultSelected: true },
-          { key: 'nomor_kuitansi', label: 'Nomor Kuitansi / Bukti', defaultSelected: true },
-          { key: 'untuk_apa', label: 'Peruntukan / Keperluan Kas', defaultSelected: true },
-          { key: 'kategori_keperluan', label: 'Kategori Keperluan', defaultSelected: true },
-          { key: 'jenis', label: 'Jenis Kas (Masuk / Keluar)', defaultSelected: true },
+          { key: 'nomor_kuitansi', label: 'Nomor Kuitansi / Nota', defaultSelected: true },
+          { key: 'untuk_apa', label: 'Uraian Keperluan Kas', defaultSelected: true },
+          { key: 'nama_toko', label: 'Toko / Pihak Lawan', defaultSelected: true },
+          { key: 'kategori_keperluan', label: 'Kategori Biaya', defaultSelected: true },
+          { key: 'payment_method', label: 'Metode Pembayaran', defaultSelected: true },
+          { key: 'beban_biaya', label: 'Alokasi Beban Biaya', defaultSelected: false },
+          { key: 'status_bukti', label: 'Status Bukti Kuitansi', defaultSelected: true },
+          { key: 'jenis', label: 'Arus Dana (Masuk / Keluar)', defaultSelected: true },
           { key: 'jumlah_rp', label: 'Nominal Dana (Rp)', isFinancial: true, defaultSelected: canViewFinancials },
-          { key: 'saldo_setelah', label: 'Saldo Kas Setelahnya (Rp)', isFinancial: true, defaultSelected: canViewFinancials },
-          { key: 'pic', label: 'PIC Penanggung Jawab', defaultSelected: true },
-          { key: 'status_dokumen', label: 'Status Alur Dokumen', defaultSelected: true }
+          { key: 'saldo_setelah', label: 'Saldo Kas Berjalan (Rp)', isFinancial: true, defaultSelected: canViewFinancials },
+          { key: 'pic', label: 'Penanggung Jawab (PIC)', defaultSelected: true },
+          { key: 'source_module', label: 'Modul Sumber', defaultSelected: false },
+          { key: 'status_dokumen', label: 'Status Persetujuan', defaultSelected: true }
+        ];
+      case 'PROJECT_INTEGRATED':
+        return [
+          { key: 'bab_eksekutif', label: 'Bab 1: Ringkasan Eksekutif & Segitiga Kontrol', defaultSelected: true },
+          { key: 'bab_rekonsiliasi', label: 'Bab 2: Rekonsiliasi Lintas Modul & Panjar', isFinancial: true, defaultSelected: canViewFinancials },
+          { key: 'bab_boq_gudang', label: 'Bab 3: Capaian BOQ & Posisi Stok Gudang', defaultSelected: true },
+          { key: 'bab_anggaran_kas', label: 'Bab 4: Rekap Anggaran Kas & Metode Bayar', isFinancial: true, defaultSelected: canViewFinancials },
+          { key: 'bab_indeks_nota', label: 'Bab 5: Indeks Bukti Nota & Kuitansi Terpadu', isFinancial: true, defaultSelected: canViewFinancials },
+          { key: 'bab_pengesahan_tte', label: 'Bab 6: Pengesahan 4 Tingkat & Hash SHA-256', defaultSelected: true },
+          { key: 'lampirkan_talangan_klien', label: 'Lampirkan Rincian Talangan Klien', defaultSelected: false }
         ];
     }
   }, [targetType, canViewFinancials]);
@@ -189,6 +213,10 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
           { key: 'jumlah_rp', label: 'Nominal Dana (Rp)' },
           { key: 'kategori_keperluan', label: 'Kategori Keperluan' }
         ];
+      case 'PROJECT_INTEGRATED':
+        return [
+          { key: 'default', label: 'Urutan Baku 6 Bab Laporan Terpadu' }
+        ];
     }
   }, [targetType, isViewer]);
 
@@ -211,6 +239,11 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
   const [onlyMismatch, setOnlyMismatch] = useState<boolean>(false);
   const [onlyActive, setOnlyActive] = useState<boolean>(true);
   const [onlyPendingInvoice, setOnlyPendingInvoice] = useState<boolean>(false);
+  const [onlyKasbon, setOnlyKasbon] = useState<boolean>(false);
+  const [onlyClientClaim, setOnlyClientClaim] = useState<boolean>(false);
+  const [onlyPendingReceipt, setOnlyPendingReceipt] = useState<boolean>(false);
+  const [hideRunningBalance, setHideRunningBalance] = useState<boolean>(false);
+  const [cashPreset, setCashPreset] = useState<CashExportPresetKey | undefined>(initialCashPreset);
 
   // State 4: Sortir Kolom & Arah
   const [sortKey, setSortKey] = useState<string>('default');
@@ -220,9 +253,91 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
   const [customTitle, setCustomTitle] = useState<string>('');
   const [customNotes, setCustomNotes] = useState<string>('');
-  const [activeProfile, setActiveProfile] = useState<string>('MANAJEMEN_FULL');
+  const [activeProfile, setActiveProfile] = useState<string>(initialCashPreset || 'MANAJEMEN_FULL');
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Sinkronisasi ulang kolom default & toggle finansial saat modal dibuka, targetType, initialIncludeFinancials, atau initialCashPreset berubah
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const effectiveInitFinancial = isViewer ? false : initialIncludeFinancials;
+    setIncludeFinancials(effectiveInitFinancial);
+    setSelectedColumns(
+      availableColumns
+        .filter((c) => c.defaultSelected && !(!effectiveInitFinancial && c.isFinancial))
+        .map((c) => c.key)
+    );
+    if (targetType === 'CASH') {
+      applyCashPresetProfile(initialCashPreset || 'CASH_FULL');
+    } else {
+      setOnlyKasbon(false);
+      setOnlyClientClaim(false);
+      setOnlyPendingReceipt(false);
+      setHideRunningBalance(false);
+      setCashPreset(undefined);
+      setCustomTitle('');
+      setCustomNotes('');
+    }
+  }, [isOpen, targetType, initialCashPreset, initialIncludeFinancials, isViewer, availableColumns]);
+
+  const applyCashPresetProfile = (presetKey: CashExportPresetKey) => {
+    setActiveProfile(presetKey);
+    setCashPreset(presetKey);
+    setOrientation('landscape');
+    setOnlyActive(true);
+
+    if (presetKey === 'CASH_FULL') {
+      setTransactionType('ALL');
+      setOnlyKasbon(false);
+      setOnlyClientClaim(false);
+      setOnlyPendingReceipt(false);
+      setHideRunningBalance(false);
+      setIncludeFinancials(!isViewer);
+      setCustomTitle('BUKU KAS LENGKAP & REKONSILIASI DANA PROYEK');
+      setCustomNotes('Memuat seluruh arus kas masuk dan keluar aktif beserta saldo berjalan.');
+      setSelectedColumns([
+        'no', 'tanggal', 'nomor_kuitansi', 'untuk_apa', 'nama_toko',
+        'kategori_keperluan', 'payment_method', 'jenis', 'jumlah_rp', 'saldo_setelah', 'pic', 'status_dokumen'
+      ]);
+    } else if (presetKey === 'CASH_OUT_RECEIPT') {
+      setTransactionType('KELUAR');
+      setOnlyKasbon(false);
+      setOnlyClientClaim(false);
+      setOnlyPendingReceipt(false);
+      setHideRunningBalance(false);
+      setIncludeFinancials(!isViewer);
+      setCustomTitle('REKAPITULASI PENGELUARAN KAS & KELENGKAPAN BUKTI NOTA');
+      setCustomNotes('Fokus verifikasi belanja proyek, toko/pihak lawan, dan kelengkapan kuitansi.');
+      setSelectedColumns([
+        'no', 'tanggal', 'nomor_kuitansi', 'nama_toko', 'untuk_apa',
+        'kategori_keperluan', 'payment_method', 'status_bukti', 'jumlah_rp', 'pic'
+      ]);
+    } else if (presetKey === 'CASH_KASBON') {
+      setTransactionType('ALL');
+      setOnlyKasbon(true);
+      setOnlyClientClaim(false);
+      setOnlyPendingReceipt(false);
+      setHideRunningBalance(false);
+      setIncludeFinancials(!isViewer);
+      setCustomTitle('LAPORAN AUDIT PANJAR / KASBON & PERTANGGUNGJAWABAN (LPJ)');
+      setCustomNotes('Pelacakan uang muka mandor/pelaksana, status LPJ, dan pengembalian sisa kas.');
+      setSelectedColumns([
+        'no', 'tanggal', 'untuk_apa', 'pic', 'payment_method', 'jenis', 'jumlah_rp', 'status_bukti', 'status_dokumen'
+      ]);
+    } else if (presetKey === 'CASH_CLIENT_CLAIM') {
+      setTransactionType('KELUAR');
+      setOnlyKasbon(false);
+      setOnlyClientClaim(true);
+      setOnlyPendingReceipt(false);
+      setHideRunningBalance(true);
+      setIncludeFinancials(true);
+      setCustomTitle(`TAGIHAN PENGGANTIAN BIAYA TALANGAN — ${tenantBranding.clientName.toUpperCase()}`);
+      setCustomNotes('Khusus rincian biaya talangan permintaan Klien. Saldo kas internal kontraktor disembunyikan.');
+      setSelectedColumns([
+        'no', 'tanggal', 'nomor_kuitansi', 'nama_toko', 'untuk_apa', 'payment_method', 'jumlah_rp', 'pic', 'status_bukti'
+      ]);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -339,7 +454,12 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
           onlyRemaining,
           onlyMismatch,
           onlyActive,
-          onlyPendingInvoice
+          onlyPendingInvoice,
+          onlyKasbon,
+          onlyClientClaim,
+          onlyPendingReceipt,
+          hideRunningBalance,
+          cashPreset
         },
         sortConfig: {
           key: sortKey,
@@ -367,6 +487,8 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
         return <FileText className="w-5 h-5 text-indigo-500" />;
       case 'CASH':
         return <WalletCards className="w-5 h-5 text-emerald-500" />;
+      case 'PROJECT_INTEGRATED':
+        return <FileSpreadsheet className="w-5 h-5 text-blue-600" />;
     }
   };
 
@@ -499,9 +621,73 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
             </div>
           )}
 
-          {/* BAGIAN 2: KUERI DATA VISUAL (FROM, WHERE) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
-            {/* BLOK A: PIHAK PENANGGUNG JAWAB (FROM) */}
+          {/* BAGIAN 1B: 4 PRESET PROFIL CEPAT KHUSUS MUTASI DANA (1-KLIK) */}
+          {targetType === 'CASH' && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between flex-wrap gap-1">
+                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Pilih Preset Profil Kas (1-Klik):</span>
+                </label>
+                <span className="text-[11px] text-slate-600 dark:text-slate-300">
+                  Otomatis atur saringan, kolom &amp; privasi saldo internal
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  {
+                    key: 'CASH_FULL' as CashExportPresetKey,
+                    title: 'Buku Kas Lengkap',
+                    desc: 'Manajemen · Masuk, Keluar & Saldo',
+                    ring: 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/60 ring-1 ring-emerald-500',
+                  },
+                  {
+                    key: 'CASH_OUT_RECEIPT' as CashExportPresetKey,
+                    title: 'Pengeluaran & Nota',
+                    desc: 'Keluar Saja · Toko & Status Bukti',
+                    ring: 'border-blue-500 bg-blue-50/80 dark:bg-blue-950/60 ring-1 ring-blue-500',
+                  },
+                  {
+                    key: 'CASH_KASBON' as CashExportPresetKey,
+                    title: 'Audit Panjar/Kasbon',
+                    desc: 'Uang Muka, LPJ & Pengembalian',
+                    ring: 'border-indigo-500 bg-indigo-50/80 dark:bg-indigo-950/60 ring-1 ring-indigo-500',
+                  },
+                  {
+                    key: 'CASH_CLIENT_CLAIM' as CashExportPresetKey,
+                    title: 'Tagihan Klien',
+                    desc: 'Talangan Klien · Tanpa Saldo Internal',
+                    ring: 'border-amber-500 bg-amber-50/80 dark:bg-amber-950/60 ring-1 ring-amber-500',
+                  },
+                ].map((preset) => (
+                  <button
+                    key={preset.key}
+                    type="button"
+                    onClick={() => applyCashPresetProfile(preset.key)}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      activeProfile === preset.key
+                        ? `${preset.ring} shadow-xs`
+                        : 'border-slate-200 dark:border-slate-700/80 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                      {preset.title}
+                    </div>
+                    <p className="text-[10px] text-slate-600 dark:text-slate-300 mt-1 leading-tight line-clamp-2">
+                      {preset.desc}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* BAGIAN 2: KUERI DATA VISUAL (FROM, WHERE) — hanya ditampilkan bila relevan untuk jenis laporan */}
+          {targetType !== 'PROJECT_INTEGRATED' && (
+          <div className={`grid grid-cols-1 ${targetType === 'CASH' ? '' : 'md:grid-cols-2'} gap-3.5 pt-1`}>
+            {/* BLOK A: PIHAK PENANGGUNG JAWAB (FROM) — khusus BOQ, Gudang & Mutasi Barang */}
+            {targetType !== 'CASH' && (
             <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
@@ -534,13 +720,14 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
                 ))}
               </div>
             </div>
+            )}
 
-            {/* BLOK B: KONDISI & STATUS BARANG (WHERE) */}
+            {/* BLOK B: KONDISI & STATUS BARANG / ARUS KAS (WHERE) */}
             <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                  <span className="w-5 h-5 rounded-md bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 inline-flex items-center justify-center text-[10px] font-black">2</span>
-                  Kondisi Kuantitas & Pemenuhan:
+                  <span className="w-5 h-5 rounded-md bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 inline-flex items-center justify-center text-[10px] font-black">{targetType === 'CASH' ? '1' : '2'}</span>
+                  {targetType === 'CASH' ? 'Saringan Arus & Fokus Audit Kas:' : 'Kondisi Kuantitas & Pemenuhan:'}
                 </span>
               </div>
 
@@ -594,8 +781,8 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
                   <div className="grid grid-cols-3 gap-1.5">
                     {[
                       { id: 'ALL', label: 'Semua Arah' },
-                      { id: 'MASUK', label: 'Masuk Saja (IN)' },
-                      { id: 'KELUAR', label: 'Keluar Saja (OUT)' }
+                      { id: 'MASUK', label: 'Masuk Saja' },
+                      { id: 'KELUAR', label: 'Keluar Saja' }
                     ].map(t => (
                       <button
                         key={t.id}
@@ -625,10 +812,47 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
                       </span>
                     </label>
                   )}
+
+                  {targetType === 'CASH' && (
+                    <div className="flex flex-wrap gap-3 pt-1">
+                      <label className="flex items-center gap-1.5 text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={onlyPendingReceipt}
+                          onChange={(e) => setOnlyPendingReceipt(e.target.checked)}
+                          className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                        />
+                        <span className="font-semibold">Hanya Bukti Menyusul</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={onlyKasbon}
+                          onChange={(e) => setOnlyKasbon(e.target.checked)}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="font-semibold">Khusus Panjar / Kasbon</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={onlyClientClaim}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setOnlyClientClaim(checked);
+                            if (checked) setHideRunningBalance(true);
+                          }}
+                          className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                        />
+                        <span className="font-semibold">Khusus Tagihan Klien</span>
+                      </label>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           </div>
+          )}
 
           {/* BAGIAN 3: PILIHAN KOLOM YANG DICETAK (SELECT) */}
           <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 space-y-3">
@@ -906,13 +1130,27 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
               <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
               <div className="font-medium">
                 <span className="font-bold">Format Siap: </span>
-                <span>
-                  {providerScope === 'KONTRAKTOR' ? 'Tanggungan Kontraktor' : providerScope === 'IMK' ? 'Jatah Klien' : 'Semua Pihak'}
-                </span>
-                <span> · </span>
-                <span>{onlyRemaining ? 'Hanya Sisa Kurang (>0)' : statusScope === 'HAS_ARRIVED' ? 'Hanya yang Masuk' : 'Semua Status'}</span>
-                <span> · </span>
-                <span className="font-bold">{selectedColumns.length} Kolom</span>
+                {targetType === 'PROJECT_INTEGRATED' ? (
+                  <span>Laporan Terpadu · {selectedColumns.length} Bagian</span>
+                ) : targetType === 'CASH' ? (
+                  <>
+                    <span>
+                      {transactionType === 'ALL' ? 'Masuk & Keluar' : transactionType === 'MASUK' ? 'Masuk Saja' : 'Keluar Saja'}
+                    </span>
+                    <span> · </span>
+                    <span className="font-bold">{selectedColumns.length} Kolom</span>
+                  </>
+                ) : (
+                  <>
+                    <span>
+                      {providerScope === 'KONTRAKTOR' ? 'Tanggungan Kontraktor' : providerScope === 'IMK' ? 'Jatah Klien' : 'Semua Pihak'}
+                    </span>
+                    <span> · </span>
+                    <span>{onlyRemaining ? 'Hanya Sisa Kurang (>0)' : statusScope === 'HAS_ARRIVED' ? 'Hanya yang Masuk' : 'Semua Status'}</span>
+                    <span> · </span>
+                    <span className="font-bold">{selectedColumns.length} Kolom</span>
+                  </>
+                )}
                 <span> · </span>
                 <span className={includeFinancials && !isViewer ? 'font-bold text-emerald-700 dark:text-emerald-300' : 'font-bold text-blue-700 dark:text-blue-300'}>
                   {includeFinancials && !isViewer ? 'Dengan Nominal Rp' : 'Format Murni Fisik (Tanpa Rp)'}

@@ -20,12 +20,57 @@ import {
   HomeIcon
 } from 'lucide-react';
 
+type BadgeTone = 'rose' | 'sky' | 'amber' | 'teal' | 'blue' | 'indigo';
+
 interface NavItem {
   id: string;
   label: string;
   icon: LucideIcon;
   badge?: string | null;
+  badgeTone?: BadgeTone;
 }
+
+const getSidebarBadgeClasses = (tone: BadgeTone | undefined, isActive: boolean): { pill: string; dot: string } => {
+  if (isActive) {
+    return {
+      pill: 'bg-white/20 text-white border border-white/30',
+      dot: 'bg-white',
+    };
+  }
+  switch (tone) {
+    case 'sky':
+      return {
+        pill: 'bg-sky-100 text-sky-800 dark:bg-sky-950/70 dark:text-sky-200 border border-sky-200 dark:border-sky-800',
+        dot: 'bg-sky-500',
+      };
+    case 'amber':
+      return {
+        pill: 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-200 border border-amber-200 dark:border-amber-800',
+        dot: 'bg-amber-500',
+      };
+    case 'teal':
+      return {
+        pill: 'bg-teal-100 text-teal-800 dark:bg-teal-950/70 dark:text-teal-200 border border-teal-200 dark:border-teal-800',
+        dot: 'bg-teal-500',
+      };
+    case 'blue':
+      return {
+        pill: 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-200 border border-blue-200 dark:border-blue-800',
+        dot: 'bg-blue-500',
+      };
+    case 'indigo':
+      return {
+        pill: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800',
+        dot: 'bg-indigo-500',
+      };
+    case 'rose':
+    default:
+      return {
+        pill: 'bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-200 border border-rose-300 dark:border-rose-800',
+        dot: 'bg-rose-500',
+      };
+  }
+};
 
 const SIDEBAR_COLLAPSED_KEY = 'proyek_cair_sidebar_collapsed';
 
@@ -38,6 +83,10 @@ export const Sidebar: React.FC = () => {
     activeCompany,
     activeProject,
     outOfStockCount,
+    cashSummaryMetrics,
+    cashCriticalAlertCount,
+    pendingStockApprovalCount,
+    pendingCashApprovalCount,
     user
   } = useApp();
 
@@ -105,6 +154,28 @@ export const Sidebar: React.FC = () => {
     modeSubtitle = `${activeCompany.name || 'Perusahaan'} · Jabatan: ${activeRole}`;
     ModeIcon = activeRole === 'Viewer/Pengamat' ? Eye : Hexagon;
     themeAccent = activeRole === 'Viewer/Pengamat' ? 'cyan' : 'amber';
+
+    const approvalRoleTone: BadgeTone =
+      activeRole === 'Foreman' ? 'sky' : activeRole === 'Spv.' ? 'amber' : 'teal';
+
+    const stockBadge =
+      outOfStockCount > 0
+        ? { text: `${outOfStockCount} Butuh Stok`, tone: 'rose' as BadgeTone }
+        : pendingStockApprovalCount > 0
+        ? { text: `${pendingStockApprovalCount} Antrean`, tone: approvalRoleTone }
+        : null;
+
+    const cashBadge =
+      cashCriticalAlertCount > 0
+        ? { text: 'Saldo Habis', tone: 'rose' as BadgeTone }
+        : pendingCashApprovalCount > 0
+        ? { text: `${pendingCashApprovalCount} Antrean`, tone: approvalRoleTone }
+        : cashSummaryMetrics.unreconciledStockReceiptsCount > 0
+        ? { text: `${cashSummaryMetrics.unreconciledStockReceiptsCount} Nota`, tone: 'blue' as BadgeTone }
+        : cashSummaryMetrics.openKasbonCount > 0
+        ? { text: `${cashSummaryMetrics.openKasbonCount} Panjar`, tone: 'indigo' as BadgeTone }
+        : null;
+
     navItems = [
       { id: 'dashboard', label: 'Dasbor & Analitik', icon: LayoutDashboard },
       { id: 'landing', label: 'Beranda Modul & Lisensi', icon: HomeIcon },
@@ -113,10 +184,19 @@ export const Sidebar: React.FC = () => {
         id: 'stock-mutations',
         label: 'Mutasi Barang',
         icon: Boxes,
-        badge: outOfStockCount > 0 ? `${outOfStockCount} Butuh Stok` : null
+        badge: stockBadge?.text || null,
+        badgeTone: stockBadge?.tone,
       },
       ...(activeRole !== 'Viewer/Pengamat'
-        ? [{ id: 'cashflow' as const, label: 'Mutasi Dana', icon: WalletCards }]
+        ? [
+            {
+              id: 'cashflow' as const,
+              label: 'Mutasi Dana',
+              icon: WalletCards,
+              badge: cashBadge?.text || null,
+              badgeTone: cashBadge?.tone,
+            },
+          ]
         : []),
       { id: 'reports', label: 'Studio Laporan PDF', icon: FileText }
     ];
@@ -236,17 +316,23 @@ export const Sidebar: React.FC = () => {
                 {!isCollapsed && <span className="truncate">{item.label}</span>}
               </span>
 
-              {/* Badge saat expanded */}
+              {/* Badge adaptif warna (tone-aware) saat expanded */}
               {!isCollapsed && item.badge && (
-                <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-600 dark:text-rose-300">
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                    getSidebarBadgeClasses(item.badgeTone, active).pill
+                  }`}
+                >
                   {item.badge}
                 </span>
               )}
 
-              {/* Indikator dot saat collapsed */}
+              {/* Indikator dot adaptif warna saat collapsed */}
               {isCollapsed && item.badge && (
                 <span
-                  className="hidden md:block absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900"
+                  className={`hidden md:block absolute top-1.5 right-1.5 w-2 h-2 rounded-full ring-2 ring-white dark:ring-slate-900 ${
+                    getSidebarBadgeClasses(item.badgeTone, active).dot
+                  }`}
                   title={item.badge}
                 />
               )}

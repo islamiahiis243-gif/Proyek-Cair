@@ -61,6 +61,7 @@ const MainApp: React.FC = () => {
   };
 
   const handleOpenCashModal = (type: JenisMutasiKas = 'KELUAR') => {
+    if (activeRole === 'Viewer/Pengamat') return;
     setPreselectedCashType(type);
     setIsCashModalOpen(true);
   };
@@ -161,7 +162,7 @@ const MainApp: React.FC = () => {
             modalOnly
           />
         )}
-        {isCashModalOpen && currentView !== 'cashflow' && appMode === 'IMPERSONATE' && (
+        {isCashModalOpen && currentView !== 'cashflow' && appMode === 'IMPERSONATE' && activeRole !== 'Viewer/Pengamat' && (
           <CashflowView
             isModalOpen={isCashModalOpen}
             setIsModalOpen={setIsCashModalOpen}

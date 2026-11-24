@@ -8,11 +8,25 @@ import {
   summarizeMaterialIncomingDiscrepancy
 } from './stockMutationEngine';
 import { resolveEvalContext, evaluateBoqPos, evaluateWarehouseMaterial } from './boqExecutionEngine';
+import {
+  BEBAN_BIAYA_LABELS,
+  computeRunningCashBalances,
+  isCashRowExcluded,
+  PAYMENT_METHOD_LABELS,
+  SOURCE_MODULE_LABELS,
+  STATUS_BUKTI_LABELS,
+} from './cashflowEngine';
+import { IntegratedProjectReportData } from './projectReportEngine';
 
 function stableStringify(value: any): string {
-  if (Array.isArray(value)) return '[' + value.map(stableStringify).join(',') + ']';
+  if (Array.isArray(value)) {
+    return '[' + value.map((item) => (item === undefined ? 'null' : stableStringify(item))).join(',') + ']';
+  }
   if (value && typeof value === 'object') {
-    return '{' + Object.keys(value).sort().map(k => JSON.stringify(k) + ':' + stableStringify(value[k])).join(',') + '}';
+    const keys = Object.keys(value)
+      .filter((k) => value[k] !== undefined)
+      .sort();
+    return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(value[k])).join(',') + '}';
   }
   return JSON.stringify(value);
 }
@@ -761,11 +775,141 @@ export async function generateCashflowPDF(params: {
   customNotes?: string;
   selectedColumns?: string[];
   orientation?: 'portrait' | 'landscape';
+  hideRunningBalance?: boolean;
+  approvers?: {
+    issuerName?: string;
+    checkerName?: string;
+    approverName?: string;
+    directorName?: string;
+  };
 }): Promise<DokumenLaporan> {
-  const { docId, startDate, endDate, cashMutations, signer, projectName, branding: rawBranding, filterSummary, customTitle, customNotes, selectedColumns, orientation: requestedOrientation } = params;
+  const {
+    docId,
+    startDate,
+    endDate,
+    cashMutations,
+    signer,
+    projectName,
+    branding: rawBranding,
+    filterSummary,
+    customTitle,
+    customNotes,
+    selectedColumns,
+    orientation: requestedOrientation,
+    hideRunningBalance = false,
+    approvers,
+  } = params;
   const b = resolvePdfBranding(rawBranding, projectName);
+
+  // Gunakan sumber tunggal pengecualian BATAL & DIGANTI + saldo berjalan kronologis
+  const activeCash = cashMutations.filter((m) => !isCashRowExcluded(m));
+  const runningBalanceMap = computeRunningCashBalances(cashMutations);
+  const totalMasuk = activeCash
+    .filter((m) => m.jenis === 'MASUK')
+    .reduce((acc, m) => acc + (Number(m.jumlah_rp) || 0), 0);
+  const totalKeluar = activeCash
+    .filter((m) => m.jenis === 'KELUAR')
+    .reduce((acc, m) => acc + (Number(m.jumlah_rp) || 0), 0);
+  const endingBalance = totalMasuk - totalKeluar;
+
+  // Definisi Pemetaan Kolom Fleksibel Kas (termasuk kolom baru paritas)
+  const cashColumnMap: Record<
+    string,
+    {
+      header: string;
+      width?: number;
+      align?: 'left' | 'center' | 'right';
+      getValue: (m: MutasiKas, idx: number, excluded: boolean) => string;
+    }
+  > = {
+    no: { header: 'No', width: 9, align: 'center', getValue: (_, idx) => String(idx + 1) },
+    tanggal: { header: 'Waktu', width: 24, align: 'left', getValue: (m) => formatDateTime(m.tanggal) },
+    nomor_kuitansi: { header: 'No. Bukti', width: 22, align: 'left', getValue: (m) => m.nomor_kuitansi || '-' },
+    untuk_apa: { header: 'Uraian Keperluan', width: 42, align: 'left', getValue: (m) => m.untuk_apa },
+    nama_toko: { header: 'Toko / Pihak', width: 24, align: 'left', getValue: (m) => m.nama_toko || '-' },
+    kategori_keperluan: { header: 'Kategori', width: 22, align: 'left', getValue: (m) => m.kategori_keperluan || 'Operasional' },
+    payment_method: {
+      header: 'Metode',
+      width: 18,
+      align: 'center',
+      getValue: (m) => PAYMENT_METHOD_LABELS[m.payment_method || 'TUNAI'] || 'Tunai',
+    },
+    beban_biaya: {
+      header: 'Beban',
+      width: 18,
+      align: 'center',
+      getValue: (m) => (m.beban_biaya ? BEBAN_BIAYA_LABELS[m.beban_biaya] : 'Kontraktor'),
+    },
+    status_bukti: {
+      header: 'Bukti',
+      width: 20,
+      align: 'center',
+      getValue: (m) => (m.status_bukti ? STATUS_BUKTI_LABELS[m.status_bukti] : 'Tanpa Bukti'),
+    },
+    jenis: {
+      header: 'Arus',
+      width: 14,
+      align: 'center',
+      getValue: (m) => (m.jenis === 'MASUK' ? 'Masuk' : 'Keluar'),
+    },
+    jumlah_rp: {
+      header: 'Nominal (Rp)',
+      width: 26,
+      align: 'right',
+      getValue: (m, _, excluded) => {
+        if (excluded) {
+          const tag = m.is_ganti || m.status_dokumen === 'DIGANTI' ? 'Diganti' : 'Batal';
+          return `Rp 0 (${tag})`;
+        }
+        return `${m.jenis === 'MASUK' ? '+' : '-'} ${formatRupiah(m.jumlah_rp)}`;
+      },
+    },
+    saldo_setelah: {
+      header: 'Saldo Berjalan',
+      width: 26,
+      align: 'right',
+      getValue: (m) => {
+        const bal = runningBalanceMap.get(m.id);
+        return bal == null ? '—' : formatRupiah(bal);
+      },
+    },
+    pic: { header: 'PIC', width: 20, align: 'left', getValue: (m) => m.pic || '-' },
+    source_module: {
+      header: 'Sumber',
+      width: 20,
+      align: 'center',
+      getValue: (m) => SOURCE_MODULE_LABELS[m.source_module || 'KAS_LANGSUNG'],
+    },
+    status_dokumen: {
+      header: 'Status',
+      width: 18,
+      align: 'center',
+      getValue: (m) => {
+        if (m.is_batal || m.status_dokumen === 'BATAL') return 'Batal';
+        if (m.is_ganti || m.status_dokumen === 'DIGANTI') return 'Diganti';
+        if (m.status_dokumen === 'MENGETAHUI') return 'Sah (TTE)';
+        if (m.status_dokumen === 'DISETUJUI') return 'Disetujui';
+        if (m.status_dokumen === 'DIPERIKSA') return 'Diperiksa';
+        return 'Terbit';
+      },
+    },
+  };
+
+  const defaultCashCols = hideRunningBalance
+    ? ['no', 'tanggal', 'nomor_kuitansi', 'nama_toko', 'untuk_apa', 'payment_method', 'jumlah_rp', 'pic']
+    : ['no', 'tanggal', 'nomor_kuitansi', 'untuk_apa', 'nama_toko', 'kategori_keperluan', 'payment_method', 'jenis', 'jumlah_rp', 'saldo_setelah', 'pic', 'status_dokumen'];
+
+  const activeCashCols = (selectedColumns && selectedColumns.length > 0
+    ? selectedColumns.filter((c) => cashColumnMap[c])
+    : defaultCashCols
+  ).filter((c) => !(hideRunningBalance && c === 'saldo_setelah'));
+
+  // Otomatis Landscape bila kolom > 6 kecuali diminta eksplisit portrait
+  const effectiveOrientation =
+    requestedOrientation || (activeCashCols.length > 6 ? 'landscape' : 'portrait');
+
   const doc = new jsPDF({
-    orientation: requestedOrientation || 'portrait',
+    orientation: effectiveOrientation,
     unit: 'mm',
     format: 'a4',
   });
@@ -789,76 +933,88 @@ export async function generateCashflowPDF(params: {
 
   doc.text(`Nomor Registrasi : ${docId}`, 14, 48);
   doc.text(`Periode Laporan  : ${formatDateOnly(startDate)} s/d ${formatDateOnly(endDate)}`, 14, 52);
-  doc.text(`Tanggal Cetak    : ${formatDateOnly(new Date().toISOString())}${filterSummary ? ` | ${filterSummary}` : ''}${customNotes ? ` | Catatan: ${customNotes}` : ''}`, 14, 56);
+  doc.text(
+    `Tanggal Cetak    : ${formatDateOnly(new Date().toISOString())}${filterSummary ? ` | ${filterSummary}` : ''}${customNotes ? ` | Catatan: ${customNotes}` : ''}`,
+    14,
+    56
+  );
 
   doc.text(`Proyek : ${b.projectName}`, pageWidth - 14, 48, { align: 'right' });
   doc.text(`Kontraktor : ${b.contractorName}`, pageWidth - 14, 52, { align: 'right' });
-  doc.text(`Status Alur : Tervalidasi Berjenjang`, pageWidth - 14, 56, { align: 'right' });
+  doc.text(
+    `Transaksi Aktif : ${activeCash.length} baris (dikecualikan: ${cashMutations.length - activeCash.length})`,
+    pageWidth - 14,
+    56,
+    { align: 'right' }
+  );
 
-  const activeCash = cashMutations.filter(m => !m.is_batal && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI');
-  const totalMasuk = activeCash.filter((m) => m.jenis === 'MASUK').reduce((acc, m) => acc + m.jumlah_rp, 0);
-  const totalKeluar = activeCash.filter((m) => m.jenis === 'KELUAR').reduce((acc, m) => acc + m.jumlah_rp, 0);
-  // Saldo akhir mutakhir: urutkan transaksi aktif berdasarkan tanggal terbaru secara konsisten
-  const sortedCashDesc = [...activeCash].sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
-  const endingBalance = sortedCashDesc[0]?.saldo_setelah ?? (totalMasuk - totalKeluar);
-
-  // KPI Summary Strip
+  // KPI Summary Strip (Adaptif: sembunyikan saldo internal bila preset Tagihan Penggantian Klien)
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(14, 60, pageWidth - 28, 14, 2, 2, 'FD');
+  doc.roundedRect(14, 60, pageWidth - 28, 19, 2, 2, 'FD');
 
+  const thirdW = (pageWidth - 28) / 3;
   doc.setFontSize(7.5);
   doc.setTextColor(100, 116, 139);
-  doc.text('TOTAL DANA MASUK', 20, 65);
-  doc.text('TOTAL DANA KELUAR', 80, 65);
-  doc.text('SALDO AKHIR PROYEK', 140, 65);
+  if (hideRunningBalance) {
+    doc.text('TOTAL TAGIHAN TALANGAN AKTIF', 20, 65);
+    doc.text('JUMLAH BUKTI / ITEM', 20 + thirdW, 65);
+    doc.text('PIHAK TERTAGIH (KLIEN)', 20 + thirdW * 2, 65);
 
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(22, 101, 52);
-  doc.text(`+ ${formatRupiah(totalMasuk)}`, 20, 71);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(159, 18, 57);
+    doc.text(formatRupiah(totalKeluar), 20, 71);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${activeCash.length} Transaksi`, 20 + thirdW, 71);
+    doc.text(b.clientName.slice(0, 32), 20 + thirdW * 2, 71);
+  } else {
+    doc.text('TOTAL DANA MASUK (AKTIF)', 20, 65);
+    doc.text('TOTAL DANA KELUAR (AKTIF)', 20 + thirdW, 65);
+    doc.text('SALDO BERSIH TERFILTER', 20 + thirdW * 2, 65);
 
-  doc.setTextColor(159, 18, 57);
-  doc.text(`- ${formatRupiah(totalKeluar)}`, 80, 71);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(22, 101, 52);
+    doc.text(`+ ${formatRupiah(totalMasuk)}`, 20, 71);
+    doc.setTextColor(159, 18, 57);
+    doc.text(`- ${formatRupiah(totalKeluar)}`, 20 + thirdW, 71);
+    doc.setTextColor(15, 23, 42);
+    doc.text(formatRupiah(endingBalance), 20 + thirdW * 2, 71);
+  }
 
-  doc.setTextColor(15, 23, 42);
-  doc.text(formatRupiah(endingBalance), 140, 71);
-
-  // Definisi Pemetaan Kolom Fleksibel Kas
-  const cashColumnMap: Record<string, {
-    header: string;
-    width?: number;
-    align?: 'left' | 'center' | 'right';
-    getValue: (m: MutasiKas, idx: number, isVoid: boolean) => string;
-  }> = {
-    no: { header: 'No', width: 10, align: 'center', getValue: (_, idx) => String(idx + 1) },
-    tanggal: { header: 'Waktu', width: 26, align: 'left', getValue: (m) => formatDateTime(m.tanggal) },
-    nomor_kuitansi: { header: 'No Kuitansi', width: 24, align: 'left', getValue: (m) => m.nomor_kuitansi || '-' },
-    untuk_apa: { header: 'Peruntukan / Keterangan', width: 46, align: 'left', getValue: (m) => m.untuk_apa },
-    kategori_keperluan: { header: 'Kategori', width: 22, align: 'left', getValue: (m) => m.kategori_keperluan || 'Operasional' },
-    jenis: { header: 'Jenis', width: 16, align: 'center', getValue: (m) => m.jenis },
-    jumlah_rp: { header: 'Nominal (Rp)', width: 26, align: 'right', getValue: (m, _, isVoid) => isVoid ? 'Rp 0 (Batal)' : `${m.jenis === 'MASUK' ? '+' : '-'} ${formatRupiah(m.jumlah_rp)}` },
-    saldo_setelah: { header: 'Saldo Kas (Rp)', width: 28, align: 'right', getValue: (m) => formatRupiah(m.saldo_setelah) },
-    pic: { header: 'PIC', width: 18, align: 'left', getValue: (m) => m.pic },
-    status_dokumen: {
-      header: 'Status Alur',
-      width: 18,
-      align: 'center',
-      getValue: (m, _, isVoid) => {
-        const isReplaced = m.is_ganti || m.status_dokumen === 'DIGANTI';
-        return isVoid ? 'BATAL' : isReplaced ? 'DIGANTI' : (m.status_dokumen || 'DITERBITKAN');
-      }
+  // Strip Ringkasan Metode Pembayaran & Pos Utama
+  const byMethod = new Map<string, number>();
+  const byCategory = new Map<string, number>();
+  for (const m of activeCash) {
+    const pmLabel = PAYMENT_METHOD_LABELS[m.payment_method || 'TUNAI'] || 'Tunai';
+    byMethod.set(pmLabel, (byMethod.get(pmLabel) || 0) + (Number(m.jumlah_rp) || 0));
+    if (m.jenis === 'KELUAR') {
+      byCategory.set(m.kategori_keperluan, (byCategory.get(m.kategori_keperluan) || 0) + (Number(m.jumlah_rp) || 0));
     }
-  };
+  }
+  const methodSummary = Array.from(byMethod.entries())
+    .map(([k, v]) => `${k}: ${formatRupiah(v)}`)
+    .join(' · ');
+  const catSummary = Array.from(byCategory.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([k, v]) => `${k}: ${formatRupiah(v)}`)
+    .join(' · ');
 
-  const defaultCashCols = ['no', 'tanggal', 'untuk_apa', 'kategori_keperluan', 'jenis', 'jumlah_rp', 'pic', 'status_dokumen'];
-  const activeCashCols = (selectedColumns && selectedColumns.length > 0)
-    ? selectedColumns.filter(c => cashColumnMap[c])
-    : defaultCashCols;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.8);
+  doc.setTextColor(71, 85, 105);
+  doc.text(
+    `Metode: ${methodSummary || '-'}${catSummary ? `  |  Pos Keluar Terbesar: ${catSummary}` : ''}`,
+    20,
+    76.5,
+    { maxWidth: pageWidth - 40 }
+  );
 
   const tableData = cashMutations.map((m, index) => {
-    const isVoid = m.is_batal || m.status_dokumen === 'BATAL';
-    return activeCashCols.map(c => cashColumnMap[c].getValue(m, index, isVoid));
+    const excluded = isCashRowExcluded(m);
+    return activeCashCols.map((c) => cashColumnMap[c].getValue(m, index, excluded));
   });
 
   const availableTableWidth = pageWidth - 28;
@@ -869,26 +1025,26 @@ export async function generateCashflowPDF(params: {
   activeCashCols.forEach((c, idx) => {
     const colDef = cashColumnMap[c];
     columnStylesConfig[idx] = {
-      cellWidth: (colDef && colDef.width) ? Math.round(colDef.width * widthScale * 10) / 10 : 'auto',
-      halign: colDef?.align || 'left'
+      cellWidth: colDef && colDef.width ? Math.round(colDef.width * widthScale * 10) / 10 : 'auto',
+      halign: colDef?.align || 'left',
     };
   });
 
   autoTable(doc, {
-    startY: 78,
-    head: [activeCashCols.map(c => cashColumnMap[c].header)],
+    startY: 82,
+    head: [activeCashCols.map((c) => cashColumnMap[c].header)],
     body: tableData,
     theme: 'grid',
     headStyles: {
       fillColor: [30, 41, 59],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 9,
+      fontSize: activeCashCols.length > 9 ? 7.5 : 8.5,
     },
     styles: {
       font: 'helvetica',
-      fontSize: activeCashCols.length <= 5 ? 9.5 : 8.8,
-      cellPadding: 2.6,
+      fontSize: activeCashCols.length > 9 ? 7.2 : activeCashCols.length <= 5 ? 9 : 8,
+      cellPadding: 2.2,
       textColor: [15, 23, 42],
       lineColor: [203, 213, 225],
       lineWidth: 0.15,
@@ -897,11 +1053,26 @@ export async function generateCashflowPDF(params: {
     margin: { left: 14, right: 14 },
   });
 
+  // Resolusi Nama Penyetuju Aktual (bukan teks statis hardcode!)
+  const latestChecker =
+    approvers?.checkerName ||
+    activeCash.find((m) => m.diperiksa_oleh)?.diperiksa_oleh ||
+    'Menunggu Pemeriksaan';
+  const latestApprover =
+    approvers?.approverName ||
+    activeCash.find((m) => m.disetujui_oleh)?.disetujui_oleh ||
+    'Menunggu Persetujuan';
+  const latestDirector =
+    approvers?.directorName ||
+    activeCash.find((m) => m.mengetahui_oleh)?.mengetahui_oleh ||
+    b.directorName;
+  const issuerName = approvers?.issuerName || signer?.name || 'Pelaksana Administrasi';
+
   // Tanda Tangan 4 Kolom Berjenjang
   const finalY = (doc as any).lastAutoTable?.finalY || 160;
   let signY = finalY + 10;
 
-  if (signY + 50 > pageHeight) {
+  if (signY + 46 > pageHeight) {
     doc.addPage();
     signY = 25;
   }
@@ -921,53 +1092,61 @@ export async function generateCashflowPDF(params: {
   doc.setFont('helvetica', 'bold');
   doc.text('Clerk / Kasir', 14, signY + 4);
   doc.setTextColor(15, 23, 42);
-  doc.text(signer?.name || 'Pelaksana Administrasi', 14, signY + 22);
+  doc.text(issuerName, 14, signY + 22, { maxWidth: colWidth - 4 });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
-  if (signer?.email) doc.text(signer.email, 14, signY + 26);
+  if (signer?.email) doc.text(signer.email, 14, signY + 26, { maxWidth: colWidth - 4 });
 
-  // 2. Diperiksa Oleh (Spv)
+  // 2. Diperiksa Oleh (Foreman / Spv.)
   const col2X = 14 + colWidth;
   doc.setFontSize(7.5);
   doc.text('Diperiksa Oleh,', col2X, signY);
   doc.setFont('helvetica', 'bold');
-  doc.text('Spv. / Pengawas', col2X, signY + 4);
+  doc.text('Foreman / Pengawas', col2X, signY + 4);
   doc.setTextColor(15, 23, 42);
-  doc.text('Pengawas Lapangan', col2X, signY + 22);
+  doc.text(latestChecker.split('·')[0].trim(), col2X, signY + 22, { maxWidth: colWidth - 4 });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
-  doc.text('Status: Terverifikasi', col2X, signY + 26);
+  doc.text(
+    latestChecker === 'Menunggu Pemeriksaan' ? 'Status: Menunggu' : 'Status: Terperiksa',
+    col2X,
+    signY + 26
+  );
 
-  // 3. Disetujui Oleh (Dept. Manager)
+  // 3. Disetujui Oleh (Spv. / Dept. Manager)
   const col3X = 14 + colWidth * 2;
   doc.setFontSize(7.5);
   doc.text('Disetujui Oleh,', col3X, signY);
   doc.setFont('helvetica', 'bold');
-  doc.text('Dept. Manager', col3X, signY + 4);
+  doc.text('Spv. / Dept. Manager', col3X, signY + 4);
   doc.setTextColor(15, 23, 42);
-  doc.text('Manajer Terkait', col3X, signY + 22);
+  doc.text(latestApprover.split('·')[0].trim(), col3X, signY + 22, { maxWidth: colWidth - 4 });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
-  doc.text('Status: Disetujui', col3X, signY + 26);
+  doc.text(
+    latestApprover === 'Menunggu Persetujuan' ? 'Status: Menunggu' : 'Status: Disetujui',
+    col3X,
+    signY + 26
+  );
 
-  // 4. Mengetahui / Disahkan (Direktur + TTE/QR)
+  // 4. Mengetahui / Disahkan (Dept. Mgr / KTT-PM / CEO + TTE/QR)
   const col4X = 14 + colWidth * 3;
   doc.setFontSize(7.5);
   doc.text('Mengetahui / TTE,', col4X, signY);
   doc.setFont('helvetica', 'bold');
-  doc.text('Direktur Utama', col4X, signY + 4);
+  doc.text('Pimpinan Proyek / Direktur', col4X, signY + 4);
 
-  const qrPayload = `TTE-${b.contractorSlug}:${docId}:DIREKTUR:${b.directorName.replace(/\s+/g, '_')}:NPWP_${b.contractorNpwp || 'NA'}:STATUS_VALID_SAH`;
+  const qrPayload = `TTE-${b.contractorSlug}:${docId}:DIREKTUR:${latestDirector.replace(/\s+/g, '_')}:NPWP_${b.contractorNpwp || 'NA'}:STATUS_VALID_SAH`;
   const qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 100, margin: 0 });
   doc.addImage(qrDataUrl, 'PNG', col4X, signY + 7, 16, 16);
 
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(b.directorName, col4X, signY + 26);
+  doc.text(latestDirector.split('·')[0].trim(), col4X, signY + 26, { maxWidth: colWidth - 4 });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
@@ -979,7 +1158,16 @@ export async function generateCashflowPDF(params: {
     endDate,
     company: b.contractorName,
     project: b.projectName,
-    cash_mutations: cashMutations.map(m => ({ id: m.id, amount: m.jumlah_rp, jenis: m.jenis, status: m.status_dokumen }))
+    totalMasuk,
+    totalKeluar,
+    endingBalance: hideRunningBalance ? null : endingBalance,
+    cash_mutations: cashMutations.map((m) => ({
+      id: m.id,
+      amount: m.jumlah_rp,
+      jenis: m.jenis,
+      status: m.status_dokumen,
+      excluded: isCashRowExcluded(m),
+    })),
   });
   const hash = await sha256Hex(snapshot);
 
@@ -1003,12 +1191,12 @@ export async function generateCashflowPDF(params: {
     periode_awal: startDate,
     periode_akhir: endDate,
     dibuat_pada: new Date().toISOString(),
-    penandatangan_nama: b.directorName,
+    penandatangan_nama: latestDirector,
     penandatangan_jabatan: 'Direktur Utama',
     penandatangan_email: b.directorEmail,
     hash_keamanan: hash,
-    total_transaksi: cashMutations.length,
-    ringkasan_nilai_rp: endingBalance,
+    total_transaksi: activeCash.length,
+    ringkasan_nilai_rp: hideRunningBalance ? totalKeluar : endingBalance,
     qr_payload: qrPayload,
   };
 }
@@ -1809,6 +1997,396 @@ export async function generateWarehouseSummaryPDF(params: {
     hash_keamanan: hash,
     total_transaksi: materials.length,
     ringkasan_nilai_rp: 0,
+    qr_payload: qrPayload,
+  };
+}
+
+/**
+ * Generate PDF Laporan Eksekutif Proyek Terpadu (6 Bab — Satu Kesatuan GABUNGAN_PROYEK)
+ * Otomatis beradaptasi pada POV KONTRAKTOR (lengkap 6 bab) vs POV KLIEN (progres fisik & serah terima bebas kebocoran kas internal).
+ */
+export async function generateIntegratedProjectReportPDF(params: {
+  docId: string;
+  report: IntegratedProjectReportData;
+  signer: UserProfile;
+  branding?: TenantBranding;
+  selectedSections?: string[];
+  customTitle?: string;
+  customNotes?: string;
+  orientation?: 'portrait' | 'landscape';
+  includeClientClaim?: boolean;
+  approvers?: {
+    issuerName?: string;
+    checkerName?: string;
+    approverName?: string;
+    directorName?: string;
+  };
+}): Promise<DokumenLaporan> {
+  const {
+    docId,
+    report,
+    signer,
+    branding: rawBranding,
+    selectedSections,
+    customTitle,
+    customNotes,
+    orientation = 'landscape',
+    includeClientClaim = false,
+    approvers,
+  } = params;
+
+  const b = resolvePdfBranding(rawBranding, report.projectName);
+  const isContractor = report.partyPov === 'KONTRAKTOR' && report.includeFinancials;
+  const hasSection = (key: string) =>
+    !selectedSections || selectedSections.length === 0 || selectedSections.includes(key);
+
+  const doc = new jsPDF({
+    orientation,
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const ensureSpace = (neededMm: number, currentY: number): number => {
+    if (currentY + neededMm > pageHeight - 16) {
+      doc.addPage();
+      return 20;
+    }
+    return currentY;
+  };
+
+  drawOfficialHeader(doc, pageWidth, b);
+
+  const defaultTitle = isContractor
+    ? 'LAPORAN PROYEK TERPADU (FISIK BOQ, STOK GUDANG, ARUS KAS & REKONSILIASI)'
+    : 'LAPORAN PROGRES FISIK & SERAH TERIMA PROYEK TERPADU (EDISI KLIEN)';
+  const finalTitle = customTitle?.trim() || defaultTitle;
+
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text(finalTitle, 14, 41);
+
+  doc.setFontSize(8.2);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 65, 85);
+  doc.text(
+    `No. Dokumen: ${docId} | Edisi POV: ${isContractor ? 'Kontraktor (Lengkap)' : 'Klien (Progres Fisik)'} | Dicetak: ${formatDateOnly(report.generatedAt)}`,
+    14,
+    46
+  );
+  if (customNotes) {
+    doc.text(`Catatan: ${customNotes}`, 14, 50.5, { maxWidth: pageWidth - 28 });
+  }
+
+  let cursorY = customNotes ? 55 : 51;
+
+  // =========================================================================
+  // BAB 1 — RINGKASAN EKSEKUTIF & SEGITIGA KONTROL PROYEK
+  // =========================================================================
+  if (hasSection('bab_eksekutif')) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(30, 58, 138);
+    doc.text('BAB 1 · RINGKASAN EKSEKUTIF & SEGITIGA KONTROL PROYEK', 14, cursorY);
+    cursorY += 3;
+
+    const bab1Rows: string[][] = isContractor
+      ? [
+          ['Nilai Kontrak Kontraktor (Material + Upah)', formatRupiah(report.contractStats.paguKontraktorRp), 'Capaian Serapan Fisik BOQ', `${report.physicalProgress.serapanFisikPct}% (${report.physicalProgress.tuntasCount}/${report.physicalProgress.totalPosCount} pos tuntas)`],
+          ['Nilai Aset Jatah Klien', formatRupiah(report.contractStats.nilaiJatahKlienRp), 'Pos Kritis Habis / Belum Serah', `${report.physicalProgress.habisKritisCount} pos habis · ${report.physicalProgress.jatahKlienBelumSerahCount} jatah Klien belum serah`],
+          ['Total Dana Masuk Aktif', formatRupiah(report.cashMetrics?.totalMasukAktif || 0), 'Total Dana Keluar Aktif', formatRupiah(report.cashMetrics?.totalKeluarAktif || 0)],
+          ['Saldo Kas Operasional', `${formatRupiah(report.cashMetrics?.saldoSaatIni || 0)} (${report.cashMetrics?.healthLabel || '-'})`, 'Valuasi Stok Fisik Gudang', formatRupiah(report.reconciliation?.valuasiStokGudangRp || 0)],
+          ['Total Aset Kerja Proyek (Kas + Stok)', formatRupiah(report.reconciliation?.totalAsetKerjaProyekRp || 0), 'Utang Nota Gudang Belum Dibayar', formatRupiah(report.reconciliation?.selisihNotaBelumDibayarRp || 0)],
+        ]
+      : [
+          ['Total Pos Pekerjaan & Material BOQ', `${report.physicalProgress.totalPosCount} Pos`, 'Capaian Serapan Fisik BOQ', `${report.physicalProgress.serapanFisikPct}% (${report.physicalProgress.tuntasCount} tuntas)`],
+          ['Sedang Berjalan (Proses)', `${report.physicalProgress.prosesCount} Pos`, 'Siap Pakai di Gudang', `${report.physicalProgress.siapPakaiCount} Pos`],
+          ['Belum Masuk / Belum Serah', `${report.physicalProgress.belumMasukAtauSerahCount} Pos`, 'Kewajiban Jatah Klien Belum Serah', `${report.physicalProgress.jatahKlienBelumSerahCount} Pos`],
+          ['Dokumen Resmi Terbit (POV Klien)', `${report.officialDocumentsSummary.totalDocs} Dokumen`, 'Dokumen Sah TTE/QR', `${report.officialDocumentsSummary.sahTteCount} Dokumen`],
+        ];
+
+    autoTable(doc, {
+      startY: cursorY,
+      head: [['Indikator Utama', 'Nilai / Status', 'Indikator Pendamping', 'Nilai / Status']],
+      body: bab1Rows,
+      theme: 'grid',
+      headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 8 },
+      styles: { fontSize: 8, cellPadding: 2.2 },
+      margin: { left: 14, right: 14 },
+    });
+    cursorY = ((doc as any).lastAutoTable?.finalY || cursorY + 30) + 7;
+  }
+
+  // =========================================================================
+  // BAB 2 — MATRIKS REKONSILIASI LINTAS MODUL (KHUSUS KONTRAKTOR)
+  // =========================================================================
+  if (isContractor && hasSection('bab_rekonsiliasi') && report.reconciliation) {
+    cursorY = ensureSpace(38, cursorY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(30, 58, 138);
+    doc.text('BAB 2 · MATRIKS REKONSILIASI LINTAS MODUL, PANJAR & KONTRIBUSI EKOSISTEM', 14, cursorY);
+    cursorY += 3;
+
+    const recon = report.reconciliation;
+    autoTable(doc, {
+      startY: cursorY,
+      head: [['Modul Ekosistem', 'Status', 'Jml Transaksi', 'Arus Masuk (Rp)', 'Arus Keluar (Rp)', 'Antrean Tindak Lanjut']],
+      body: recon.moduleContributions.map((mc) => [
+        mc.moduleLabel,
+        mc.status === 'AKTIF' ? 'Aktif' : 'Siap Ekspansi',
+        String(mc.transactionCount),
+        formatRupiah(mc.totalInRp),
+        formatRupiah(mc.totalOutRp),
+        mc.pendingCount > 0 ? `${mc.pendingCount} item` : 'Tuntas',
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [15, 118, 110], textColor: [255, 255, 255], fontSize: 8 },
+      styles: { fontSize: 7.8, cellPadding: 2 },
+      margin: { left: 14, right: 14 },
+    });
+    cursorY = ((doc as any).lastAutoTable?.finalY || cursorY + 30) + 5;
+
+    // Ringkasan Utang Nota, Panjar Terbuka, Piutang Talangan
+    const openPanjarTotal = recon.openKasbonList.reduce((s, k) => s + k.sisaTerbukaRp, 0);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(30, 41, 59);
+    doc.text(
+      `Rekonsiliasi Belanja Material Nota Gudang: ${formatRupiah(recon.materialNotaGudangRp)} | Dibayar Kas Material: ${formatRupiah(recon.materialKasKeluarRp)} | Utang Nota Belum Dibayar: ${formatRupiah(recon.selisihNotaBelumDibayarRp)} (${recon.unreconciledReceipts.length} nota)`,
+      14,
+      cursorY
+    );
+    cursorY += 4.5;
+    doc.text(
+      `Panjar / Kasbon Terbuka: ${formatRupiah(openPanjarTotal)} (${recon.openKasbonList.filter((k) => k.statusKasbon !== 'LUNAS').length} aktif) | Piutang Talangan Klien: ${formatRupiah(recon.clientAdvanceSummary.sisaPiutangRp)}`,
+      14,
+      cursorY
+    );
+    cursorY += 7;
+  }
+
+  // =========================================================================
+  // BAB 3 — REKAPITULASI CAPAIAN BOQ PER DIVISI
+  // =========================================================================
+  if (hasSection('bab_boq_gudang') && report.divisionSummaries.length > 0) {
+    cursorY = ensureSpace(36, cursorY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(30, 58, 138);
+    doc.text('BAB 3 · REKAPITULASI CAPAIAN BOQ PER DIVISI PEKERJAAN', 14, cursorY);
+    cursorY += 3;
+
+    const head = isContractor
+      ? [['No', 'Divisi / Kategori BOQ', 'Jumlah Pos', 'Pos Tuntas', 'Pagu Kontrak (Rp)', 'Serapan Fisik (%)']]
+      : [['No', 'Divisi / Kategori BOQ', 'Jumlah Pos', 'Pos Tuntas', 'Serapan Fisik (%)']];
+
+    const body = report.divisionSummaries.map((d, idx) =>
+      isContractor
+        ? [String(idx + 1), d.divisionName, String(d.totalPos), String(d.tuntasPos), formatRupiah(d.paguRp), `${d.realisasiFisikPct}%`]
+        : [String(idx + 1), d.divisionName, String(d.totalPos), String(d.tuntasPos), `${d.realisasiFisikPct}%`]
+    );
+
+    autoTable(doc, {
+      startY: cursorY,
+      head,
+      body,
+      theme: 'grid',
+      headStyles: { fillColor: [30, 58, 138], textColor: [255, 255, 255], fontSize: 8 },
+      styles: { fontSize: 7.8, cellPadding: 2 },
+      margin: { left: 14, right: 14 },
+    });
+    cursorY = ((doc as any).lastAutoTable?.finalY || cursorY + 30) + 7;
+  }
+
+  // =========================================================================
+  // BAB 4 — SERAPAN ANGGARAN POS BIAYA KAS (KHUSUS KONTRAKTOR)
+  // =========================================================================
+  if (isContractor && hasSection('bab_anggaran_kas') && report.budgetCategories.length > 0) {
+    cursorY = ensureSpace(38, cursorY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(30, 58, 138);
+    doc.text('BAB 4 · REKAPITULASI SERAPAN ANGGARAN PER POS BIAYA KAS', 14, cursorY);
+    cursorY += 3;
+
+    autoTable(doc, {
+      startY: cursorY,
+      head: [['Pos Biaya / Kategori', 'Pagu Acuan (Rp)', 'Realisasi Kas (Rp)', 'Sisa Pagu (Rp)', 'Serapan', 'Transaksi', 'Status']],
+      body: report.budgetCategories.map((cat) => [
+        cat.label,
+        cat.paguAcuanRp > 0 ? formatRupiah(cat.paguAcuanRp) : 'Tanpa Pagu BOQ',
+        formatRupiah(cat.realisasiKasRp),
+        cat.paguAcuanRp > 0 ? formatRupiah(cat.sisaPaguRp) : '—',
+        cat.paguAcuanRp > 0 ? `${cat.serapanPct}%` : '—',
+        String(cat.txCount),
+        cat.statusLabel,
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontSize: 8 },
+      styles: { fontSize: 7.8, cellPadding: 2 },
+      margin: { left: 14, right: 14 },
+    });
+    cursorY = ((doc as any).lastAutoTable?.finalY || cursorY + 30) + 7;
+  }
+
+  // Opsional Lampiran Tagihan Talangan Klien pada Edisi Klien (tanpa bocorkan kas internal)
+  if (
+    !isContractor &&
+    (includeClientClaim || selectedSections?.includes('lampirkan_talangan_klien')) &&
+    report.clientClaimSummary &&
+    report.clientClaimSummary.totalTalanganRp > 0
+  ) {
+    cursorY = ensureSpace(32, cursorY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(180, 83, 9);
+    doc.text('LAMPIRAN · RINCIAN TAGIHAN TALANGAN PERMINTAAN KLIEN', 14, cursorY);
+    cursorY += 3;
+
+    autoTable(doc, {
+      startY: cursorY,
+      head: [['Tanggal', 'No. Bukti', 'Uraian Pengeluaran Talangan', 'Nominal (Rp)']],
+      body: report.clientClaimSummary.transactions
+        .filter((t) => t.jenis === 'KELUAR')
+        .map((t) => [
+          formatDateOnly(t.tanggal),
+          t.nomor_kuitansi || '-',
+          t.untuk_apa,
+          formatRupiah(t.jumlah_rp),
+        ]),
+      theme: 'grid',
+      headStyles: { fillColor: [180, 83, 9], textColor: [255, 255, 255], fontSize: 8 },
+      styles: { fontSize: 7.8, cellPadding: 2 },
+      margin: { left: 14, right: 14 },
+    });
+    cursorY = ((doc as any).lastAutoTable?.finalY || cursorY + 25) + 7;
+  }
+
+  // =========================================================================
+  // BAB 5 — INDEKS LAMPIRAN BUKTI NOTA & KUITANSI TERPADU (KHUSUS KONTRAKTOR)
+  // =========================================================================
+  if (isContractor && hasSection('bab_indeks_nota')) {
+    cursorY = ensureSpace(32, cursorY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(30, 58, 138);
+    doc.text(`BAB 5 · INDEKS LAMPIRAN BUKTI NOTA & KUITANSI TERPADU (${report.receiptIndex.length} BERKAS AKTIF)`, 14, cursorY);
+    cursorY += 3;
+
+    autoTable(doc, {
+      startY: cursorY,
+      head: [['No', 'Tanggal Nota', 'Nomor Bukti', 'Toko / Pihak Lawan', 'Cakupan', 'Nominal Bukti (Rp)']],
+      body:
+        report.receiptIndex.length > 0
+          ? report.receiptIndex.slice(0, 30).map((rc, idx) => [
+              String(idx + 1),
+              formatDateOnly(rc.tanggal_nota),
+              rc.reference_no,
+              rc.nama_toko,
+              rc.receipt_scope === 'TERPADU'
+                ? 'Terpadu (Terbayar Kas)'
+                : rc.receipt_scope === 'KAS_OPERASIONAL'
+                ? 'Kuitansi Kas'
+                : 'Nota Belanja Gudang',
+              formatRupiah(Number(rc.total_nota_fisik) || 0),
+            ])
+          : [['—', '—', 'Belum ada berkas nota/kuitansi aktif pada proyek ini', '—', '—', 'Rp 0']],
+      theme: 'grid',
+      headStyles: { fillColor: [67, 56, 202], textColor: [255, 255, 255], fontSize: 8 },
+      styles: { fontSize: 7.6, cellPadding: 2 },
+      margin: { left: 14, right: 14 },
+    });
+    cursorY = ((doc as any).lastAutoTable?.finalY || cursorY + 25) + 7;
+  }
+
+  // =========================================================================
+  // BAB 6 — PENGESAHAN BERJENJANG 4 TINGKAT, TTE/QR & HASH SHA-256
+  // =========================================================================
+  cursorY = ensureSpace(46, cursorY);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(30, 58, 138);
+  doc.text('BAB 6 · PENGESAHAN BERJENJANG 4 TINGKAT & VALIDASI INTEGRITAS SHA-256', 14, cursorY);
+  cursorY += 5;
+
+  const colW = (pageWidth - 28) / 4;
+  const issuerName = approvers?.issuerName || signer?.name || 'Clerk / Pelaksana';
+  const checkerName = approvers?.checkerName || report.officialDocumentsSummary.latestApprovedDoc?.diperiksa_oleh || 'Menunggu Pemeriksaan';
+  const approverName = approvers?.approverName || report.officialDocumentsSummary.latestApprovedDoc?.disetujui_oleh || 'Menunggu Persetujuan';
+  const directorName = approvers?.directorName || report.officialDocumentsSummary.latestApprovedDoc?.mengetahui_oleh || b.directorName;
+
+  const qrPayload = `TTE-${b.contractorSlug}:${docId}:GABUNGAN_PROYEK:${report.partyPov}:NPWP_${b.contractorNpwp || 'NA'}`;
+  const qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 100, margin: 0 });
+
+  const signCols = [
+    { label: '1. Diterbitkan Oleh', role: 'Clerk / Pelaksana', name: issuerName },
+    { label: '2. Diperiksa Oleh', role: 'Foreman / Pengawas', name: checkerName.split('·')[0].trim() },
+    { label: '3. Disetujui Oleh', role: 'Spv. / Dept. Manager', name: approverName.split('·')[0].trim() },
+    { label: '4. Mengetahui / Sah TTE', role: 'KTT-PM / Direktur', name: directorName.split('·')[0].trim() },
+  ];
+
+  signCols.forEach((sc, i) => {
+    const x = 14 + colW * i;
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text(sc.label, x, cursorY);
+    doc.setFont('helvetica', 'bold');
+    doc.text(sc.role, x, cursorY + 4);
+    if (i === 3) {
+      doc.addImage(qrDataUrl, 'PNG', x, cursorY + 6.5, 16, 16);
+    }
+    doc.setTextColor(15, 23, 42);
+    doc.text(sc.name, x, cursorY + 26, { maxWidth: colW - 4 });
+  });
+
+  const snapshotPayload = stableStringify({
+    docId,
+    jenis: 'GABUNGAN_PROYEK',
+    partyPov: report.partyPov,
+    project: b.projectName,
+    contractor: b.contractorName,
+    physical: report.physicalProgress,
+    saldoKas: isContractor ? report.cashMetrics?.saldoSaatIni ?? 0 : null,
+    totalAsetKerja: isContractor ? report.reconciliation?.totalAsetKerjaProyekRp ?? 0 : null,
+  });
+  const hash = await sha256Hex(snapshotPayload);
+
+  doc.setFontSize(6);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(148, 163, 184);
+  doc.text(
+    `Integritas Dokumen SHA-256: ${hash} | ${b.contractorName}`,
+    pageWidth / 2,
+    pageHeight - 5,
+    { align: 'center' }
+  );
+
+  const fileName = buildCleanPdfFilename(
+    finalTitle,
+    isContractor ? 'Laporan_Proyek_Terpadu' : 'Laporan_Progres_Proyek_Klien',
+    b.projectName
+  );
+  doc.save(fileName);
+
+  return {
+    id: docId,
+    judul: finalTitle,
+    jenis: 'GABUNGAN_PROYEK',
+    audience_pov: isContractor ? 'KONTRAKTOR' : 'KLIEN',
+    status: 'TERVERIFIKASI',
+    periode_awal: report.generatedAt,
+    periode_akhir: report.generatedAt,
+    dibuat_pada: new Date().toISOString(),
+    penandatangan_nama: directorName,
+    penandatangan_jabatan: 'Direktur Utama',
+    penandatangan_email: b.directorEmail,
+    hash_keamanan: hash,
+    total_transaksi: report.physicalProgress.totalPosCount + (report.cashMetrics?.activeCount || 0),
+    ringkasan_nilai_rp: isContractor ? report.reconciliation?.totalAsetKerjaProyekRp || 0 : 0,
     qr_payload: qrPayload,
   };
 }

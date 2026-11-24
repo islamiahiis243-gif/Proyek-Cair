@@ -875,7 +875,7 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
                 {/* Total Tertera di Bon Fisik */}
                 <div className="space-y-1 sm:col-span-2">
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                    <span>Grand Total di Bawah Nota Fisik (Rp)</span>
+                    <span>Total Keseluruhan di Bawah Nota Fisik (Rp)</span>
                     <span className="text-[10px] text-blue-600 dark:text-blue-400 font-normal">
                       Pencocokan Otomatis
                     </span>
@@ -1266,7 +1266,7 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
                         setInspectingImgRotate(0);
                       }}
                       className="p-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 text-xs cursor-pointer"
-                      title="Reset Tampilan"
+                      title="Atur Ulang Tampilan"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
                     </button>
@@ -1409,7 +1409,7 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
                       </div>
 
                       <div className="pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
-                        <div className="text-[10px] text-slate-500">Grand Total di Nota Fisik</div>
+                        <div className="text-[10px] text-slate-500">Total Keseluruhan di Nota Fisik</div>
                         <div className="text-base font-black text-emerald-600 dark:text-emerald-400">
                           Rp {inspectingReceipt.totalPhysicalAmount.toLocaleString('id-ID')}
                         </div>

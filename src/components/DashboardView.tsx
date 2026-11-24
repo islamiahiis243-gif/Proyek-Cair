@@ -27,6 +27,7 @@ import {
 import { formatRupiah, formatDateTime } from '../lib/pdfGenerator';
 import { isClientProvidedRemark } from '../lib/stockMutationEngine';
 import { resolveEvalContext, evaluateBoqPos } from '../lib/boqExecutionEngine';
+import { isCashRowExcluded } from '../lib/cashflowEngine';
 
 interface DashboardViewProps {
   onOpenStockModal: (type?: 'MASUK' | 'KELUAR') => void;
@@ -44,6 +45,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     physicalMaterials,
     totalStockAssetValue,
     currentCashBalance,
+    cashSummaryMetrics,
     cashAccess,
     cashWriteAccess,
     stockWriteAccess,
@@ -51,6 +53,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     lowStockCount,
     availableStockCount,
     setCurrentView,
+    setCashTargetTab,
     goBack,
     tenantBranding,
     activeRole,
@@ -84,14 +87,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     };
   }, [isActionMenuOpen]);
 
-  // Cash stats
-  const totalCashIn = cashMutations
-    .filter((c) => c.jenis === 'MASUK')
-    .reduce((sum, c) => sum + c.jumlah_rp, 0);
-
-  const totalCashOut = cashMutations
-    .filter((c) => c.jenis === 'KELUAR')
-    .reduce((sum, c) => sum + c.jumlah_rp, 0);
+  // Cash stats (sumber tunggal cashflowEngine: bebas bug BATAL/DIGANTI)
+  const totalCashIn = cashSummaryMetrics.totalMasukAktif;
+  const totalCashOut = cashSummaryMetrics.totalKeluarAktif;
+  const suggestCashInFirst =
+    cashSummaryMetrics.healthCode === 'K-1' || cashSummaryMetrics.healthCode === 'K-4';
 
   // Stock mutation stats
   const totalStockInQty = stockMutations
@@ -450,13 +450,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           <ArrowDownLeft className="w-4 h-4 text-emerald-100" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between gap-1.5">
                             <span className="text-xs font-bold text-emerald-900 dark:text-emerald-300">
                               + Catat Kas Masuk
                             </span>
-                            <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">
-                              Arus Kas
-                            </span>
+                            <div className="flex items-center gap-1">
+                              {suggestCashInFirst && (
+                                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-600 text-white">
+                                  Disarankan
+                                </span>
+                              )}
+                              <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">
+                                Arus Kas
+                              </span>
+                            </div>
                           </div>
                           <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-snug">
                             Penerimaan uang kas proyek dari termin klien atau modal
@@ -526,24 +533,90 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
 
+      {/* Banner Kritis Saldo Kas Habis — HANYA muncul pada K-4 (bebas alarm palsu pada K-1!) */}
+      {!isViewer && cashSummaryMetrics.isCashCritical && (
+        <div className="bg-rose-50 dark:bg-rose-950/35 border border-rose-300 dark:border-rose-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3 transition-colors">
+          <div className="flex items-start gap-3 flex-1 text-xs">
+            <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold text-rose-900 dark:text-rose-200">
+                Peringatan Kas Kritis (Saldo Habis): Saldo kas operasional proyek mencapai {formatRupiah(currentCashBalance)}.
+              </span>{' '}
+              <span className="text-rose-800 dark:text-rose-300/90">
+                Pengeluaran kas lapangan tertahan sampai kas diisi ulang melalui pencairan termin atau modal kerja kontraktor.
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {cashWriteAccess && (
+              <button
+                type="button"
+                onClick={() => onOpenCashModal('MASUK')}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer"
+              >
+                + Catat Kas Masuk
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setCashTargetTab('SUMMARY');
+                setCurrentView('cashflow');
+              }}
+              className="text-xs font-bold text-rose-900 dark:text-rose-200 hover:underline cursor-pointer"
+            >
+              Buka Mutasi Dana →
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* KPI Cards Grid */}
       <div className={`grid grid-cols-1 sm:grid-cols-2 ${isViewer ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-4`}>
-        {/* Card 1: Saldo Kas (Disembunyikan sepenuhnya untuk Viewer/Pengamat) */}
+        {/* Card 1: Saldo Kas Interaktif (Disembunyikan sepenuhnya untuk Viewer/Pengamat) */}
         {!isViewer && (
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
-            <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
-              <span className="text-xs font-semibold uppercase tracking-wider">Saldo Kas Proyek</span>
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                <WalletCards className="w-4 h-4" />
-              </div>
+          <div
+            onClick={() => {
+              setCashTargetTab('SUMMARY');
+              setCurrentView('cashflow');
+            }}
+            className={`bg-white dark:bg-slate-900 p-5 rounded-xl border shadow-sm transition-all cursor-pointer group ${
+              cashSummaryMetrics.isCashCritical
+                ? 'border-rose-300 dark:border-rose-800 hover:border-rose-500'
+                : 'border-slate-200 dark:border-slate-800 hover:border-emerald-400 dark:hover:border-emerald-600'
+            }`}
+            title="Klik untuk membuka modul Mutasi Dana & Rekonsiliasi"
+          >
+            <div className="flex items-center justify-between text-slate-600 dark:text-slate-300 gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                <span>Saldo Kas Proyek</span>
+                <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${cashSummaryMetrics.healthBadgeClass}`}
+              >
+                {cashSummaryMetrics.healthLabel}
+              </span>
             </div>
-            <div className="mt-2 text-2xl font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
-              {cashAccess?formatRupiah(currentCashBalance):'Akses terbatas'}
+            <div
+              className={`mt-2 text-2xl font-bold font-mono tracking-tight tabular-nums ${
+                cashSummaryMetrics.isCashCritical
+                  ? 'text-rose-600 dark:text-rose-400'
+                  : 'text-slate-900 dark:text-white'
+              }`}
+            >
+              {cashAccess ? formatRupiah(currentCashBalance) : 'Akses terbatas'}
             </div>
             <div className="mt-2 flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300 font-medium border-t border-slate-100 dark:border-slate-800 pt-2">
-              <span>Masuk: {cashAccess?formatRupiah(totalCashIn):'—'}</span>
-              <span>Keluar: {cashAccess?formatRupiah(totalCashOut):'—'}</span>
+              <span>Masuk: {cashAccess ? formatRupiah(totalCashIn) : '—'}</span>
+              <span>Keluar: {cashAccess ? formatRupiah(totalCashOut) : '—'}</span>
             </div>
+            {(cashSummaryMetrics.unreconciledStockReceiptsCount > 0 || cashSummaryMetrics.openKasbonCount > 0) && (
+              <div className="mt-1.5 flex items-center justify-between text-[10px] font-semibold text-indigo-700 dark:text-indigo-300">
+                <span>{cashSummaryMetrics.unreconciledStockReceiptsCount} Nota Belum Bayar</span>
+                <span>{cashSummaryMetrics.openKasbonCount} Panjar Terbuka</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -839,13 +912,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div key={mut.id} className="p-3.5 hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
                     <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
                         mut.jenis === 'MASUK'
                           ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
                           : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
                       }`}
+                      title={mut.jenis === 'MASUK' ? 'Barang Masuk' : 'Barang Keluar'}
                     >
-                      {mut.jenis === 'MASUK' ? 'IN' : 'OUT'}
+                      {mut.jenis === 'MASUK' ? <ArrowDownLeft className="w-3.5 h-3.5" /> : <ArrowUpRight className="w-3.5 h-3.5" />}
                     </div>
                     <div className="min-w-0">
                       <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
@@ -903,20 +977,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   {cashAccess?'Belum ada transaksi kas.':'Data kas tidak tersedia untuk role akun ini.'}
                 </div>
               ) : (
-                cashMutations.slice(0, 5).map((c) => (
-                  <div key={c.id} className="p-3.5 hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-between gap-3">
+                cashMutations.slice(0, 5).map((c) => {
+                  const excluded = isCashRowExcluded(c);
+                  return (
+                  <div key={c.id} className={`p-3.5 hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-between gap-3 ${excluded ? 'opacity-55' : ''}`}>
                     <div className="flex items-start gap-3 min-w-0">
                       <div
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
                           c.jenis === 'MASUK'
                             ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
                             : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
                         }`}
+                        title={c.jenis === 'MASUK' ? 'Kas Masuk' : 'Kas Keluar'}
                       >
-                        {c.jenis === 'MASUK' ? 'IN' : 'OUT'}
+                        {c.jenis === 'MASUK' ? <ArrowDownLeft className="w-3.5 h-3.5" /> : <ArrowUpRight className="w-3.5 h-3.5" />}
                       </div>
                       <div className="min-w-0">
-                        <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
+                        <div className={`text-xs font-semibold text-slate-900 dark:text-slate-100 truncate ${excluded ? 'line-through' : ''}`}>
                           {c.untuk_apa}
                         </div>
                         <div className="text-[11px] text-slate-600 dark:text-slate-300 font-medium mt-0.5 flex items-center gap-2">
@@ -933,17 +1010,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div className="text-right shrink-0">
                       <div
                         className={`text-xs font-bold font-mono tabular-nums ${
-                          c.jenis === 'MASUK' ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'
+                          excluded ? 'line-through text-slate-400' : c.jenis === 'MASUK' ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'
                         }`}
                       >
                         {c.jenis === 'MASUK' ? '+' : '-'} {formatRupiah(c.jumlah_rp)}
                       </div>
                       <div className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5 font-mono">
-                        Saldo: {formatRupiah(c.saldo_setelah)}
+                        {excluded ? (c.is_ganti ? 'Diganti' : 'Batal') : `Saldo: ${formatRupiah(c.saldo_setelah)}`}
                       </div>
                     </div>
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

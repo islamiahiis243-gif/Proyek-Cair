@@ -3,13 +3,26 @@ import { QuantityInput } from './QuantityInput';
 import React, { useState, useMemo, useRef, useEffect, useDeferredValue, startTransition } from 'react';
 import { useApp } from '../context/AppContext';
 import {
+  ImpersonateRole,
   ItemBarang,
   PhysicalMaterialItem,
   JenisMutasiBarang,
   MutasiBarang,
+  MutasiKas,
+  ReceiptScope,
   StatusDokumenWorkflow,
   BebanBiaya
 } from '../types';
+import {
+  buildTerpaduReceiptIndex,
+  countPendingDocumentApprovals,
+  findLinkedCashMutationsForStockMutation,
+  findRelatedStockMutationsForReceipt,
+  getCashActionVariantClass,
+  getPendingApprovalForRole,
+  isStockMutationPaidViaCash,
+} from '../lib/cashflowEngine';
+import { filterDocumentsForPov } from '../lib/projectReportEngine';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -96,6 +109,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     items,
     physicalMaterials,
     stockMutations,
+    cashMutations,
     documents,
     projectReceipts,
     refreshProjectReceipts,
@@ -114,9 +128,13 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     goBack,
     setVerifyingDocId,
     dataReady,
+    activeContext,
+    activeProjectId,
     tenantBranding,
     canViewFinancials,
-    refreshData
+    refreshData,
+    stockTargetTab,
+    setStockTargetTab,
   } = useApp();
 
   // State Penyelarasan Nota Toko (Batch & Viewer Modal)
@@ -126,16 +144,35 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   const [isReceiptViewerOpen, setIsReceiptViewerOpen] = useState<boolean>(false);
   const [viewerPrimaryMutation, setViewerPrimaryMutation] = useState<MutasiBarang | null>(null);
   const [viewerRelatedMutations, setViewerRelatedMutations] = useState<MutasiBarang[]>([]);
+  const [viewerPrimaryCash, setViewerPrimaryCash] = useState<MutasiKas | null>(null);
+  const [viewerRelatedCash, setViewerRelatedCash] = useState<MutasiKas[]>([]);
+  const [viewerReceiptScope, setViewerReceiptScope] = useState<ReceiptScope | undefined>(undefined);
 
   // State Navigasi Audit Trail & Sorot Baris
   const [highlightedMutationId, setHighlightedMutationId] = useState<string | null>(null);
   const [auditDetailMutation, setAuditDetailMutation] = useState<MutasiBarang | null>(null);
 
-  // State Album Berkas Nota Proyek
+  const isFinancialHidden = activeRole === 'Viewer/Pengamat' || !canViewFinancials;
+
+  // State Album Berkas Nota Proyek (Terpadu Barang + Kuitansi Kas; Pengamat tidak melihat data kas)
   const [isProjectAlbumOpen, setIsProjectAlbumOpen] = useState<boolean>(false);
   const projectAlbumItems = useMemo(() => {
-    return buildProjectReceiptAlbum(stockMutations, projectReceipts);
-  }, [stockMutations, projectReceipts]);
+    const visibleReceipts = isFinancialHidden
+      ? projectReceipts.filter((pr) => pr.receipt_scope !== 'KAS_OPERASIONAL')
+      : projectReceipts;
+    return buildProjectReceiptAlbum(
+      stockMutations,
+      visibleReceipts,
+      isFinancialHidden ? [] : cashMutations,
+      tenantBranding.clientName
+    );
+  }, [stockMutations, projectReceipts, cashMutations, isFinancialHidden, tenantBranding.clientName]);
+
+  // Indeks Nota Gudang terbayar kas berbasis receipt_id + (no. nota & nama toko), aman dari tabrakan lintas toko
+  const terpaduReceiptIndex = useMemo(() => {
+    if (isFinancialHidden) return buildTerpaduReceiptIndex([], []);
+    return buildTerpaduReceiptIndex(projectReceipts, cashMutations);
+  }, [projectReceipts, cashMutations, isFinancialHidden]);
 
   const providerLabels = useMemo(
     () => ({
@@ -167,6 +204,38 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
       return false;
     }).length;
   }, [stockMutations, activeRole]);
+
+  // Antrean dokumen resmi MUTASI_STOK menunggu giliran peran aktif
+  const pendingStockDocCount = useMemo(
+    () => countPendingDocumentApprovals(documents || [], activeRole, 'MUTASI_STOK'),
+    [documents, activeRole]
+  );
+
+  // Penugasan jabatan sah milik pengguna di proyek aktif (Ganti Jabatan Cepat hanya tampil jika > 1)
+  const userProjectRoles = useMemo<ImpersonateRole[]>(() => {
+    const all = activeContext?.projects || [];
+    const curId = activeProjectId || tenantBranding.projectId;
+    const matched = curId ? all.filter((p) => p.id === curId) : all;
+    const mapRoleCode = (code?: string): ImpersonateRole | null => {
+      const u = (code || '').toUpperCase();
+      if (u === 'CLERK') return 'Clerk';
+      if (u === 'FOREMAN') return 'Foreman';
+      if (u === 'SUPERVISOR' || u === 'SPV') return 'Spv.';
+      if (u === 'DEPT_MANAGER' || u === 'MANAGER') return 'Dept. Manager';
+      if (u === 'KTT_PM' || u === 'PM') return 'KTT/Proj. Manager';
+      if (u === 'CEO' || u === 'DIRECTOR' || u === 'DIREKTUR') return 'CEO/Direktur';
+      if (u === 'VIEWER' || u === 'PENGAMAT' || u === 'OBSERVER') return 'Viewer/Pengamat';
+      return null;
+    };
+    const roles: ImpersonateRole[] = [];
+    for (const a of matched) {
+      const mapped = mapRoleCode(a.role_code);
+      if (mapped && !roles.includes(mapped)) {
+        roles.push(mapped);
+      }
+    }
+    return roles;
+  }, [activeContext?.projects, activeProjectId, tenantBranding.projectId]);
 
   // Pos Jatah Klien yang belum diserahkan ke proyek (S-1 / S-4 jatah klien untuk POV Klien)
   const pendingClientDeliveriesCount = useMemo(() => {
@@ -227,6 +296,18 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   // 3) MUTATION_HISTORY ("Jurnal Transaksi & Barang Kustom" + Matriks Panduan, koreksi langsung tanpa birokrasi per baris)
   // 4) OFFICIAL_DOCUMENTS ("Dokumen & Persetujuan Berantai TTE/QR")
   const [activeTab, setActiveTab] = useState<'WAREHOUSE_SUMMARY' | 'BOQ_MONITOR' | 'MUTATION_HISTORY' | 'OFFICIAL_DOCUMENTS'>('WAREHOUSE_SUMMARY');
+
+  useEffect(() => {
+    if (
+      stockTargetTab === 'WAREHOUSE_SUMMARY' ||
+      stockTargetTab === 'BOQ_MONITOR' ||
+      stockTargetTab === 'MUTATION_HISTORY' ||
+      stockTargetTab === 'OFFICIAL_DOCUMENTS'
+    ) {
+      setActiveTab(stockTargetTab);
+      setStockTargetTab(null);
+    }
+  }, [stockTargetTab, setStockTargetTab]);
 
   // State untuk Tab 1: Rekap Gudang ("Satukan Masuk")
   const [warehouseSearchQuery, setWarehouseSearchQuery] = useState('');
@@ -1035,9 +1116,15 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     });
   }, [physicalMaterials, deferredWarehouseSearchQuery, deferredWarehouseFilter, deferredWarehouseSort]);
 
-  // Daftar Dokumen Resmi Mutasi Barang (Tab 4)
+  // Daftar Dokumen Resmi Mutasi Barang (Tab 4 — tersaring ketat sesuai privasi POV)
   const stockDocuments = useMemo(() => {
-    const list = (documents || []).filter((d) => d.jenis === 'MUTASI_STOK' || d.jenis === 'GABUNGAN_PROYEK');
+    const povDocuments = filterDocumentsForPov(
+      documents || [],
+      isFinancialHidden ? 'KLIEN' : 'KONTRAKTOR'
+    );
+    const list = povDocuments.filter(
+      (d) => d.jenis === 'MUTASI_STOK' || d.jenis === 'GABUNGAN_PROYEK'
+    );
     const mult = deferredDocSort.dir === 'asc' ? 1 : -1;
     const wfRank = (s?: string) => {
       if (s === 'MENGETAHUI') return 4;
@@ -1058,7 +1145,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           return 0;
       }
     });
-  }, [documents, deferredDocSort]);
+  }, [documents, isFinancialHidden, deferredDocSort]);
 
   // Aksi Cepat Mutasi dari Baris Material BOQ (Khusus Pemakaian / Keluar per Pos di Tab 2)
   const handleOpenItemMutation = (item: ItemBarang, type: JenisMutasiBarang) => {
@@ -1344,6 +1431,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   const handleIssueStockDocument = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
+    if (!rolePermissions.canIssue) {
+      setErrorMessage(`Jabatan Anda (${activeRole}) tidak memiliki wewenang menerbitkan dokumen resmi baru. Wewenang ini milik Clerk.`);
+      return;
+    }
     if (!docTitle.trim()) {
       setErrorMessage('Judul dokumen resmi wajib diisi.');
       return;
@@ -1351,10 +1442,6 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      if (activeRole !== 'Clerk') {
-        setActiveRole('Clerk');
-      }
-
       const validTrx = stockMutations.filter((m) => !m.is_batal && !m.is_ganti);
       const inCount = validTrx.filter((m) => m.jenis === 'MASUK').length;
       const outCount = validTrx.filter((m) => m.jenis === 'KELUAR').length;
@@ -1382,27 +1469,19 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   const handleAdvanceStockDocument = async (
     docDbId: string,
     currentStatus: StatusDokumenWorkflow,
-    nextStatus: StatusDokumenWorkflow,
-    requiredRole?: any
+    nextStatus: StatusDokumenWorkflow
   ) => {
-    if (nextStatus === 'DISETUJUI' && currentStatus !== 'DIPERIKSA') {
-      setErrorMessage('Alur persetujuan berantai: Dokumen wajib Diperiksa terlebih dahulu oleh Foreman / Spv sebelum Disetujui.');
-      return;
-    }
-    if (nextStatus === 'MENGETAHUI' && currentStatus !== 'DISETUJUI') {
-      setErrorMessage('Alur persetujuan berantai: Dokumen wajib Disetujui terlebih dahulu oleh Spv / Dept. Manager sebelum disahkan Mengetahui (TTE/QR).');
+    const pendingTurn = getPendingApprovalForRole(currentStatus, activeRole);
+    if (!pendingTurn || pendingTurn.nextTarget !== nextStatus) {
+      setErrorMessage(`Jabatan Anda (${activeRole}) belum/tidak berwenang memproses tahap ${nextStatus} pada dokumen ini.`);
       return;
     }
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      const targetRole = requiredRole || (nextStatus === 'DIPERIKSA' ? 'Foreman' : nextStatus === 'DISETUJUI' ? 'Spv.' : 'Dept. Manager');
-      if (activeRole !== targetRole) {
-        setActiveRole(targetRole);
-      }
-      const res = await advanceDocumentWorkflow(docDbId, nextStatus, targetRole);
+      const res = await advanceDocumentWorkflow(docDbId, nextStatus);
       if (res.success) {
-        setNoticeMessage(`Persetujuan berhasil! (${targetRole}): ${res.message}`);
+        setNoticeMessage(`Persetujuan berhasil (${activeRole}): ${res.message}`);
       } else {
         setErrorMessage(res.message);
       }
@@ -1531,7 +1610,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           targetType: 'BOQ',
           title: 'Laporan Realisasi & Kontrol Pemenuhan BOQ',
           itemCount: visibleBoqItems.length,
-          initialIncludeFinancials: activeRole !== 'Viewer/Pengamat',
+          initialIncludeFinancials: !isFinancialHidden,
           currentFilterLabel: `${providerLabel} · ${statusLabel}${searchPart}`,
           currentSortLabel: sortLabel
         });
@@ -1717,7 +1796,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
           preserveOrder: config.sortConfig.key === 'default',
           filterSummary: `${exportModalState.currentFilterLabel} · ${exportModalState.currentSortLabel}`,
           branding: tenantBranding,
-          hideFinancials: activeRole === 'Viewer/Pengamat' ? true : !config.includeFinancials,
+          hideFinancials: isFinancialHidden ? true : !config.includeFinancials,
           customTitle: config.customTitle,
           customNotes: config.customNotes,
           selectedColumns: config.selectedColumns,
@@ -1868,12 +1947,12 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
 
       {!modalOnly && (
         <>
-          {/* Banner Viewer / Pengamat */}
+          {/* Banner Pengamat (Klien) */}
           {activeRole === 'Viewer/Pengamat' && (
             <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-cyan-950/40 border border-cyan-500/30 text-cyan-200 text-xs">
               <Eye className="w-4 h-4 text-cyan-400 shrink-0" />
               <div className="flex-1 leading-relaxed">
-                <span className="font-bold text-cyan-300">Mode Viewer / Pengamat Aktif:</span> Anda memiliki akses transparansi penuh untuk mengamati progres realisasi BOQ, mutasi fisik, riwayat transaksi, dan ekspor laporan PDF. Fitur entri dan persetujuan dinonaktifkan untuk menjaga integritas data.
+                <span className="font-bold text-cyan-300">Mode Pengamat (Klien) Aktif:</span> Anda memiliki akses transparansi penuh untuk mengamati progres realisasi BOQ, mutasi fisik, riwayat transaksi, dan ekspor laporan PDF fisik. Fitur entri, rincian kas internal, dan persetujuan dinonaktifkan untuk menjaga integritas serta privasi data.
               </div>
             </div>
           )}
@@ -1948,6 +2027,29 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                       <Bell className="w-4 h-4 animate-bounce" />
                       <span>
                         {pendingWorkflowCount} Mutasi Menunggu{' '}
+                        {activeRole === 'Foreman' ? 'Periksa' : activeRole === 'Spv.' ? 'Setuju' : 'Sahkan'} →
+                      </span>
+                    </button>
+                  ) : pendingStockDocCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        startTransition(() => {
+                          setActiveTab('OFFICIAL_DOCUMENTS');
+                        });
+                      }}
+                      className={`inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-xl active:scale-95 transition-all shadow-xs cursor-pointer ${
+                        activeRole === 'Foreman'
+                          ? 'bg-sky-600 hover:bg-sky-700 text-white'
+                          : activeRole === 'Spv.'
+                          ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                          : 'bg-teal-600 hover:bg-teal-700 text-white'
+                      }`}
+                      title="Buka tab Dokumen Resmi untuk memproses pengesahan berita acara yang menunggu giliran Anda"
+                    >
+                      <Bell className="w-4 h-4 animate-bounce" />
+                      <span>
+                        {pendingStockDocCount} Dokumen Menunggu{' '}
                         {activeRole === 'Foreman' ? 'Periksa' : activeRole === 'Spv.' ? 'Setuju' : 'Sahkan'} →
                       </span>
                     </button>
@@ -2629,7 +2731,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                           <div className="flex items-center justify-between gap-1 text-[10px] uppercase font-bold text-amber-300 tracking-wider">
                             <span>1. Nilai Kontrak Pelaksanaan</span>
                             <span className="px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-200 text-[9px] font-bold">
-                              Grand Total
+                              Total Keseluruhan
                             </span>
                           </div>
                           <div className="mt-1.5 text-xl sm:text-2xl font-black text-amber-300 font-mono tracking-tight">
@@ -3537,7 +3639,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                       title="Kembalikan ke semua transaksi"
                     >
                       <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Reset Filter</span>
+                      <span>Atur Ulang Filter</span>
                     </button>
                   )}
 
@@ -3828,33 +3930,66 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                   </div>
                                 )}
 
-                                {/* Akses Cepat Bukti Nota Fisik */}
-                                {hasReceiptAttachment && (
-                                  <div className="mt-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setViewerPrimaryMutation(mut);
-                                        const rNo = mut.nomor_nota || mut.nomor_surat_jalan;
-                                        const related = rNo
-                                          ? stockMutations.filter((m) => (m.nomor_nota === rNo || m.nomor_surat_jalan === rNo) && !m.is_batal && !m.is_ganti)
-                                          : [mut];
-                                        setViewerRelatedMutations(related.length > 0 ? related : [mut]);
-                                        setIsReceiptViewerOpen(true);
-                                      }}
-                                      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/80 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold transition-colors cursor-pointer shadow-2xs"
-                                      title="Klik untuk membuka & memeriksa foto nota asli dari toko"
-                                    >
-                                      <Paperclip className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-                                      <span>Bukti Nota: {mut.nomor_nota || mut.nomor_surat_jalan}</span>
-                                      {mut.lampiran_nota_urls && mut.lampiran_nota_urls.length > 1 && (
-                                        <span className="text-[9px] px-1 rounded bg-indigo-200 dark:bg-indigo-800 text-indigo-900 dark:text-indigo-100 font-extrabold">
-                                          {mut.lampiran_nota_urls.length} lbr
+                                {/* Akses Cepat Bukti Nota Fisik + Umpan Balik 2 Arah Mutasi Dana */}
+                                {(() => {
+                                  const isPaidViaCash =
+                                    !isFinancialHidden &&
+                                    isStockMutationPaidViaCash(
+                                      mut,
+                                      terpaduReceiptIndex,
+                                      tenantBranding.clientName
+                                    );
+                                  if (!hasReceiptAttachment && !isPaidViaCash) return null;
+                                  return (
+                                    <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                      {hasReceiptAttachment && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setViewerPrimaryMutation(mut);
+                                            const related = findRelatedStockMutationsForReceipt(
+                                              mut,
+                                              stockMutations,
+                                              tenantBranding.clientName
+                                            );
+                                            setViewerRelatedMutations(related);
+                                            const linkedCash = isFinancialHidden
+                                              ? []
+                                              : findLinkedCashMutationsForStockMutation(
+                                                  mut,
+                                                  cashMutations,
+                                                  tenantBranding.clientName
+                                                );
+                                            setViewerPrimaryCash(linkedCash[0] || null);
+                                            setViewerRelatedCash(linkedCash);
+                                            setViewerReceiptScope(
+                                              isPaidViaCash || linkedCash.length > 0 ? 'TERPADU' : 'BELANJA_BARANG'
+                                            );
+                                            setIsReceiptViewerOpen(true);
+                                          }}
+                                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/80 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold transition-colors cursor-pointer shadow-2xs"
+                                          title="Klik untuk membuka & memeriksa foto nota asli dari toko"
+                                        >
+                                          <Paperclip className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                                          <span>Bukti Nota: {mut.nomor_nota || mut.nomor_surat_jalan}</span>
+                                          {mut.lampiran_nota_urls && mut.lampiran_nota_urls.length > 1 && (
+                                            <span className="text-[9px] px-1 rounded bg-indigo-200 dark:bg-indigo-800 text-indigo-900 dark:text-indigo-100 font-extrabold">
+                                              {mut.lampiran_nota_urls.length} lbr
+                                            </span>
+                                          )}
+                                        </button>
+                                      )}
+                                      {isPaidViaCash && (
+                                        <span
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 text-[10px] font-bold"
+                                          title="Nota belanja ini sudah direkonsiliasi dan dibayar melalui modul Mutasi Dana"
+                                        >
+                                          ✓ Terbayar Kas
                                         </span>
                                       )}
-                                    </button>
-                                  </div>
-                                )}
+                                    </div>
+                                  );
+                                })()}
 
                                 {/* Navigasi Cepat dari Baris Diganti ke Baris Baru & Notanya */}
                                 {isReplaced && replacementMutation && (
@@ -3873,11 +4008,31 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                         type="button"
                                         onClick={() => {
                                           setViewerPrimaryMutation(replacementMutation);
-                                          const rNo = replacementMutation.nomor_nota || replacementMutation.nomor_surat_jalan;
-                                          const related = rNo
-                                            ? stockMutations.filter((m) => (m.nomor_nota === rNo || m.nomor_surat_jalan === rNo) && !m.is_batal && !m.is_ganti)
-                                            : [replacementMutation];
-                                          setViewerRelatedMutations(related.length > 0 ? related : [replacementMutation]);
+                                          const related = findRelatedStockMutationsForReceipt(
+                                            replacementMutation,
+                                            stockMutations,
+                                            tenantBranding.clientName
+                                          );
+                                          setViewerRelatedMutations(related);
+                                          const linkedCash = isFinancialHidden
+                                            ? []
+                                            : findLinkedCashMutationsForStockMutation(
+                                                replacementMutation,
+                                                cashMutations,
+                                                tenantBranding.clientName
+                                              );
+                                          const replacementPaid =
+                                            !isFinancialHidden &&
+                                            isStockMutationPaidViaCash(
+                                              replacementMutation,
+                                              terpaduReceiptIndex,
+                                              tenantBranding.clientName
+                                            );
+                                          setViewerPrimaryCash(linkedCash[0] || null);
+                                          setViewerRelatedCash(linkedCash);
+                                          setViewerReceiptScope(
+                                            replacementPaid || linkedCash.length > 0 ? 'TERPADU' : 'BELANJA_BARANG'
+                                          );
                                           setIsReceiptViewerOpen(true);
                                         }}
                                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/90 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold transition-colors cursor-pointer shadow-2xs"
@@ -4115,22 +4270,23 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     </p>
                   </div>
 
-                  {/* Quick Role Switcher untuk Pengujian & Fleksibilitas Persetujuan */}
-                  <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto bg-amber-50/70 dark:bg-amber-950/30 p-1.5 px-3 rounded-xl border border-amber-200 dark:border-amber-800/60">
-                    <span className="text-[11px] font-bold text-amber-900 dark:text-amber-200">Peran Aktif:</span>
-                    <select
-                      value={activeRole}
-                      onChange={(e) => setActiveRole(e.target.value as any)}
-                      className="px-2 py-1 text-xs font-extrabold rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 text-amber-900 dark:text-amber-200 cursor-pointer shadow-2xs"
-                    >
-                      <option value="Clerk">1. Clerk (Penerbit)</option>
-                      <option value="Foreman">2. Foreman (Pemeriksa)</option>
-                      <option value="Spv.">3. Spv. (Penyetuju)</option>
-                      <option value="Dept. Manager">4. Dept. Manager (Pengesah)</option>
-                      <option value="CEO/Direktur">5. CEO / Direktur (Pengesah)</option>
-                      <option value="Viewer/Pengamat">Viewer (Pengamat)</option>
-                    </select>
-                  </div>
+                  {/* Ganti Jabatan Cepat: HANYA tampil jika pengguna sah memegang > 1 penugasan jabatan proyek */}
+                  {userProjectRoles.length > 1 && (
+                    <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto bg-amber-50/70 dark:bg-amber-950/30 p-1.5 px-3 rounded-xl border border-amber-200 dark:border-amber-800/60">
+                      <span className="text-[11px] font-bold text-amber-900 dark:text-amber-200">Ganti Jabatan Cepat:</span>
+                      <select
+                        value={activeRole}
+                        onChange={(e) => setActiveRole(e.target.value as ImpersonateRole)}
+                        className="px-2 py-1 text-xs font-extrabold rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 text-amber-900 dark:text-amber-200 cursor-pointer shadow-2xs"
+                      >
+                        {userProjectRoles.map((roleOpt) => (
+                          <option key={roleOpt} value={roleOpt}>
+                            {roleOpt === 'Viewer/Pengamat' ? 'Pengamat (Klien)' : roleOpt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 {rolePermissions.canIssue ? (
@@ -4202,22 +4358,16 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                     </div>
                   </form>
                 ) : (
-                  <div className="p-3.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="space-y-0.5">
-                      <p className="font-bold">
-                        Penerbitan Berita Acara resmi baru dilakukan oleh <u>Clerk</u>.
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300">
+                    {activeRole === 'Viewer/Pengamat' ? (
+                      <p className="font-medium">
+                        Jabatan Anda saat ini (<b>Pengamat</b>) memiliki akses baca, unduh PDF fisik, dan verifikasi kode QR atas dokumen resmi yang dibagikan untuk Klien.
                       </p>
-                      <p className="text-[11px] opacity-90">
-                        Peran Anda saat ini (<b>{activeRole}</b>) bertugas pada tahap pemeriksaan atau persetujuan dokumen di bawah.
+                    ) : (
+                      <p className="font-medium">
+                        Penerbitan Berita Acara resmi baru dilakukan oleh <b>Clerk</b>. Jabatan Anda saat ini (<b>{activeRole}</b>) memproses pemeriksaan atau pengesahan pada dokumen yang menunggu giliran di bawah.
                       </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveRole('Clerk')}
-                      className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition-colors shadow-2xs cursor-pointer shrink-0"
-                    >
-                      Beralih ke Clerk untuk Menerbitkan ➔
-                    </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -4330,52 +4480,52 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                 )}
                               </td>
                               <td className="py-3 px-3.5 text-center whitespace-nowrap">
-                                {!isDocVoid && !isDocReplaced && (
-                                  <div className="flex items-center justify-center gap-1.5">
-                                    {wfStatus === 'DITERBITKAN' && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleAdvanceStockDocument(docDbId, wfStatus, 'DIPERIKSA', 'Foreman')}
-                                        disabled={submitting}
-                                        className="px-3 py-1.5 text-xs font-bold rounded-xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
-                                        title="Periksa Dokumen Resmi (Wewenang Foreman / Spv.)"
-                                      >
-                                        <ShieldCheck className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                                        <span>Periksa Dokumen</span>
-                                      </button>
-                                    )}
-                                    {wfStatus === 'DIPERIKSA' && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleAdvanceStockDocument(docDbId, wfStatus, 'DISETUJUI', 'Spv.')}
-                                        disabled={submitting}
-                                        className="px-3 py-1.5 text-xs font-bold rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
-                                        title="Setujui Dokumen Resmi (Wewenang Spv. / Dept. Manager)"
-                                      >
-                                        <FileCheck2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                                        <span>Setujui Dokumen</span>
-                                      </button>
-                                    )}
-                                    {wfStatus === 'DISETUJUI' && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleAdvanceStockDocument(docDbId, wfStatus, 'MENGETAHUI', 'CEO/Direktur')}
-                                        disabled={submitting}
-                                        className="px-3 py-1.5 text-xs font-bold rounded-xl border border-blue-400 bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
-                                        title="Sahkan dengan Tanda Tangan Elektronik & QR Code (Direktur / CEO)"
-                                      >
-                                        <QrCode className="w-3.5 h-3.5" />
-                                        <span>Sahkan (TTE/QR)</span>
-                                      </button>
-                                    )}
-                                    {wfStatus === 'MENGETAHUI' && (
-                                      <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 text-xs font-extrabold bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-xl border border-emerald-200 dark:border-emerald-900">
-                                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                                        <span>Sah & Terverifikasi</span>
+                                {!isDocVoid && !isDocReplaced && (() => {
+                                  if (wfStatus === 'MENGETAHUI') {
+                                    return (
+                                      <div className="inline-flex items-center gap-1 text-teal-800 dark:text-teal-200 text-xs font-extrabold bg-teal-50 dark:bg-teal-950/50 px-2.5 py-1 rounded-full border border-teal-200 dark:border-teal-800">
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                                        <span>Sah (TTE)</span>
                                       </div>
-                                    )}
-                                  </div>
-                                )}
+                                    );
+                                  }
+                                  const pendingDocAction = getPendingApprovalForRole(wfStatus, activeRole);
+                                  if (pendingDocAction) {
+                                    const approvalVariant =
+                                      pendingDocAction.action === 'PERIKSA'
+                                        ? 'sky'
+                                        : pendingDocAction.action === 'SETUJU'
+                                        ? 'amber'
+                                        : 'teal';
+                                    const approvalLabel =
+                                      pendingDocAction.action === 'PERIKSA'
+                                        ? 'Periksa'
+                                        : pendingDocAction.action === 'SETUJU'
+                                        ? 'Setuju'
+                                        : 'Sahkan';
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAdvanceStockDocument(docDbId, wfStatus, pendingDocAction.nextTarget)}
+                                        disabled={submitting}
+                                        className={`inline-flex items-center justify-center gap-1.5 min-w-[82px] h-7 min-h-[34px] sm:min-h-0 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer disabled:opacity-50 ${getCashActionVariantClass(approvalVariant)}`}
+                                        title={`${approvalLabel} dokumen resmi sesuai wewenang jabatan ${activeRole}`}
+                                      >
+                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                        <span>{approvalLabel}</span>
+                                      </button>
+                                    );
+                                  }
+                                  return (
+                                    <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                      {wfStatus === 'DITERBITKAN'
+                                        ? 'Menunggu Foreman'
+                                        : wfStatus === 'DIPERIKSA'
+                                        ? 'Menunggu Spv.'
+                                        : 'Menunggu Pimpinan'}
+                                    </span>
+                                  );
+                                })()}
                               </td>
                               <td className="py-3 px-3.5 text-center whitespace-nowrap">
                                 <div className="flex items-center justify-center gap-1.5">
@@ -4586,7 +4736,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         availablePendingMutations={stockMutations.filter((m) => m.jenis === 'MASUK' && !m.is_batal && !m.is_ganti)}
         allStockMutations={stockMutations}
         currentUser={user}
-        projectId={tenantBranding.projectId || '2506245e-ff3f-4313-b821-920ab368a5df'}
+        projectId={activeProjectId || tenantBranding.projectId || '2506245e-ff3f-4313-b821-920ab368a5df'}
         onSuccess={async (count, receiptNo) => {
           await refreshData();
           setSelectedMutationIds([]);
@@ -4600,21 +4750,49 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         onClose={() => setIsProjectAlbumOpen(false)}
         albumItems={projectAlbumItems}
         currentUser={user}
-        projectId={tenantBranding.projectId || '2506245e-ff3f-4313-b821-920ab368a5df'}
+        projectId={activeProjectId || tenantBranding.projectId || '2506245e-ff3f-4313-b821-920ab368a5df'}
+        hideCashDetails={isFinancialHidden}
         onOpenReceiptViewer={(primary, related) => {
           setViewerPrimaryMutation(primary);
           setViewerRelatedMutations(related);
+          const linkedCash = isFinancialHidden
+            ? []
+            : findLinkedCashMutationsForStockMutation(
+                primary,
+                cashMutations,
+                tenantBranding.clientName
+              );
+          const isPaid =
+            !isFinancialHidden &&
+            isStockMutationPaidViaCash(primary, terpaduReceiptIndex, tenantBranding.clientName);
+          setViewerPrimaryCash(linkedCash[0] || null);
+          setViewerRelatedCash(linkedCash);
+          setViewerReceiptScope(
+            !isFinancialHidden && (isPaid || linkedCash.length > 0) ? 'TERPADU' : 'BELANJA_BARANG'
+          );
           setIsReceiptViewerOpen(true);
         }}
-        onSelectForLinking={(nota) => {
-          setIsProjectAlbumOpen(false);
-          // Jika ada item mutasi masuk yang aktif, buka BatchReceiptModal langsung ke nota ini
-          const pendingIn = stockMutations.filter((m) => m.jenis === 'MASUK' && !m.is_batal && !m.is_ganti);
-          if (pendingIn.length > 0) {
-            setBatchReceiptTargets([pendingIn[0]]);
-            setIsBatchReceiptModalOpen(true);
-          }
+        onOpenCashReceiptViewer={(cash, relatedCash, relatedStock, scope) => {
+          setViewerPrimaryMutation(relatedStock[0] || null);
+          setViewerRelatedMutations(relatedStock);
+          setViewerPrimaryCash(isFinancialHidden ? null : cash);
+          setViewerRelatedCash(isFinancialHidden ? [] : relatedCash);
+          setViewerReceiptScope(isFinancialHidden ? 'BELANJA_BARANG' : scope || 'KAS_OPERASIONAL');
+          setIsReceiptViewerOpen(true);
         }}
+        onSelectForLinking={
+          rolePermissions.canIssue && !isFinancialHidden
+            ? (_nota) => {
+                setIsProjectAlbumOpen(false);
+                // Jika ada item mutasi masuk yang aktif, buka BatchReceiptModal langsung ke nota ini
+                const pendingIn = stockMutations.filter((m) => m.jenis === 'MASUK' && !m.is_batal && !m.is_ganti);
+                if (pendingIn.length > 0) {
+                  setBatchReceiptTargets([pendingIn[0]]);
+                  setIsBatchReceiptModalOpen(true);
+                }
+              }
+            : undefined
+        }
         onDataChanged={async () => {
           await refreshData();
           await refreshProjectReceipts();
@@ -4627,6 +4805,10 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
         onClose={() => setIsReceiptViewerOpen(false)}
         primaryMutation={viewerPrimaryMutation}
         allMutationsInReceipt={viewerRelatedMutations}
+        primaryCashMutation={isFinancialHidden ? null : viewerPrimaryCash}
+        allCashMutationsInReceipt={isFinancialHidden ? [] : viewerRelatedCash}
+        receiptScope={isFinancialHidden ? 'BELANJA_BARANG' : viewerReceiptScope}
+        hideFinancialDetails={activeRole === 'Viewer/Pengamat' || !canViewFinancials}
       />
 
       {/* Modal Pop-up Rincian Jejak Audit (Pembatalan / Penggantian) */}

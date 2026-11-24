@@ -16,10 +16,10 @@ import {
   FolderKanban,
   Eye,
   Bell,
-  Mail,
-  Sparkles
+  Mail
 } from 'lucide-react';
 import { formatRupiah } from '../lib/pdfGenerator';
+import { resolveStockApprovalTargetTab } from '../lib/cashflowEngine';
 import { getSupabaseClient } from '../lib/supabase';
 import { ImpersonateRole, AppMode } from '../types';
 
@@ -30,7 +30,16 @@ export const Header: React.FC = () => {
     theme,
     toggleTheme,
     currentCashBalance,
+    cashSummaryMetrics,
     cashAccess,
+    stockMutations,
+    documents,
+    pendingStockApprovalCount,
+    pendingCashApprovalCount,
+    pendingDocumentApprovalCount,
+    pendingApprovalCount,
+    setCashTargetTab,
+    setStockTargetTab,
     appMode,
     setAppMode,
     activeRole,
@@ -219,6 +228,117 @@ export const Header: React.FC = () => {
     setDropdownOpen(false);
   };
 
+  const stockApprovalTargetTab = resolveStockApprovalTargetTab(
+    stockMutations,
+    documents,
+    activeRole
+  );
+
+  const cashApprovalTargetTab =
+    cashSummaryMetrics.pendingWorkflowCount > 0 ? 'JOURNAL' : 'DOCUMENTS';
+
+  const getOperationalBellPillClass = (tone: 'sky' | 'amber' | 'teal' | 'blue') => {
+    switch (tone) {
+      case 'sky':
+        return 'bg-sky-500/20 text-sky-300';
+      case 'amber':
+        return 'bg-amber-500/20 text-amber-300';
+      case 'teal':
+        return 'bg-teal-500/20 text-teal-300';
+      case 'blue':
+      default:
+        return 'bg-blue-500/20 text-blue-300';
+    }
+  };
+
+  const operationalBellItems =
+    appMode === 'IMPERSONATE'
+      ? [
+          ...(pendingStockApprovalCount > 0 && activeRole !== 'Viewer/Pengamat'
+            ? [
+                {
+                  id: 'op-stock-approval',
+                  title: `${pendingStockApprovalCount} Antrean Persetujuan Mutasi Barang`,
+                  message:
+                    stockApprovalTargetTab === 'OFFICIAL_DOCUMENTS'
+                      ? `Menunggu tindakan jabatan ${activeRole} pada Dokumen Resmi Mutasi Barang.`
+                      : `Menunggu tindakan jabatan ${activeRole} di Jurnal Mutasi / Dokumen Resmi Barang.`,
+                  tone: 'sky' as const,
+                  actionLabel:
+                    stockApprovalTargetTab === 'OFFICIAL_DOCUMENTS'
+                      ? 'Buka Dokumen Resmi'
+                      : 'Buka Mutasi Barang',
+                  onClick: () => {
+                    setStockTargetTab(stockApprovalTargetTab);
+                    setCurrentView('stock-mutations');
+                    setNotifOpen(false);
+                  },
+                },
+              ]
+            : []),
+          ...(pendingCashApprovalCount > 0 && activeRole !== 'Viewer/Pengamat'
+            ? [
+                {
+                  id: 'op-cash-approval',
+                  title: `${pendingCashApprovalCount} Antrean Persetujuan Mutasi Dana`,
+                  message:
+                    cashApprovalTargetTab === 'DOCUMENTS'
+                      ? `Menunggu tindakan jabatan ${activeRole} pada Berita Acara Kas.`
+                      : `Menunggu tindakan jabatan ${activeRole} di Jurnal Kas / Berita Acara Kas.`,
+                  tone: 'amber' as const,
+                  actionLabel:
+                    cashApprovalTargetTab === 'DOCUMENTS'
+                      ? 'Buka Dokumen Kas'
+                      : 'Buka Mutasi Dana',
+                  onClick: () => {
+                    setCashTargetTab(cashApprovalTargetTab);
+                    setCurrentView('cashflow');
+                    setNotifOpen(false);
+                  },
+                },
+              ]
+            : []),
+          ...(pendingDocumentApprovalCount > 0 && activeRole !== 'Viewer/Pengamat'
+            ? [
+                {
+                  id: 'op-doc-approval',
+                  title: `${pendingDocumentApprovalCount} Laporan Terpadu Menunggu Pengesahan`,
+                  message: `Menunggu tinjauan jabatan ${activeRole} di Studio Laporan PDF.`,
+                  tone: 'teal' as const,
+                  actionLabel: 'Buka Studio Laporan',
+                  onClick: () => {
+                    setCurrentView('reports');
+                    setNotifOpen(false);
+                  },
+                },
+              ]
+            : []),
+          ...(activeRole === 'Clerk' && cashSummaryMetrics.unreconciledStockReceiptsCount > 0
+            ? [
+                {
+                  id: 'op-unreconciled',
+                  title: `${cashSummaryMetrics.unreconciledStockReceiptsCount} Nota Gudang Siap Dibayar Kas`,
+                  message: 'Pelunasan ekspres 2-klik tersedia di Tab Rekonsiliasi & Panjar.',
+                  tone: 'blue' as const,
+                  actionLabel: 'Buka Rekonsiliasi',
+                  onClick: () => {
+                    setCashTargetTab('RECONCILIATION');
+                    setCurrentView('cashflow');
+                    setNotifOpen(false);
+                  },
+                },
+              ]
+            : []),
+        ]
+      : [];
+
+  const totalBellCount =
+    notifications.length +
+    (appMode === 'IMPERSONATE'
+      ? pendingApprovalCount +
+        (activeRole === 'Clerk' ? cashSummaryMetrics.unreconciledStockReceiptsCount : 0)
+      : 0);
+
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between gap-3 px-3 py-2.5 sm:px-6 bg-slate-900 border-b border-slate-800 text-white transition-colors">
       {/* Brand & Logo: Maskot Transparan + Banner Resmi (Klik mengarah ke Beranda) */}
@@ -339,7 +459,7 @@ export const Header: React.FC = () => {
           >
             <span className="truncate max-w-[70px] sm:max-w-none">
               {appMode === 'IMPERSONATE'
-                ? (activeRole === 'Viewer/Pengamat' ? 'VIEWER' : activeRole)
+                ? (activeRole === 'Viewer/Pengamat' ? 'PENGAMAT' : activeRole)
                 : appMode === 'CSA'
                 ? 'CSA'
                 : appMode === 'PSA'
@@ -509,17 +629,29 @@ export const Header: React.FC = () => {
 
       {/* Bagian Kanan: Saldo Kas, Tema & Akun */}
       <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-        {/* Saldo Kas (Hanya relevan di mode operasional dan bukan untuk jabatan Pengamat) */}
+        {/* Saldo Kas Interaktif (Hanya relevan di mode operasional dan bukan untuk jabatan Pengamat) */}
         {appMode === 'IMPERSONATE' && activeRole !== 'Viewer/Pengamat' && (
-          <div className="hidden lg:flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs min-w-[135px] justify-between">
+          <button
+            type="button"
+            onClick={() => {
+              setCashTargetTab('SUMMARY');
+              setCurrentView('cashflow');
+            }}
+            title={`Saldo kas proyek (${cashSummaryMetrics.healthLabel}) — Klik untuk membuka Mutasi Dana`}
+            className={`hidden lg:flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs min-w-[140px] justify-between transition-colors cursor-pointer ${
+              cashSummaryMetrics.isCashCritical
+                ? 'border-rose-500/60 bg-rose-950/60 hover:bg-rose-950'
+                : 'border-slate-800 bg-slate-950/60 hover:border-emerald-500/50'
+            }`}
+          >
             <div className="flex items-center gap-1.5">
-              <Wallet className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <Wallet className={`w-3.5 h-3.5 shrink-0 ${cashSummaryMetrics.isCashCritical ? 'text-rose-400' : 'text-emerald-400'}`} />
               <span className="text-slate-400">Saldo:</span>
             </div>
-            <span className="font-semibold text-emerald-400 font-mono tabular-nums">
+            <span className={`font-semibold font-mono tabular-nums ${cashSummaryMetrics.isCashCritical ? 'text-rose-300' : 'text-emerald-400'}`}>
               {cashAccess ? formatRupiah(currentCashBalance) : 'Terbatas'}
             </span>
-          </div>
+          </button>
         )}
 
         {/* Status Database */}
@@ -528,20 +660,20 @@ export const Header: React.FC = () => {
           <span className="hidden xl:inline">{supabaseConfig.isConnected ? 'Terkoneksi' : 'Offline'}</span>
         </div>
 
-        {/* IKON NOTIFIKASI APP (tanda-B) */}
+        {/* IKON NOTIFIKASI APP (RFIN + ANTREAN PERSETUJUAN BARANG & KAS) */}
         {user.id && (
           <div className="relative" ref={notifRef}>
             <button
               type="button"
               onClick={() => setNotifOpen(v => !v)}
               aria-label="Notifikasi Aplikasi"
-              title={notifications.length > 0 ? `${notifications.length} notifikasi baru` : 'Notifikasi Aplikasi'}
+              title={totalBellCount > 0 ? `${totalBellCount} notifikasi & antrean aktif` : 'Notifikasi Aplikasi'}
               className="relative p-2 rounded-xl border border-slate-800 bg-slate-950 text-slate-300 hover:text-white hover:border-slate-700 transition-colors cursor-pointer"
             >
               <Bell className="w-4 h-4" />
-              {notifications.length > 0 && (
+              {totalBellCount > 0 && (
                 <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-rose-500 text-[10px] font-extrabold text-white shadow-sm ring-2 ring-slate-950 animate-pulse">
-                  {notifications.length}
+                  {totalBellCount}
                 </span>
               )}
             </button>
@@ -552,11 +684,11 @@ export const Header: React.FC = () => {
                 <div className="flex items-center justify-between pb-2.5 border-b border-slate-800">
                   <div className="flex items-center gap-2">
                     <Bell className="w-4 h-4 text-blue-400" />
-                    <span className="text-xs font-bold text-white">Notifikasi Aplikasi</span>
+                    <span className="text-xs font-bold text-white">Notifikasi &amp; Antrean Proyek</span>
                   </div>
-                  {notifications.length > 0 && (
+                  {totalBellCount > 0 && (
                     <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-bold">
-                      {notifications.length} Baru
+                      {totalBellCount} Aktif
                     </span>
                   )}
                 </div>
@@ -573,50 +705,71 @@ export const Header: React.FC = () => {
                 )}
 
                 <div className="mt-2.5 space-y-2">
-                  {notifications.length > 0 ? (
-                    notifications.map((n) => (
-                      <div
-                        key={n.id}
-                        className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 space-y-2"
-                      >
-                        <div className="flex items-start gap-2.5">
-                          <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 shrink-0 mt-0.5">
-                            <Mail className="w-3.5 h-3.5" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-bold text-white leading-snug">{n.title}</p>
-                            <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">{n.message}</p>
-                            {n.token_code && (
-                              <div className="mt-1.5 flex items-center gap-1.5">
-                                <span className="text-[10px] text-slate-400 font-semibold">Kode Token:</span>
-                                <span className="font-mono text-xs font-bold text-amber-300 bg-black/40 px-1.5 py-0.5 rounded border border-amber-400/30">
-                                  {n.token_code}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {n.token_code && (
-                          <div className="pt-1 flex justify-end">
-                            <button
-                              type="button"
-                              disabled={Boolean(claimingToken)}
-                              onClick={() => handleQuickClaim(n.token_code, n.id)}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors disabled:opacity-40 cursor-pointer shadow-xs"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>{claimingToken === n.token_code ? 'Mengklaim…' : 'Klaim Sekarang'}</span>
-                            </button>
-                          </div>
-                        )}
+                  {/* 1. Antrean Operasional & Persetujuan Proyek */}
+                  {operationalBellItems.map((op) => (
+                    <button
+                      key={op.id}
+                      type="button"
+                      onClick={op.onClick}
+                      className="w-full text-left p-3 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/70 transition-colors cursor-pointer space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-white leading-snug">{op.title}</span>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${getOperationalBellPillClass(op.tone)}`}
+                        >
+                          {op.actionLabel} →
+                        </span>
                       </div>
-                    ))
-                  ) : (
+                      <p className="text-[11px] text-slate-300 leading-relaxed">{op.message}</p>
+                    </button>
+                  ))}
+
+                  {/* 2. Undangan Resmi RFIN */}
+                  {notifications.map((n) => (
+                    <div
+                      key={n.id}
+                      className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 space-y-2"
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 shrink-0 mt-0.5">
+                          <Mail className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-white leading-snug">{n.title}</p>
+                          <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">{n.message}</p>
+                          {n.token_code && (
+                            <div className="mt-1.5 flex items-center gap-1.5">
+                              <span className="text-[10px] text-slate-400 font-semibold">Kode Token:</span>
+                              <span className="font-mono text-xs font-bold text-amber-300 bg-black/40 px-1.5 py-0.5 rounded border border-amber-400/30">
+                                {n.token_code}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {n.token_code && (
+                        <div className="pt-1 flex justify-end">
+                          <button
+                            type="button"
+                            disabled={Boolean(claimingToken)}
+                            onClick={() => handleQuickClaim(n.token_code, n.id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors disabled:opacity-40 cursor-pointer shadow-xs"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>{claimingToken === n.token_code ? 'Mengklaim…' : 'Klaim Sekarang'}</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {operationalBellItems.length === 0 && notifications.length === 0 && (
                     <div className="py-6 text-center text-slate-400">
                       <CheckCircle2 className="w-8 h-8 text-emerald-400/80 mx-auto mb-2" />
                       <p className="text-xs font-semibold text-slate-300">Semua Beres</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">Tidak ada notifikasi atau undangan baru saat ini.</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Tidak ada notifikasi atau antrean persetujuan saat ini.</p>
                     </div>
                   )}
                 </div>

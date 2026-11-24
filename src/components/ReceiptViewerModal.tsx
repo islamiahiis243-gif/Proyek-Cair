@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   ZoomIn,
@@ -15,48 +15,106 @@ import {
   ChevronRight,
   Layers
 } from 'lucide-react';
-import { MutasiBarang } from '../types';
+import { MutasiBarang, MutasiKas, ReceiptScope } from '../types';
+import { PAYMENT_METHOD_LABELS } from '../lib/cashflowEngine';
 
 interface ReceiptViewerModalProps {
   isOpen: boolean;
   onClose: () => void;
-  primaryMutation: MutasiBarang | null;
+  primaryMutation?: MutasiBarang | null;
   allMutationsInReceipt?: MutasiBarang[];
+  primaryCashMutation?: MutasiKas | null;
+  allCashMutationsInReceipt?: MutasiKas[];
+  receiptScope?: ReceiptScope;
+  hideFinancialDetails?: boolean;
 }
 
 export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
   isOpen,
   onClose,
-  primaryMutation,
-  allMutationsInReceipt = []
+  primaryMutation = null,
+  allMutationsInReceipt = [],
+  primaryCashMutation = null,
+  allCashMutationsInReceipt = [],
+  receiptScope,
+  hideFinancialDetails = false,
 }) => {
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [rotation, setRotation] = useState<number>(0);
   const [activePageIndex, setActivePageIndex] = useState<number>(0);
 
-  if (!isOpen || !primaryMutation) return null;
+  useEffect(() => {
+    if (isOpen) {
+      setActivePageIndex(0);
+      setZoomLevel(1);
+      setRotation(0);
+    }
+  }, [isOpen, primaryMutation?.id, primaryCashMutation?.id]);
 
-  const receiptUrls = primaryMutation.lampiran_nota_urls && primaryMutation.lampiran_nota_urls.length > 0
-    ? primaryMutation.lampiran_nota_urls
-    : [];
+  if (!isOpen || (!primaryMutation && !primaryCashMutation)) return null;
+
+  const stockUrls = primaryMutation?.lampiran_nota_urls || [];
+  const cashUrls = primaryCashMutation?.lampiran_nota_urls || [];
+  const receiptUrls = Array.from(new Set([...stockUrls, ...cashUrls].filter(Boolean)));
 
   const currentUrl = receiptUrls[activePageIndex] || '';
   const isPdf = currentUrl.toLowerCase().includes('.pdf') || currentUrl.startsWith('data:application/pdf');
 
-  // Cari item lain yang terkait nomor nota yang sama
-  const receiptNo = primaryMutation.nomor_nota || primaryMutation.nomor_surat_jalan || '-';
-  const relatedItems = allMutationsInReceipt.length > 0
-    ? allMutationsInReceipt
-    : [primaryMutation];
+  const receiptNo =
+    primaryMutation?.nomor_nota ||
+    primaryMutation?.nomor_surat_jalan ||
+    primaryCashMutation?.nomor_kuitansi ||
+    primaryCashMutation?.nomor_nota ||
+    '-';
+  const storeName =
+    primaryMutation?.nama_toko ||
+    primaryMutation?.source_name ||
+    primaryCashMutation?.nama_toko ||
+    primaryCashMutation?.pic ||
+    'Toko / Pihak Lawan';
+  const storeContact = primaryMutation?.toko_kontak || primaryCashMutation?.toko_kontak;
+  const receiptDate =
+    primaryMutation?.tanggal_nota ||
+    primaryCashMutation?.tanggal_nota ||
+    primaryCashMutation?.tanggal ||
+    primaryMutation?.tanggal;
 
-  // Hitung total akumulasi item dalam nota ini
+  const relatedItems =
+    allMutationsInReceipt.length > 0
+      ? allMutationsInReceipt
+      : primaryMutation
+      ? [primaryMutation]
+      : [];
+
+  const relatedCash =
+    allCashMutationsInReceipt.length > 0
+      ? allCashMutationsInReceipt
+      : primaryCashMutation
+      ? [primaryCashMutation]
+      : [];
+
+  const effectiveScope: ReceiptScope =
+    receiptScope ||
+    (relatedItems.length > 0 && relatedCash.length > 0
+      ? 'TERPADU'
+      : relatedCash.length > 0
+      ? 'KAS_OPERASIONAL'
+      : 'BELANJA_BARANG');
+
   const totalItemAmount = relatedItems.reduce((acc, m) => {
     const price = m.harga_satuan_beli || 0;
-    return acc + (price * m.jumlah);
+    return acc + price * m.jumlah;
   }, 0);
 
-  const physicalTotal = primaryMutation.total_nota_fisik || totalItemAmount;
-  const isMatch = Math.abs(totalItemAmount - physicalTotal) < 1;
+  const totalCashAmount = relatedCash.reduce((acc, c) => acc + (Number(c.jumlah_rp) || 0), 0);
+
+  const physicalTotal =
+    primaryMutation?.total_nota_fisik ||
+    primaryCashMutation?.total_nota_fisik ||
+    (totalItemAmount > 0 ? totalItemAmount : totalCashAmount);
+
+  const comparedAmount = relatedItems.length > 0 ? totalItemAmount : totalCashAmount;
+  const isMatch = Math.abs(comparedAmount - physicalTotal) < 1;
 
   const handleZoomIn = () => setZoomLevel((z) => Math.min(z + 0.25, 3));
   const handleZoomOut = () => setZoomLevel((z) => Math.max(z - 0.25, 0.5));
@@ -76,19 +134,24 @@ export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
               <FileText className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Bukti Fisik Nota Toko: {receiptNo}
+                  {effectiveScope === 'KAS_OPERASIONAL' ? 'Bukti Kuitansi Kas' : 'Bukti Fisik Nota'}: {receiptNo}
                 </h2>
+                {!hideFinancialDetails && effectiveScope === 'TERPADU' && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-800">
+                    ✓ Terbayar Kas
+                  </span>
+                )}
                 {receiptUrls.length > 1 && (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200">
-                    {receiptUrls.length} Lembar Foto
+                    {receiptUrls.length} Lembar Berkas
                   </span>
                 )}
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Toko: <b>{primaryMutation.nama_toko || primaryMutation.source_name || 'Toko Bebas / Rekanan'}</b>
-                {primaryMutation.tanggal_nota && ` · Tgl Nota: ${new Date(primaryMutation.tanggal_nota).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                Pihak/Toko: <b>{storeName}</b>
+                {receiptDate && ` · Tanggal: ${new Date(receiptDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`}
               </p>
             </div>
           </div>
@@ -127,7 +190,7 @@ export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
                 type="button"
                 onClick={handleZoomIn}
                 className="p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
-                title="Perbesar (Zoom In)"
+                title="Perbesar Tampilan"
               >
                 <ZoomIn className="w-4 h-4" />
               </button>
@@ -135,7 +198,7 @@ export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
                 type="button"
                 onClick={handleZoomOut}
                 className="p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
-                title="Perkecil (Zoom Out)"
+                title="Perkecil Tampilan"
               >
                 <ZoomOut className="w-4 h-4" />
               </button>
@@ -153,7 +216,7 @@ export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
                 className="px-2 py-1 text-[10px] font-bold rounded-lg hover:bg-slate-800 transition-colors"
                 title="Kembalikan Tampilan Normal"
               >
-                Reset
+                Atur Ulang
               </button>
             </div>
 
@@ -244,88 +307,145 @@ export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
             {/* Kotak Ringkasan Finansial Nota */}
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 p-3.5 space-y-2 mb-4">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-500">Nomor Bon / Nota:</span>
+                <span className="text-slate-500">Nomor Bon / Kuitansi:</span>
                 <span className="font-bold text-slate-900 dark:text-white font-mono">{receiptNo}</span>
               </div>
               <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-500">Nama Toko:</span>
-                <span className="font-bold text-slate-900 dark:text-white">{primaryMutation.nama_toko || primaryMutation.source_name || '-'}</span>
+                <span className="text-slate-500">Nama Toko / Pihak:</span>
+                <span className="font-bold text-slate-900 dark:text-white">{storeName}</span>
               </div>
-              {primaryMutation.toko_kontak && (
+              {storeContact && (
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-slate-500">Kontak Toko:</span>
-                  <span className="text-slate-700 dark:text-slate-300">{primaryMutation.toko_kontak}</span>
+                  <span className="text-slate-500">Kontak:</span>
+                  <span className="text-slate-700 dark:text-slate-300">{storeContact}</span>
                 </div>
               )}
-              <div className="border-t border-slate-200 dark:border-slate-700/60 pt-2 flex items-center justify-between text-xs">
-                <span className="text-slate-600 dark:text-slate-400">Total Tercetak di Bon:</span>
-                <span className="font-extrabold text-slate-900 dark:text-white">
-                  Rp {physicalTotal.toLocaleString('id-ID')}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-600 dark:text-slate-400">Akumulasi {relatedItems.length} Item:</span>
-                <span className="font-extrabold text-blue-600 dark:text-blue-400">
-                  Rp {totalItemAmount.toLocaleString('id-ID')}
-                </span>
-              </div>
+              {!hideFinancialDetails && (
+                <>
+                  <div className="border-t border-slate-200 dark:border-slate-700/60 pt-2 flex items-center justify-between text-xs">
+                    <span className="text-slate-600 dark:text-slate-400">Total Tercetak di Bukti:</span>
+                    <span className="font-extrabold text-slate-900 dark:text-white font-mono">
+                      Rp {physicalTotal.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  {relatedItems.length > 0 && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-600 dark:text-slate-400">Akumulasi {relatedItems.length} Item Barang:</span>
+                      <span className="font-extrabold text-blue-600 dark:text-blue-400 font-mono">
+                        Rp {totalItemAmount.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  )}
+                  {relatedCash.length > 0 && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-600 dark:text-slate-400">Pembayaran Kas ({relatedCash.length} Baris):</span>
+                      <span className="font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">
+                        Rp {totalCashAmount.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  )}
 
-              {/* Status Rekonsiliasi Klop */}
-              <div
-                className={`mt-2 p-2 rounded-lg text-xs font-semibold flex items-center gap-2 ${
-                  isMatch
-                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                    : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
-                }`}
-              >
-                {isMatch ? (
-                  <>
-                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                    <span>✓ Total Klop 100% Sesuai Fisik Nota</span>
-                  </>
-                ) : (
-                  <>
-                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                    <span>Selisih Rp {Math.abs(totalItemAmount - physicalTotal).toLocaleString('id-ID')} (Diskon/Ongkir)</span>
-                  </>
-                )}
-              </div>
+                  {/* Status Rekonsiliasi Klop */}
+                  <div
+                    className={`mt-2 p-2 rounded-lg text-xs font-semibold flex items-center gap-2 ${
+                      isMatch
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                        : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                    }`}
+                  >
+                    {isMatch ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                        <span>✓ Total Klop 100% Sesuai Fisik Bukti</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <span>Selisih Rp {Math.abs(comparedAmount - physicalTotal).toLocaleString('id-ID')} (Diskon/Ongkir)</span>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Daftar Item Material yang Tercakup dalam Nota Ini */}
-            <div className="flex-1 space-y-2">
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                Item Material dalam Nota Ini ({relatedItems.length} Jenis):
-              </span>
+            {relatedItems.length > 0 && (
+              <div className="space-y-2 mb-4">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Item Material dalam Nota Ini ({relatedItems.length} Jenis):
+                </span>
 
-              <div className="space-y-2 max-h-[35vh] overflow-y-auto pr-1">
-                {relatedItems.map((item, idx) => (
-                  <div
-                    key={item.id || idx}
-                    className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                          {item.nama_item_aktual || item.nama_barang}
+                <div className="space-y-2 max-h-[28vh] overflow-y-auto pr-1">
+                  {relatedItems.map((item, idx) => (
+                    <div
+                      key={item.id || idx}
+                      className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                            {item.nama_item_aktual || item.nama_barang}
+                          </div>
+                          {item.nama_item_aktual && (
+                            <div className="text-[10px] text-slate-400 truncate">
+                              BOQ: {item.nama_barang}
+                            </div>
+                          )}
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                            {item.jumlah} {item.satuan}
+                            {!hideFinancialDetails && ` @ Rp ${(item.harga_satuan_beli || 0).toLocaleString('id-ID')}`}
+                          </div>
                         </div>
-                        {item.nama_item_aktual && (
-                          <div className="text-[10px] text-slate-400 truncate">
-                            BOQ: {item.nama_barang}
+                        {!hideFinancialDetails && (
+                          <div className="text-xs font-extrabold text-slate-900 dark:text-white shrink-0 text-right font-mono">
+                            Rp {((item.harga_satuan_beli || 0) * item.jumlah).toLocaleString('id-ID')}
                           </div>
                         )}
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                          {item.jumlah} {item.satuan} @ Rp {(item.harga_satuan_beli || 0).toLocaleString('id-ID')}
-                        </div>
-                      </div>
-                      <div className="text-xs font-extrabold text-slate-900 dark:text-white shrink-0 text-right">
-                        Rp {((item.harga_satuan_beli || 0) * item.jumlah).toLocaleString('id-ID')}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* Daftar Baris Mutasi Kas yang Tertaut pada Bukti Ini */}
+            {!hideFinancialDetails && relatedCash.length > 0 && (
+              <div className="flex-1 space-y-2">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Transaksi Kas Tertaut ({relatedCash.length} Baris):
+                </span>
+
+                <div className="space-y-2 max-h-[28vh] overflow-y-auto pr-1">
+                  {relatedCash.map((tx, idx) => (
+                    <div
+                      key={tx.id || idx}
+                      className="p-2.5 rounded-xl border border-emerald-200/80 dark:border-emerald-900/60 bg-emerald-50/40 dark:bg-emerald-950/20"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                            {tx.untuk_apa}
+                          </div>
+                          <div className="text-[10px] text-slate-600 dark:text-slate-300 mt-0.5">
+                            {tx.kategori_keperluan} · {PAYMENT_METHOD_LABELS[tx.payment_method || 'TUNAI']} · PIC: {tx.pic}
+                          </div>
+                        </div>
+                        <div
+                          className={`text-xs font-extrabold font-mono shrink-0 ${
+                            tx.jenis === 'MASUK'
+                              ? 'text-emerald-700 dark:text-emerald-300'
+                              : 'text-rose-700 dark:text-rose-300'
+                          }`}
+                        >
+                          {tx.jenis === 'MASUK' ? '+' : '-'} Rp {(tx.jumlah_rp || 0).toLocaleString('id-ID')}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Footer Penjelas Audit */}
             <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 text-[10px] text-slate-400 leading-relaxed">

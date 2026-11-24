@@ -127,17 +127,62 @@ export interface SupplierStore {
 
 export type JenisMutasiKas = 'MASUK' | 'KELUAR';
 
+export type CashInCategory =
+  | 'Dana Termin Proyek'
+  | 'Modal Kerja Kontraktor'
+  | 'Pengembalian Panjar'
+  | 'Penggantian Talangan Klien'
+  | 'Penerimaan Lainnya';
+
+export type CashOutCategory =
+  | 'Material'
+  | 'Upah & Konsumsi'
+  | 'Sewa Alat & Angkut'
+  | 'Operasional'
+  | 'Panjar / Kasbon'
+  | 'Talangan Klien'
+  | 'Bonus Klien'
+  | 'Lainnya';
+
+export type KategoriMutasiKas = CashInCategory | CashOutCategory;
+export type MetodePembayaran = 'TUNAI' | 'TRANSFER' | 'GIRO_CEK' | 'DOMPET_DIGITAL';
+export type StatusBuktiKas = 'TERLAMPIR' | 'BUKTI_MENYUSUL' | 'TANPA_BUKTI' | 'REKONSILIASI_NOTA';
+export type StatusKasbon = 'TIDAK_BERLAKU' | 'TERBUKA' | 'SEBAGIAN' | 'LUNAS';
+export type ReceiptScope = 'BELANJA_BARANG' | 'KAS_OPERASIONAL' | 'TERPADU';
+export type ProjectModuleCode =
+  | 'KAS_LANGSUNG'
+  | 'MUTASI_BARANG'
+  | 'PO_PENGADAAN'
+  | 'UPAH_MANDOR'
+  | 'TERMIN_BAP'
+  | 'SUBKON_ALAT';
+export type DocumentAudiencePov = 'KONTRAKTOR' | 'KLIEN' | 'UMUM';
+
 export interface MutasiKas {
   id: string;
-  jenis: JenisMutasiKas; // IN / OUT
+  jenis: JenisMutasiKas;
   jumlah_rp: number;
   untuk_apa: string; // Uraian peruntukan / alasan kas
-  kategori_keperluan: 'Material' | 'Upah & Konsumsi' | 'Operasional' | 'Sewa Alat & Angkut' | 'Dana Termin Proyek' | 'Lainnya';
+  kategori_keperluan: KategoriMutasiKas;
   pic: string;
   nomor_kuitansi?: string;
-  tanggal: string; // ISO String
+  tanggal: string; // ISO String (occurred_at)
+  created_at?: string;
   saldo_setelah: number; // Running balance
   catatan?: string;
+  created_by_name?: string;
+  payment_method?: MetodePembayaran;
+  beban_biaya?: BebanBiaya;
+  status_bukti?: StatusBuktiKas;
+  boq_item_id?: string;
+  is_kasbon?: boolean;
+  status_kasbon?: StatusKasbon;
+  kasbon_induk_id?: string;
+  nominal_lpj?: number;
+  lpj_kategori_riil?: CashOutCategory | string;
+  source_module?: ProjectModuleCode;
+  source_entity_id?: string;
+  source_entity_no?: string;
   status_dokumen?: StatusDokumenWorkflow;
   diperiksa_oleh?: string;
   disetujui_oleh?: string;
@@ -176,6 +221,7 @@ export interface DokumenLaporan {
   qr_payload: string;
   verification_token?: string;
   snapshot_json?: string;
+  audience_pov?: DocumentAudiencePov;
   // Raw scoped documents fields retained for ReportsView and lifecycle-aware verification.
   document_no?: string;
   title?: string;
@@ -262,6 +308,7 @@ export interface ProjectReceipt {
   total_nota_fisik?: number;
   lampiran_nota_urls?: string[];
   notes?: string;
+  receipt_scope?: ReceiptScope;
   status_verifikasi?: 'TERCATAT' | 'TERVERIFIKASI' | 'BATAL' | 'DIGANTI';
   is_batal?: boolean;
   is_ganti?: boolean;
@@ -285,6 +332,8 @@ export interface ProjectReceiptAlbumItem {
   linkedMutationsCount: number;
   sampleItemNames: string[];
   rawMutations: MutasiBarang[];
+  rawCashMutations?: MutasiKas[];
+  receiptScope?: ReceiptScope;
   is_batal?: boolean;
   is_ganti?: boolean;
   referensi_ganti_id?: string;

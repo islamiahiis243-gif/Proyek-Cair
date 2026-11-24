@@ -15,7 +15,12 @@ import {
   PhysicalBudgetLine,
   BebanBiaya,
   TenantBranding,
-  ProjectReceipt
+  ProjectReceipt,
+  DocumentAudiencePov,
+  MetodePembayaran,
+  StatusBuktiKas,
+  StatusKasbon,
+  ProjectModuleCode,
 } from '../types';
 import {
   getStoredConfig,
@@ -27,6 +32,45 @@ import {
   resolveMyActiveContext,
   ActiveContext
 } from '../lib/supabase';
+import {
+  CashSummaryMetrics,
+  computeCashSummaryMetrics,
+  computeRunningCashBalances,
+  countPendingCashApprovals,
+  countPendingDocumentApprovals,
+  countPendingStockApprovals,
+  deriveBebanBiayaFromCategory,
+  isCashRowExcluded,
+  KasbonSettlementInput,
+  planKasbonSettlement,
+  resolveCashEvalContext,
+  validateSerialWorkflowTransition,
+} from '../lib/cashflowEngine';
+import {
+  createProjectReceipt,
+  downgradeReceiptScopeToBelanjaBarang,
+  upgradeReceiptScopeToTerpadu,
+} from '../lib/receiptStorage';
+
+export type CashflowTabKey = 'SUMMARY' | 'RECONCILIATION' | 'JOURNAL' | 'DOCUMENTS';
+
+function stableStringify(value: any): string {
+  if (Array.isArray(value)) {
+    return '[' + value.map((item) => (item === undefined ? 'null' : stableStringify(item))).join(',') + ']';
+  }
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value)
+      .filter((k) => value[k] !== undefined)
+      .sort();
+    return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(value[k])).join(',') + '}';
+  }
+  return JSON.stringify(value);
+}
+
+async function computeDeterministicSha256(snapshot: Record<string, unknown>): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(stableStringify(snapshot)));
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 export interface RolePermissions {
   canRead: boolean;
@@ -93,12 +137,28 @@ interface AppContextType {
   batalCashMutation: (id: string, reason: string) => Promise<{ success: boolean; message: string }>;
   gantiCashMutation: (id: string, newMutation: Omit<MutasiKas, 'id' | 'saldo_setelah'>, reason: string) => Promise<{ success: boolean; message: string }>;
   advanceCashWorkflow: (id: string, nextStatus: StatusDokumenWorkflow) => Promise<{ success: boolean; message: string }>;
+  lengkapiBuktiCashMutation: (
+    targetTx: MutasiKas,
+    proof: {
+      nomor_kuitansi?: string;
+      nama_toko?: string;
+      toko_kontak?: string;
+      tanggal_nota?: string;
+      lampiran_nota_urls: string[];
+      receipt_id?: string;
+      catatan?: string;
+      reason?: string;
+    }
+  ) => Promise<{ success: boolean; message: string }>;
+  selesaikanKasbonMutation: (input: KasbonSettlementInput) => Promise<{ success: boolean; message: string }>;
   issueOfficialDocument: (params: {
-    jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP';
+    jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP' | 'GABUNGAN_PROYEK';
     judul: string;
     periode: string;
     ringkasan: string;
     total_nilai_atau_item: string;
+    audience_pov?: DocumentAudiencePov;
+    extraSnapshot?: Record<string, unknown>;
   }) => Promise<{ success: boolean; message: string }>;
   advanceDocumentWorkflow: (
     dbId: string,
@@ -109,11 +169,13 @@ interface AppContextType {
   gantiOfficialDocument: (
     dbId: string,
     params: {
-      jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP';
+      jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP' | 'GABUNGAN_PROYEK';
       judul: string;
       periode: string;
       ringkasan: string;
       total_nilai_atau_item: string;
+      audience_pov?: DocumentAudiencePov;
+      extraSnapshot?: Record<string, unknown>;
     },
     reason: string
   ) => Promise<{ success: boolean; message: string }>;
@@ -125,6 +187,17 @@ interface AppContextType {
   outOfStockCount: number;
   lowStockCount: number;
   availableStockCount: number;
+  cashSummaryMetrics: CashSummaryMetrics;
+  cashCriticalAlertCount: number;
+  cashActionBadgeCount: number;
+  pendingStockApprovalCount: number;
+  pendingCashApprovalCount: number;
+  pendingDocumentApprovalCount: number;
+  pendingApprovalCount: number;
+  cashTargetTab: CashflowTabKey | null;
+  setCashTargetTab: (tab: CashflowTabKey | null) => void;
+  stockTargetTab: string | null;
+  setStockTargetTab: (tab: string | null) => void;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
   dataReady: boolean;
@@ -197,6 +270,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const previousView = viewHistory.length > 1 ? viewHistory[viewHistory.length - 2] : null;
   const [verifyingDocId, setVerifyingDocId] = useState<string | null>(null);
+  const [cashTargetTab, setCashTargetTab] = useState<CashflowTabKey | null>(null);
+  const [stockTargetTab, setStockTargetTab] = useState<string | null>(null);
   const [dataReady, setDataReady] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
   const [cashAccess, setCashAccess] = useState(false);
@@ -429,7 +504,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       client.from('boq_sections').select('*').eq('project_id', selectedProject.id).eq('is_active', true).order('sort_order'),
       client.from('inventory_transactions').select('*').eq('project_id', selectedProject.id).order('occurred_at', { ascending: true }).order('created_at', { ascending: true }),
       client.from('cash_transactions').select('*').eq('project_id', selectedProject.id).order('occurred_at', { ascending: true }).order('created_at', { ascending: true }),
-      client.from('documents').select('*').eq('project_id', selectedProject.id).in('document_type', ['MUTASI_KAS', 'MUTASI_STOK']).order('created_at', { ascending: false }),
+      client.from('documents').select('*').eq('project_id', selectedProject.id).in('document_type', ['MUTASI_KAS', 'MUTASI_STOK', 'GABUNGAN_PROYEK']).order('created_at', { ascending: false }),
       client.from('inventory_transaction_reversals').select('original_transaction_id'),
       client.from('project_client_relationships').select('client_name, relationship_type').eq('project_id', selectedProject.id).order('created_at', { ascending: true }),
       client.from('project_receipts').select('*').eq('project_id', selectedProject.id).order('created_at', { ascending: false })
@@ -703,35 +778,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       x.nama_barang = nameById.get(x.barang_id) || x.nama_barang || 'Item BOQ';
     });
 
-    let cashBalance = 0;
-    const cashRows: MutasiKas[] = (cashRes.data || []).map((t: any) => {
-      const incoming = t.transaction_type === 'MASUK';
-      const isVoid = Boolean(
-        t.is_batal ||
-        t.is_ganti ||
-        t.status_dokumen === 'BATAL' ||
-        t.status_dokumen === 'DIGANTI'
-      );
-      const delta = isVoid ? 0 : incoming ? Number(t.amount) : -Number(t.amount);
-      cashBalance += delta;
+    const rawCashRows: MutasiKas[] = (cashRes.data || []).map((t: any) => {
+      const isBatalFlag = Boolean(t.is_batal || t.status_dokumen === 'BATAL');
+      const isGantiFlag = Boolean(t.is_ganti || t.status_dokumen === 'DIGANTI');
+      const isExcluded = isBatalFlag || isGantiFlag;
+      const jenis = (t.transaction_type || 'KELUAR') as MutasiKas['jenis'];
+      const category = (t.category || 'Lainnya') as MutasiKas['kategori_keperluan'];
+      const urls: string[] = Array.isArray(t.lampiran_nota_urls) ? t.lampiran_nota_urls.filter(Boolean) : [];
+      const resolvedStatusBukti: StatusBuktiKas =
+        (t.status_bukti as StatusBuktiKas) ||
+        (t.receipt_id && t.source_module === 'MUTASI_BARANG'
+          ? 'REKONSILIASI_NOTA'
+          : urls.length > 0
+          ? 'TERLAMPIR'
+          : 'TANPA_BUKTI');
+
       return {
         id: t.id,
-        jenis: t.transaction_type,
+        jenis,
         jumlah_rp: Number(t.amount),
         untuk_apa: t.description,
-        kategori_keperluan: (t.category || 'Lainnya') as MutasiKas['kategori_keperluan'],
+        kategori_keperluan: category,
         pic: t.pic || '-',
         nomor_kuitansi: t.reference_no || undefined,
         tanggal: t.occurred_at || t.created_at,
-        saldo_setelah: cashBalance,
+        created_at: t.created_at || undefined,
+        saldo_setelah: 0,
         catatan: t.notes || undefined,
-        status_dokumen: (t.status_dokumen as StatusDokumenWorkflow) || (isVoid ? 'BATAL' : 'DITERBITKAN'),
+        created_by_name: t.created_by_name || undefined,
+        payment_method: (t.payment_method as MetodePembayaran) || 'TUNAI',
+        beban_biaya: (t.beban_biaya as BebanBiaya) || deriveBebanBiayaFromCategory(jenis, category),
+        status_bukti: resolvedStatusBukti,
+        boq_item_id: t.boq_item_id || undefined,
+        is_kasbon: Boolean(t.is_kasbon || category === 'Panjar / Kasbon'),
+        status_kasbon: (t.status_kasbon as StatusKasbon) || (t.is_kasbon ? 'TERBUKA' : 'TIDAK_BERLAKU'),
+        kasbon_induk_id: t.kasbon_induk_id || undefined,
+        nominal_lpj: t.nominal_lpj != null ? Number(t.nominal_lpj) : 0,
+        lpj_kategori_riil: t.lpj_kategori_riil || undefined,
+        source_module: (t.source_module as ProjectModuleCode) || 'KAS_LANGSUNG',
+        source_entity_id: t.source_entity_id || undefined,
+        source_entity_no: t.source_entity_no || undefined,
+        status_dokumen: (t.status_dokumen as StatusDokumenWorkflow) || (isBatalFlag ? 'BATAL' : isGantiFlag ? 'DIGANTI' : 'DITERBITKAN'),
         diperiksa_oleh: t.diperiksa_oleh || undefined,
         disetujui_oleh: t.disetujui_oleh || undefined,
         mengetahui_oleh: t.mengetahui_oleh || undefined,
         tte_qr_code: t.tte_qr_code || undefined,
-        is_batal: isVoid,
-        is_ganti: Boolean(t.is_ganti),
+        is_batal: isBatalFlag,
+        is_ganti: isGantiFlag,
         referensi_ganti_id: t.referensi_ganti_id || undefined,
         alasan_batal_ganti: t.alasan_batal_ganti || undefined,
         harga_satuan_beli: t.harga_satuan_beli != null ? Number(t.harga_satuan_beli) : undefined,
@@ -742,9 +835,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         nama_toko: t.nama_toko || t.source_name || undefined,
         toko_kontak: t.toko_kontak || undefined,
         total_nota_fisik: t.total_nota_fisik != null ? Number(t.total_nota_fisik) : undefined,
-        lampiran_nota_urls: Array.isArray(t.lampiran_nota_urls) ? t.lampiran_nota_urls : [],
-        receipt_id: t.receipt_id || undefined
+        lampiran_nota_urls: urls,
+        receipt_id: t.receipt_id || undefined,
+        // flag internal tidak mengubah saldo untuk baris dikecualikan
+        ...(isExcluded ? {} : {}),
       };
+    });
+
+    const runningMap = computeRunningCashBalances(rawCashRows);
+    let lastValidRunning = 0;
+    const cashRows: MutasiKas[] = rawCashRows.map((row) => {
+      const bal = runningMap.get(row.id);
+      if (bal != null) {
+        lastValidRunning = bal;
+        return { ...row, saldo_setelah: bal };
+      }
+      return { ...row, saldo_setelah: lastValidRunning };
     });
 
     const sectionRows: BoqSection[] = (sectionsRes.data || []).map((s: any) => ({
@@ -766,43 +872,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       source_total_variance: 0
     }));
 
-    const docRows: DokumenLaporan[] = (docsRes.data || []).map((d: any) => ({
-      id: d.document_no || d.id,
-      db_id: d.id,
-      judul: d.title || 'Dokumen Berita Acara',
-      jenis: (d.document_type || 'MUTASI_STOK') as DokumenLaporan['jenis'],
-      status: d.status || 'ISSUED',
-      periode_awal: d.period_start || d.created_at,
-      periode_akhir: d.period_end || d.created_at,
-      dibuat_pada: d.created_at,
-      penandatangan_nama: d.signer_name || 'Clerk',
-      penandatangan_jabatan: d.signer_role || 'Clerk',
-      penandatangan_email: d.signer_email || '',
-      hash_keamanan: d.content_sha256 || '',
-      total_transaksi: Number(d.total_transactions || 0),
-      ringkasan_nilai_rp: Number(d.amount_summary || 0),
-      qr_payload: d.qr_payload || '',
-      verification_token: d.verification_token || undefined,
-      document_no: d.document_no,
-      title: d.title,
-      document_type: d.document_type,
-      created_at: d.created_at,
-      issued_at: d.issued_at,
-      content_sha256: d.content_sha256,
-      signer_name: d.signer_name,
-      signer_role: d.signer_role,
-      workspace_id: d.workspace_id,
-      project_id: d.project_id,
-      status_dokumen: (d.status_dokumen as StatusDokumenWorkflow) || (d.is_batal ? 'BATAL' : d.is_ganti ? 'DIGANTI' : 'DITERBITKAN'),
-      diperiksa_oleh: d.diperiksa_oleh || undefined,
-      disetujui_oleh: d.disetujui_oleh || undefined,
-      mengetahui_oleh: d.mengetahui_oleh || undefined,
-      tte_qr_code: d.tte_qr_code || undefined,
-      is_batal: Boolean(d.is_batal),
-      is_ganti: Boolean(d.is_ganti),
-      referensi_ganti_id: d.referensi_ganti_id || undefined,
-      alasan_batal_ganti: d.alasan_batal_ganti || undefined
-    }));
+    const docRows: DokumenLaporan[] = (docsRes.data || []).map((d: any) => {
+      const isRevoked = Boolean(d.is_batal || d.is_ganti || d.status === 'REVOKED' || d.status_dokumen === 'BATAL' || d.status_dokumen === 'DIGANTI');
+      const docType = (d.document_type || 'MUTASI_STOK') as DokumenLaporan['jenis'];
+      const defaultPov: DocumentAudiencePov =
+        docType === 'MUTASI_KAS' ? 'KONTRAKTOR' : docType === 'MUTASI_STOK' ? 'UMUM' : 'KONTRAKTOR';
+
+      return {
+        id: d.document_no || d.id,
+        db_id: d.id,
+        judul: d.title || 'Dokumen Berita Acara',
+        jenis: docType,
+        status: d.status || 'ISSUED',
+        periode_awal: d.period_start || d.created_at,
+        periode_akhir: d.period_end || d.created_at,
+        dibuat_pada: d.created_at,
+        penandatangan_nama: d.signer_name || 'Clerk',
+        penandatangan_jabatan: d.signer_role || 'Clerk',
+        penandatangan_email: d.signer_email || '',
+        hash_keamanan: d.content_sha256 || '',
+        total_transaksi: Number(d.total_transactions || 0),
+        ringkasan_nilai_rp: Number(d.amount_summary || 0),
+        qr_payload: d.qr_payload || '',
+        verification_token: d.verification_token || undefined,
+        snapshot_json: d.snapshot ? (typeof d.snapshot === 'string' ? d.snapshot : JSON.stringify(d.snapshot)) : undefined,
+        lifecycle_status: isRevoked ? 'REVOKED' : 'ACTIVE',
+        revoked_at: isRevoked ? (d.updated_at || d.created_at) : null,
+        audience_pov: (d.audience_pov as DocumentAudiencePov) || defaultPov,
+        document_no: d.document_no,
+        title: d.title,
+        document_type: d.document_type,
+        created_at: d.created_at,
+        issued_at: d.issued_at,
+        content_sha256: d.content_sha256,
+        signer_name: d.signer_name,
+        signer_role: d.signer_role,
+        workspace_id: d.workspace_id,
+        project_id: d.project_id,
+        status_dokumen: (d.status_dokumen as StatusDokumenWorkflow) || (d.is_batal ? 'BATAL' : d.is_ganti ? 'DIGANTI' : 'DITERBITKAN'),
+        diperiksa_oleh: d.diperiksa_oleh || undefined,
+        disetujui_oleh: d.disetujui_oleh || undefined,
+        mengetahui_oleh: d.mengetahui_oleh || undefined,
+        tte_qr_code: d.tte_qr_code || undefined,
+        is_batal: Boolean(d.is_batal),
+        is_ganti: Boolean(d.is_ganti),
+        referensi_ganti_id: d.referensi_ganti_id || undefined,
+        alasan_batal_ganti: d.alasan_batal_ganti || undefined
+      };
+    });
 
     setItems(mappedItems);
     setBoqSections(sectionRows);
@@ -958,10 +1075,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Alur Persetujuan Berjenjang (Berseri) Mutasi Barang
+  // Alur Persetujuan Berjenjang (Berseri) Mutasi Barang — dengan validasi urutan serial ketat
   const advanceStockWorkflow = async (id: string, nextStatus: StatusDokumenWorkflow) => {
     try {
       const client = getSupabaseClient();
+      const targetRow = stockMutations.find((m) => m.id === id);
+      if (!targetRow) throw new Error('Baris mutasi barang tidak ditemukan.');
+      const currentStatus = targetRow.status_dokumen || 'DITERBITKAN';
+      const serialErr = validateSerialWorkflowTransition(currentStatus, nextStatus);
+      if (serialErr) throw new Error(serialErr);
+
       const payload: any = { status_dokumen: nextStatus };
       const actorTag = `${user.name} (${activeRole})`;
 
@@ -986,6 +1109,62 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // Helper internal membangun payload insert cash_transactions lengkap
+  const buildCashInsertRow = (
+    wsId: string,
+    prId: string,
+    data: Omit<MutasiKas, 'id' | 'saldo_setelah'>,
+    referensiGantiId?: string
+  ) => {
+    const isPanjar =
+      Boolean(data.is_kasbon) ||
+      (data.jenis === 'KELUAR' && data.kategori_keperluan === 'Panjar / Kasbon');
+    const urls = Array.isArray(data.lampiran_nota_urls) ? data.lampiran_nota_urls.filter(Boolean) : [];
+    const statusBukti: StatusBuktiKas =
+      data.status_bukti ||
+      (data.receipt_id && data.source_module === 'MUTASI_BARANG'
+        ? 'REKONSILIASI_NOTA'
+        : urls.length > 0
+        ? 'TERLAMPIR'
+        : 'TANPA_BUKTI');
+
+    return {
+      idempotency_key: crypto.randomUUID(),
+      workspace_id: wsId,
+      project_id: prId,
+      transaction_type: data.jenis,
+      amount: Math.round(Number(data.jumlah_rp) || 0),
+      occurred_at: data.tanggal,
+      category: data.kategori_keperluan,
+      description: data.untuk_apa,
+      reference_no: data.nomor_kuitansi || null,
+      pic: data.pic || user.name || '-',
+      notes: data.catatan || null,
+      created_by: user.id || null,
+      created_by_name: `${user.name} (${activeRole})`,
+      payment_method: data.payment_method || 'TUNAI',
+      beban_biaya: data.beban_biaya || deriveBebanBiayaFromCategory(data.jenis, data.kategori_keperluan),
+      status_bukti: statusBukti,
+      nama_toko: data.nama_toko || null,
+      toko_kontak: data.toko_kontak || null,
+      tanggal_nota: data.tanggal_nota || null,
+      total_nota_fisik: data.total_nota_fisik != null ? Number(data.total_nota_fisik) : null,
+      lampiran_nota_urls: urls,
+      receipt_id: data.receipt_id || null,
+      boq_item_id: data.boq_item_id || null,
+      is_kasbon: isPanjar,
+      status_kasbon: isPanjar ? (data.status_kasbon || 'TERBUKA') : 'TIDAK_BERLAKU',
+      kasbon_induk_id: data.kasbon_induk_id || null,
+      nominal_lpj: data.nominal_lpj != null ? Number(data.nominal_lpj) : 0,
+      lpj_kategori_riil: data.lpj_kategori_riil || null,
+      source_module: data.source_module || 'KAS_LANGSUNG',
+      source_entity_id: data.source_entity_id || null,
+      source_entity_no: data.source_entity_no || null,
+      status_dokumen: 'DITERBITKAN',
+      ...(referensiGantiId ? { referensi_ganti_id: referensiGantiId } : {}),
+    };
+  };
+
   // Transaksi Baru Mutasi Kas (Diterbitkan oleh Clerk)
   const addCashMutation = async (data: Omit<MutasiKas, 'id' | 'saldo_setelah'>) => {
     try {
@@ -994,22 +1173,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const wsId = targetProj?.workspace_id || activeWorkspaceId || (activeContext?.workspaces.find(w => w.type === 'COMPANY')?.id as string);
       const prId = targetProj?.id || activeProjectId;
 
-      const { error } = await client.from('cash_transactions').insert({
-        idempotency_key: crypto.randomUUID(),
-        workspace_id: wsId,
-        project_id: prId,
-        transaction_type: data.jenis,
-        amount: data.jumlah_rp,
-        occurred_at: data.tanggal,
-        category: data.kategori_keperluan,
-        description: data.untuk_apa,
-        reference_no: data.nomor_kuitansi || null,
-        pic: data.pic,
-        notes: data.catatan || null,
-        status_dokumen: 'DITERBITKAN'
+      let resolvedReceiptId = data.receipt_id;
+      const urls = Array.isArray(data.lampiran_nota_urls) ? data.lampiran_nota_urls.filter(Boolean) : [];
+
+      // Jika mengunggah bukti langsung dari kas tanpa receipt_id -> buat entitas resmi di project_receipts (KAS_OPERASIONAL)
+      if (!resolvedReceiptId && urls.length > 0 && prId) {
+        const createdRc = await createProjectReceipt(
+          {
+            project_id: prId,
+            reference_no: data.nomor_kuitansi || '',
+            nama_toko: data.nama_toko || '',
+            toko_kontak: data.toko_kontak,
+            tanggal_nota: (data.tanggal_nota || data.tanggal || new Date().toISOString()).slice(0, 10),
+            total_nota_fisik: data.total_nota_fisik || data.jumlah_rp,
+            lampiran_nota_urls: urls,
+            notes: data.catatan || data.untuk_apa,
+            receipt_scope: 'KAS_OPERASIONAL',
+            created_by: user.id || undefined,
+            created_by_name: `${user.name} (${activeRole})`,
+          },
+          data.pic || user.name
+        );
+        if (createdRc?.id) {
+          resolvedReceiptId = createdRc.id;
+        }
+      }
+
+      const row = buildCashInsertRow(wsId, prId, {
+        ...data,
+        receipt_id: resolvedReceiptId,
       });
 
+      const { error } = await client.from('cash_transactions').insert(row);
       if (error) throw error;
+
+      // Jika melunasi nota gudang (receipt_id berasal dari BELANJA_BARANG), naikkan receipt_scope -> TERPADU
+      if (resolvedReceiptId) {
+        const existingRc = projectReceipts.find((r) => r.id === resolvedReceiptId);
+        if (data.source_module === 'MUTASI_BARANG' || existingRc?.receipt_scope === 'BELANJA_BARANG') {
+          await upgradeReceiptScopeToTerpadu(resolvedReceiptId);
+        }
+      }
+
       await refreshData();
       return { success: true, message: 'Transaksi kas berhasil dicatat ke dalam jurnal.' };
     } catch (e: any) {
@@ -1017,11 +1222,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Batalkan Mutasi Kas (Nominal tidak dihitung di saldo, data tetap ada)
+  // Batalkan Mutasi Kas (Nominal tidak dihitung di saldo, data tetap ada; turunkan receipt_scope TERPADU bila perlu)
   const batalCashMutation = async (id: string, reason: string) => {
     try {
       if (!reason || reason.trim().length < 5) throw new Error('Alasan pembatalan minimal 5 karakter.');
       const client = getSupabaseClient();
+      const targetTx = cashMutations.find((c) => c.id === id);
+
       const { error } = await client.from('cash_transactions').update({
         is_batal: true,
         status_dokumen: 'BATAL',
@@ -1029,6 +1236,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }).eq('id', id);
 
       if (error) throw error;
+
+      // Jika transaksi ini menautkan nota gudang (TERPADU) dan tidak ada pembayaran kas aktif lain pada nota tsb,
+      // turunkan kembali receipt_scope -> BELANJA_BARANG agar nota kembali muncul di antrean Rekonsiliasi
+      if (targetTx?.receipt_id) {
+        const hasOtherActiveCash = cashMutations.some(
+          (c) => c.id !== id && !isCashRowExcluded(c) && c.receipt_id === targetTx.receipt_id
+        );
+        if (!hasOtherActiveCash) {
+          await downgradeReceiptScopeToBelanjaBarang(targetTx.receipt_id);
+        }
+      }
+
       await refreshData();
       return { success: true, message: 'Transaksi kas berhasil dibatalkan. Saldo kas disesuaikan secara otomatis.' };
     } catch (e: any) {
@@ -1036,7 +1255,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Ganti Mutasi Kas (Revisi ke baris baru, rujukan tercatat, baris lama dinolkan)
+  // Ganti Mutasi Kas (Revisi ke baris baru, pertahankan tanggal asli & salin metadata lengkap)
   const gantiCashMutation = async (id: string, newMutation: Omit<MutasiKas, 'id' | 'saldo_setelah'>, reason: string) => {
     try {
       if (!reason || reason.trim().length < 5) throw new Error('Alasan penggantian minimal 5 karakter.');
@@ -1045,31 +1264,88 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const wsId = targetProj?.workspace_id || activeWorkspaceId || (activeContext?.workspaces.find(w => w.type === 'COMPANY')?.id as string);
       const prId = targetProj?.id || activeProjectId;
 
-      const { data: newRow, error: insertErr } = await client.from('cash_transactions').insert({
-        idempotency_key: crypto.randomUUID(),
-        workspace_id: wsId,
-        project_id: prId,
-        transaction_type: newMutation.jenis,
-        amount: newMutation.jumlah_rp,
-        occurred_at: newMutation.tanggal,
-        category: newMutation.kategori_keperluan,
-        description: newMutation.untuk_apa,
-        reference_no: newMutation.nomor_kuitansi || null,
-        pic: newMutation.pic,
-        notes: newMutation.catatan || null,
-        status_dokumen: 'DITERBITKAN',
-        referensi_ganti_id: id
-      }).select().single();
+      const oldRow = cashMutations.find((c) => c.id === id);
+      const categoryChanged =
+        oldRow != null &&
+        (newMutation.kategori_keperluan !== oldRow.kategori_keperluan || newMutation.jenis !== oldRow.jenis);
+      const resolvedBeban: BebanBiaya =
+        newMutation.beban_biaya ||
+        (categoryChanged
+          ? deriveBebanBiayaFromCategory(newMutation.jenis, newMutation.kategori_keperluan)
+          : oldRow?.beban_biaya || deriveBebanBiayaFromCategory(newMutation.jenis, newMutation.kategori_keperluan));
+      const nextIsKasbon =
+        newMutation.is_kasbon !== undefined
+          ? newMutation.is_kasbon
+          : categoryChanged
+          ? newMutation.jenis === 'KELUAR' && newMutation.kategori_keperluan === 'Panjar / Kasbon'
+          : oldRow?.is_kasbon;
+      const nextStatusKasbon: StatusKasbon | undefined =
+        newMutation.status_kasbon !== undefined
+          ? newMutation.status_kasbon
+          : nextIsKasbon
+          ? oldRow?.status_kasbon && oldRow.status_kasbon !== 'TIDAK_BERLAKU'
+            ? oldRow.status_kasbon
+            : 'TERBUKA'
+          : 'TIDAK_BERLAKU';
+
+      const mergedData: Omit<MutasiKas, 'id' | 'saldo_setelah'> = {
+        ...oldRow,
+        ...newMutation,
+        tanggal: newMutation.tanggal || oldRow?.tanggal || new Date().toISOString(),
+        payment_method: newMutation.payment_method || oldRow?.payment_method || 'TUNAI',
+        beban_biaya: resolvedBeban,
+        nama_toko: newMutation.nama_toko !== undefined ? newMutation.nama_toko : oldRow?.nama_toko,
+        toko_kontak: newMutation.toko_kontak !== undefined ? newMutation.toko_kontak : oldRow?.toko_kontak,
+        tanggal_nota: newMutation.tanggal_nota !== undefined ? newMutation.tanggal_nota : oldRow?.tanggal_nota,
+        total_nota_fisik:
+          newMutation.total_nota_fisik !== undefined ? newMutation.total_nota_fisik : oldRow?.total_nota_fisik,
+        lampiran_nota_urls:
+          newMutation.lampiran_nota_urls !== undefined
+            ? newMutation.lampiran_nota_urls
+            : oldRow?.lampiran_nota_urls || [],
+        receipt_id: newMutation.receipt_id !== undefined ? newMutation.receipt_id : oldRow?.receipt_id,
+        boq_item_id: newMutation.boq_item_id !== undefined ? newMutation.boq_item_id : oldRow?.boq_item_id,
+        is_kasbon: nextIsKasbon,
+        status_kasbon: nextStatusKasbon,
+        kasbon_induk_id:
+          newMutation.kasbon_induk_id !== undefined ? newMutation.kasbon_induk_id : oldRow?.kasbon_induk_id,
+        nominal_lpj: newMutation.nominal_lpj !== undefined ? newMutation.nominal_lpj : oldRow?.nominal_lpj,
+        lpj_kategori_riil:
+          newMutation.lpj_kategori_riil !== undefined ? newMutation.lpj_kategori_riil : oldRow?.lpj_kategori_riil,
+        source_module: newMutation.source_module || oldRow?.source_module || 'KAS_LANGSUNG',
+        source_entity_id:
+          newMutation.source_entity_id !== undefined ? newMutation.source_entity_id : oldRow?.source_entity_id,
+        source_entity_no:
+          newMutation.source_entity_no !== undefined ? newMutation.source_entity_no : oldRow?.source_entity_no,
+      };
+
+      const insertPayload = buildCashInsertRow(wsId, prId, mergedData, id);
+
+      const { data: newRow, error: insertErr } = await client
+        .from('cash_transactions')
+        .insert(insertPayload)
+        .select()
+        .single();
 
       if (insertErr) throw insertErr;
 
       const { error: updateErr } = await client.from('cash_transactions').update({
         is_ganti: true,
         status_dokumen: 'DIGANTI',
+        referensi_ganti_id: newRow?.id || null,
         alasan_batal_ganti: `Digantikan oleh baris #${newRow?.id?.slice(0, 8)} oleh ${user.name} (${activeRole}). Alasan: ${reason.trim()}`
       }).eq('id', id);
 
       if (updateErr) throw updateErr;
+
+      // Jika baris panjar induk diganti, alihkan tautan kasbon_induk_id baris anak ke ID baris baru
+      if (oldRow?.is_kasbon && newRow?.id) {
+        await client
+          .from('cash_transactions')
+          .update({ kasbon_induk_id: newRow.id })
+          .eq('kasbon_induk_id', id);
+      }
+
       await refreshData();
       return { success: true, message: 'Transaksi kas berhasil diganti dengan baris revisi baru dan nominal lama dinolkan.' };
     } catch (e: any) {
@@ -1077,10 +1353,197 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Alur Persetujuan Berjenjang (Berseri) Mutasi Kas
+  // Lengkapi Bukti Kuitansi untuk transaksi BUKTI_MENYUSUL (mengikuti metode GANTI abadi)
+  const lengkapiBuktiCashMutation = async (
+    targetTx: MutasiKas,
+    proof: {
+      nomor_kuitansi?: string;
+      nama_toko?: string;
+      toko_kontak?: string;
+      tanggal_nota?: string;
+      lampiran_nota_urls: string[];
+      receipt_id?: string;
+      catatan?: string;
+      reason?: string;
+    }
+  ) => {
+    try {
+      const targetProj = activeProject || activeContext?.projects[0];
+      const prId = targetProj?.id || activeProjectId;
+      let receiptId = proof.receipt_id || targetTx.receipt_id;
+      const urls = (proof.lampiran_nota_urls || []).filter(Boolean);
+      const resolvedNo = proof.nomor_kuitansi?.trim() || targetTx.nomor_kuitansi;
+
+      if (!receiptId && urls.length > 0 && prId) {
+        const created = await createProjectReceipt(
+          {
+            project_id: prId,
+            reference_no: resolvedNo || '',
+            nama_toko: proof.nama_toko || targetTx.nama_toko || '',
+            toko_kontak: proof.toko_kontak || targetTx.toko_kontak,
+            tanggal_nota: (proof.tanggal_nota || targetTx.tanggal || new Date().toISOString()).slice(0, 10),
+            total_nota_fisik: targetTx.jumlah_rp,
+            lampiran_nota_urls: urls,
+            notes: proof.catatan || targetTx.untuk_apa,
+            receipt_scope: 'KAS_OPERASIONAL',
+            created_by: user.id || undefined,
+            created_by_name: `${user.name} (${activeRole})`,
+          },
+          targetTx.pic || user.name
+        );
+        if (created?.id) receiptId = created.id;
+      }
+
+      const hasProof = urls.length > 0 || Boolean(receiptId) || Boolean(resolvedNo);
+      const nextStatusBukti: StatusBuktiKas = hasProof
+        ? targetTx.source_module === 'MUTASI_BARANG'
+          ? 'REKONSILIASI_NOTA'
+          : 'TERLAMPIR'
+        : 'BUKTI_MENYUSUL';
+
+      return await gantiCashMutation(
+        targetTx.id,
+        {
+          ...targetTx,
+          nomor_kuitansi: resolvedNo,
+          nama_toko: proof.nama_toko?.trim() || targetTx.nama_toko,
+          toko_kontak: proof.toko_kontak?.trim() || targetTx.toko_kontak,
+          tanggal_nota: proof.tanggal_nota || targetTx.tanggal_nota || targetTx.tanggal,
+          lampiran_nota_urls: urls,
+          receipt_id: receiptId,
+          status_bukti: nextStatusBukti,
+          catatan: proof.catatan?.trim() || targetTx.catatan,
+        },
+        proof.reason?.trim() || 'Melengkapi bukti kuitansi / nota transaksi kas'
+      );
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Gagal melengkapi bukti kuitansi kas.' };
+    }
+  };
+
+  // Penyelesaian / Pertanggungjawaban (LPJ) Panjar / Kasbon — 3 Skenario Bebas Double-Counting
+  const selesaikanKasbonMutation = async (input: KasbonSettlementInput) => {
+    try {
+      if (!rolePermissions.canIssue) {
+        throw new Error('Hanya Clerk yang dapat mencatat pelunasan LPJ panjar.');
+      }
+      const client = getSupabaseClient();
+      const targetProj = activeProject || activeContext?.projects[0];
+      const wsId = targetProj?.workspace_id || activeWorkspaceId || (activeContext?.workspaces.find(w => w.type === 'COMPANY')?.id as string);
+      const prId = targetProj?.id || activeProjectId;
+
+      // Hitung total pengembalian tunai sebelumnya untuk panjar induk ini agar tidak terjadi double-return
+      const computedPreviousReturnedRp =
+        input.previousReturnedRp !== undefined
+          ? input.previousReturnedRp
+          : cashMutations
+              .filter(
+                (c) =>
+                  !isCashRowExcluded(c) &&
+                  c.jenis === 'MASUK' &&
+                  c.kasbon_induk_id === input.kasbonTx.id
+              )
+              .reduce((sum, c) => sum + (Number(c.jumlah_rp) || 0), 0);
+
+      const plan = planKasbonSettlement({
+        ...input,
+        previousReturnedRp: computedPreviousReturnedRp,
+      });
+
+      // Jika Kasus 3 (Belanja Riil > Pokok Panjar Efektif -> perlu KELUAR tambahan), pastikan saldo kas mencukupi
+      if (plan.followUpTransaction && plan.followUpTransaction.jenis === 'KELUAR') {
+        const activeBalance = cashMutations
+          .filter((c) => !isCashRowExcluded(c))
+          .reduce((s, c) => s + (c.jenis === 'MASUK' ? c.jumlah_rp : -c.jumlah_rp), 0);
+        if (plan.followUpTransaction.jumlah_rp > activeBalance) {
+          throw new Error(
+            `Saldo kas saat ini (Rp ${activeBalance.toLocaleString('id-ID')}) belum mencukupi untuk menutup kekurangan bayar panjar sebesar Rp ${plan.followUpTransaction.jumlah_rp.toLocaleString('id-ID')}. Catat Kas Masuk terlebih dahulu.`
+          );
+        }
+      }
+
+      // Jika ada unggahan foto bukti LPJ baru tanpa receiptId -> buat di project_receipts
+      let resolvedReceiptId = input.receiptId;
+      const urls = (input.attachmentUrls || []).filter(Boolean);
+      const mergedParentUrls = Array.from(
+        new Set([...(input.kasbonTx.lampiran_nota_urls || []), ...urls].filter(Boolean))
+      );
+      if (!resolvedReceiptId && urls.length > 0 && prId) {
+        const rc = await createProjectReceipt(
+          {
+            project_id: prId,
+            reference_no: input.receiptNo || `LPJ-${input.kasbonTx.id.slice(0, 6).toUpperCase()}`,
+            nama_toko: `LPJ ${input.kasbonTx.pic || 'Lapangan'}`,
+            tanggal_nota: (input.settlementDate || new Date().toISOString()).slice(0, 10),
+            total_nota_fisik: input.realSpentRp,
+            lampiran_nota_urls: urls,
+            notes: input.notes || `Bukti LPJ Panjar ${input.kasbonTx.untuk_apa}`,
+            receipt_scope: 'KAS_OPERASIONAL',
+            created_by: user.id || undefined,
+            created_by_name: `${user.name} (${activeRole})`,
+          },
+          input.kasbonTx.pic || user.name
+        );
+        if (rc?.id) resolvedReceiptId = rc.id;
+      }
+
+      // 1. Perbarui status & alokasi pos biaya riil pada baris panjar induk
+      const parentUpdate: Record<string, any> = {
+        status_kasbon: plan.updatedParent.status_kasbon,
+        nominal_lpj: plan.updatedParent.nominal_lpj,
+        lpj_kategori_riil: plan.updatedParent.lpj_kategori_riil,
+      };
+      if (resolvedReceiptId) parentUpdate.receipt_id = resolvedReceiptId;
+      if (mergedParentUrls.length > 0) {
+        parentUpdate.lampiran_nota_urls = mergedParentUrls;
+        parentUpdate.status_bukti = 'TERLAMPIR';
+      }
+
+      const { error: updErr } = await client
+        .from('cash_transactions')
+        .update(parentUpdate)
+        .eq('id', input.kasbonTx.id);
+      if (updErr) throw updErr;
+
+      // 2. Jika Kasus 1 (<) atau Kasus 3 (>) atau Bertahap dengan setor sisa, terbitkan baris tindak lanjut (amount > 0!)
+      if (plan.followUpTransaction && plan.followUpTransaction.jumlah_rp > 0) {
+        const followPayload = buildCashInsertRow(wsId, prId, {
+          ...plan.followUpTransaction,
+          receipt_id: resolvedReceiptId || plan.followUpTransaction.receipt_id,
+          lampiran_nota_urls: urls.length > 0 ? urls : plan.followUpTransaction.lampiran_nota_urls,
+        });
+        const { error: insErr } = await client.from('cash_transactions').insert(followPayload);
+        if (insErr) {
+          // Kompensasi bila insert baris tindak lanjut gagal agar induk tidak menggantung di status LUNAS
+          await client
+            .from('cash_transactions')
+            .update({
+              status_kasbon: input.kasbonTx.status_kasbon || 'TERBUKA',
+              nominal_lpj: input.kasbonTx.nominal_lpj || 0,
+              lpj_kategori_riil: input.kasbonTx.lpj_kategori_riil || null,
+            })
+            .eq('id', input.kasbonTx.id);
+          throw insErr;
+        }
+      }
+
+      await refreshData();
+      return { success: true, message: plan.summaryText };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Gagal menyelesaikan LPJ panjar.' };
+    }
+  };
+
+  // Alur Persetujuan Berjenjang (Berseri) Mutasi Kas — dengan validasi urutan serial ketat
   const advanceCashWorkflow = async (id: string, nextStatus: StatusDokumenWorkflow) => {
     try {
       const client = getSupabaseClient();
+      const targetRow = cashMutations.find((c) => c.id === id);
+      if (!targetRow) throw new Error('Baris transaksi kas tidak ditemukan.');
+      const currentStatus = targetRow.status_dokumen || 'DITERBITKAN';
+      const serialErr = validateSerialWorkflowTransition(currentStatus, nextStatus);
+      if (serialErr) throw new Error(serialErr);
+
       const payload: any = { status_dokumen: nextStatus };
       const actorTag = `${user.name} (${activeRole})`;
 
@@ -1106,14 +1569,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // ============================================================================
-  // DOKUMEN RESMI & PERSETUJUAN BERANTAI (SERIAL APPROVAL KHUSUS DOKUMEN)
+  // DOKUMEN RESMI & PERSETUJUAN BERANTAI (SERIAL APPROVAL + CHECKSUM SHA-256 ASLI)
   // ============================================================================
   const issueOfficialDocument = async (params: {
-    jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP';
+    jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP' | 'GABUNGAN_PROYEK';
     judul: string;
     periode: string;
     ringkasan: string;
     total_nilai_atau_item: string;
+    audience_pov?: DocumentAudiencePov;
+    extraSnapshot?: Record<string, unknown>;
   }) => {
     try {
       if (!rolePermissions.canIssue) {
@@ -1124,12 +1589,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const wsId = targetProj?.workspace_id || activeWorkspaceId || (activeContext?.workspaces.find(w => w.type === 'COMPANY')?.id as string);
       const prId = targetProj?.id || activeProjectId;
 
-      const prefix = params.jenis === 'MUTASI_STOK' ? 'BA-STOK' : params.jenis === 'MUTASI_KAS' ? 'BA-KAS' : 'BA-INV';
+      const prefix =
+        params.jenis === 'MUTASI_STOK'
+          ? 'BA-STOK'
+          : params.jenis === 'MUTASI_KAS'
+          ? 'BA-KAS'
+          : params.jenis === 'GABUNGAN_PROYEK'
+          ? 'BA-PROYEK'
+          : 'BA-INV';
       const docCode = `${prefix}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-      const shaHash = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('')
-        .toUpperCase();
+      const issuedAt = new Date().toISOString();
+      const resolvedAudience: DocumentAudiencePov =
+        params.audience_pov ||
+        (params.jenis === 'MUTASI_KAS' ? 'KONTRAKTOR' : params.jenis === 'MUTASI_STOK' ? 'UMUM' : 'KONTRAKTOR');
+
+      const snapshotObj: Record<string, unknown> = {
+        document_no: docCode,
+        jenis: params.jenis,
+        judul: params.judul.trim(),
+        periode: params.periode,
+        ringkasan: params.ringkasan,
+        total_nilai_atau_item: params.total_nilai_atau_item,
+        audience_pov: resolvedAudience,
+        penandatangan: user.name,
+        jabatan: activeRole,
+        issued_at: issuedAt,
+        ...(params.extraSnapshot || {}),
+      };
+
+      const shaHash = await computeDeterministicSha256(snapshotObj);
+
+      const activeCashForDoc = cashMutations.filter((c) => !isCashRowExcluded(c));
+      const activeCashBalanceForDoc = activeCashForDoc.reduce(
+        (sum, c) => sum + (c.jenis === 'MASUK' ? Number(c.jumlah_rp) || 0 : -(Number(c.jumlah_rp) || 0)),
+        0
+      );
+
+      const resolvedTotalTx =
+        typeof params.extraSnapshot?.active_count === 'number'
+          ? params.extraSnapshot.active_count
+          : typeof params.extraSnapshot?.total_pos_boq === 'number'
+          ? params.extraSnapshot.total_pos_boq + (resolvedAudience === 'KONTRAKTOR' ? activeCashForDoc.length : 0)
+          : params.jenis === 'MUTASI_KAS'
+          ? activeCashForDoc.length
+          : params.jenis === 'MUTASI_STOK'
+          ? stockMutations.filter((m) => !m.is_batal && !m.is_ganti).length
+          : items.length;
+
+      const resolvedAmountSummary =
+        typeof params.extraSnapshot?.saldo_akhir === 'number'
+          ? params.extraSnapshot.saldo_akhir
+          : typeof params.extraSnapshot?.aset_kerja_rp === 'number'
+          ? params.extraSnapshot.aset_kerja_rp
+          : params.jenis === 'MUTASI_KAS'
+          ? activeCashBalanceForDoc
+          : 0;
 
       const { error } = await client.from('documents').insert({
         workspace_id: wsId,
@@ -1139,20 +1653,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         title: params.judul.trim(),
         status: 'ISSUED',
         status_dokumen: 'DITERBITKAN',
+        audience_pov: resolvedAudience,
         signer_name: user.name,
         signer_role: activeRole,
         signer_email: user.email || null,
-        content_sha256: `SHA256:${shaHash}`,
+        total_transactions: Math.max(0, Math.round(resolvedTotalTx)),
+        amount_summary: Number.isFinite(resolvedAmountSummary) ? resolvedAmountSummary : 0,
+        content_sha256: shaHash,
         qr_payload: `DOC:${docCode}:${activeCompany.npwp}`,
-        snapshot: {
-          periode: params.periode,
-          ringkasan: params.ringkasan,
-          total_nilai_atau_item: params.total_nilai_atau_item,
-          penandatangan: user.name,
-          jabatan: activeRole
-        },
+        snapshot: snapshotObj,
         created_by: user.id || null,
-        issued_at: new Date().toISOString()
+        issued_at: issuedAt
       });
 
       if (error) throw error;
@@ -1170,6 +1681,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ) => {
     try {
       const client = getSupabaseClient();
+      const targetDoc = documents.find((d) => d.db_id === docDbId || d.id === docDbId);
+      if (!targetDoc) throw new Error('Dokumen resmi tidak ditemukan pada arsip proyek.');
+      const currentStatus = targetDoc.status_dokumen || 'DITERBITKAN';
+      const serialErr = validateSerialWorkflowTransition(currentStatus, nextStatus);
+      if (serialErr) throw new Error(serialErr);
+
       const effectiveRole = customActorRole || activeRole;
       const effectivePerms = getRolePermissions(effectiveRole);
       const actorTag = `${user.name} (${effectiveRole}) · ${new Date().toLocaleString('id-ID')}`;
@@ -1206,7 +1723,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const batalOfficialDocument = async (docDbId: string, reason: string) => {
     try {
       if (!rolePermissions.canInitiateBatalGanti && !rolePermissions.canInstructBatalGanti) {
-        throw new Error('Jabatan Pengamat (Viewer) tidak memiliki akses untuk membatalkan dokumen.');
+        throw new Error('Jabatan Pengamat tidak memiliki akses untuk membatalkan dokumen.');
       }
       if (!reason || reason.trim().length < 5) throw new Error('Alasan pembatalan dokumen minimal 5 karakter.');
       const client = getSupabaseClient();
@@ -1228,17 +1745,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const gantiOfficialDocument = async (
     docDbId: string,
     newParams: {
-      jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP';
+      jenis: 'MUTASI_STOK' | 'MUTASI_KAS' | 'INVENTARIS_LENGKAP' | 'GABUNGAN_PROYEK';
       judul: string;
       periode: string;
       ringkasan: string;
       total_nilai_atau_item: string;
+      audience_pov?: DocumentAudiencePov;
+      extraSnapshot?: Record<string, unknown>;
     },
     reason: string
   ) => {
     try {
       if (!rolePermissions.canInitiateBatalGanti && !rolePermissions.canInstructBatalGanti) {
-        throw new Error('Jabatan Pengamat (Viewer) tidak memiliki akses untuk mengganti dokumen.');
+        throw new Error('Jabatan Pengamat tidak memiliki akses untuk mengganti dokumen.');
       }
       if (!reason || reason.trim().length < 5) throw new Error('Alasan penggantian dokumen minimal 5 karakter.');
       const client = getSupabaseClient();
@@ -1246,12 +1765,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const wsId = targetProj?.workspace_id || activeWorkspaceId || (activeContext?.workspaces.find(w => w.type === 'COMPANY')?.id as string);
       const prId = targetProj?.id || activeProjectId;
 
-      const prefix = newParams.jenis === 'MUTASI_STOK' ? 'BA-STOK-REV' : newParams.jenis === 'MUTASI_KAS' ? 'BA-KAS-REV' : 'BA-INV-REV';
+      const prefix =
+        newParams.jenis === 'MUTASI_STOK'
+          ? 'BA-STOK-REV'
+          : newParams.jenis === 'MUTASI_KAS'
+          ? 'BA-KAS-REV'
+          : newParams.jenis === 'GABUNGAN_PROYEK'
+          ? 'BA-PROYEK-REV'
+          : 'BA-INV-REV';
       const newDocCode = `${prefix}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-      const shaHash = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('')
-        .toUpperCase();
+      const issuedAt = new Date().toISOString();
+      const oldDoc = documents.find((d) => d.db_id === docDbId || d.id === docDbId);
+      const resolvedAudience: DocumentAudiencePov =
+        newParams.audience_pov ||
+        oldDoc?.audience_pov ||
+        (newParams.jenis === 'MUTASI_KAS' ? 'KONTRAKTOR' : newParams.jenis === 'MUTASI_STOK' ? 'UMUM' : 'KONTRAKTOR');
+
+      const snapshotObj: Record<string, unknown> = {
+        document_no: newDocCode,
+        jenis: newParams.jenis,
+        judul: newParams.judul.trim(),
+        periode: newParams.periode,
+        ringkasan: newParams.ringkasan,
+        total_nilai_atau_item: newParams.total_nilai_atau_item,
+        audience_pov: resolvedAudience,
+        replaces_document_id: docDbId,
+        penandatangan: user.name,
+        jabatan: activeRole,
+        issued_at: issuedAt,
+        ...(newParams.extraSnapshot || {}),
+      };
+      const shaHash = await computeDeterministicSha256(snapshotObj);
+
+      const activeCashForRev = cashMutations.filter((c) => !isCashRowExcluded(c));
+      const activeCashBalanceForRev = activeCashForRev.reduce(
+        (sum, c) => sum + (c.jenis === 'MASUK' ? Number(c.jumlah_rp) || 0 : -(Number(c.jumlah_rp) || 0)),
+        0
+      );
+
+      const resolvedTotalTx =
+        newParams.jenis === 'MUTASI_KAS'
+          ? activeCashForRev.length
+          : newParams.jenis === 'MUTASI_STOK'
+          ? stockMutations.filter((m) => !m.is_batal && !m.is_ganti).length
+          : items.length;
+      const resolvedAmountSummary =
+        newParams.jenis === 'MUTASI_KAS' ? activeCashBalanceForRev : 0;
 
       const { data: insertedDoc, error: insertErr } = await client.from('documents').insert({
         workspace_id: wsId,
@@ -1261,21 +1820,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         title: newParams.judul.trim(),
         status: 'ISSUED',
         status_dokumen: 'DITERBITKAN',
+        audience_pov: resolvedAudience,
         signer_name: user.name,
         signer_role: activeRole,
         signer_email: user.email || null,
+        total_transactions: Math.max(0, Math.round(resolvedTotalTx)),
+        amount_summary: Number.isFinite(resolvedAmountSummary) ? resolvedAmountSummary : 0,
         referensi_ganti_id: docDbId,
-        content_sha256: `SHA256:${shaHash}`,
+        content_sha256: shaHash,
         qr_payload: `DOC:${newDocCode}:${activeCompany.npwp}`,
-        snapshot: {
-          periode: newParams.periode,
-          ringkasan: newParams.ringkasan,
-          total_nilai_atau_item: newParams.total_nilai_atau_item,
-          penandatangan: user.name,
-          jabatan: activeRole
-        },
+        snapshot: snapshotObj,
         created_by: user.id || null,
-        issued_at: new Date().toISOString()
+        issued_at: issuedAt
       }).select().single();
 
       if (insertErr) throw insertErr;
@@ -1284,6 +1840,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         is_ganti: true,
         status: 'REVOKED',
         status_dokumen: 'DIGANTI',
+        referensi_ganti_id: insertedDoc?.id || null,
         alasan_batal_ganti: `Digantikan oleh Dokumen Revisi ${insertedDoc?.document_no || newDocCode} oleh ${user.name} (${activeRole}). Alasan: ${reason.trim()}`
       }).eq('id', docDbId);
 
@@ -1339,8 +1896,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const stockItems = items.filter(x => x.is_stock_item);
   const totalStockAssetValue = stockItems.reduce((s, x) => s + x.stok_saat_ini * x.harga_satuan, 0);
-  const currentCashBalance = cashMutations[0]?.saldo_setelah ?? 0;
-  const cashHasEntries = cashMutations.length > 0;
   const recordedStockCount = stockItems.filter(x => x.has_stock_history).length;
   const unrecordedStockCount = stockItems.length - recordedStockCount;
   // Item yang benar-benar butuh perhatian pengadaan darurat (Kondisi S-4: Habis):
@@ -1388,6 +1943,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const canViewFinancials = useMemo(() => {
+    // Pengamat/Klien 100% terproteksi dari finansial internal kontraktor (termasuk saat CSA meninjau mode Pengamat)
+    if (activeRole === 'Viewer/Pengamat') {
+      return false;
+    }
     if (activeRole === 'CEO/Direktur') return true;
     const isCsa = activeContext?.workspaces?.some(w => w.type === 'COMPANY' && w.is_company_super_admin);
     if (isCsa) return true;
@@ -1397,12 +1956,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return currentProj.can_view_financials;
     }
 
-    if (activeRole === 'Viewer/Pengamat') {
-      return false;
-    }
-
     return true;
   }, [activeRole, activeContext, activeProjectId, activeProject]);
+
+  const cashEvalContext = useMemo(
+    () =>
+      resolveCashEvalContext(
+        activeRole,
+        rolePermissions,
+        { contractorName: tenantBranding.contractorName, clientName: tenantBranding.clientName },
+        canViewFinancials
+      ),
+    [activeRole, rolePermissions, tenantBranding.contractorName, tenantBranding.clientName, canViewFinancials]
+  );
+
+  const cashSummaryMetrics = useMemo(
+    () => computeCashSummaryMetrics(cashMutations, stockMutations, projectReceipts, cashEvalContext),
+    [cashMutations, stockMutations, projectReceipts, cashEvalContext]
+  );
+
+  const currentCashBalance = cashSummaryMetrics.saldoSaatIni;
+  const cashHasEntries = cashSummaryMetrics.activeCount > 0;
+  const cashCriticalAlertCount = cashSummaryMetrics.isCashCritical ? 1 : 0;
+
+  const pendingStockApprovalCount = useMemo(
+    () =>
+      countPendingStockApprovals(stockMutations, activeRole) +
+      countPendingDocumentApprovals(documents, activeRole, 'MUTASI_STOK'),
+    [stockMutations, documents, activeRole]
+  );
+
+  const pendingCashApprovalCount = useMemo(
+    () =>
+      activeRole === 'Viewer/Pengamat'
+        ? 0
+        : countPendingCashApprovals(cashMutations, activeRole) +
+          countPendingDocumentApprovals(documents, activeRole, 'MUTASI_KAS'),
+    [cashMutations, documents, activeRole]
+  );
+
+  const pendingDocumentApprovalCount = useMemo(
+    () =>
+      activeRole === 'Viewer/Pengamat'
+        ? 0
+        : countPendingDocumentApprovals(documents, activeRole, 'GABUNGAN_PROYEK'),
+    [documents, activeRole]
+  );
+
+  const pendingApprovalCount =
+    pendingStockApprovalCount + pendingCashApprovalCount + pendingDocumentApprovalCount;
+
+  const cashActionBadgeCount = useMemo(() => {
+    if (activeRole === 'Viewer/Pengamat') return 0;
+    if (cashCriticalAlertCount > 0) return cashCriticalAlertCount;
+    if (pendingCashApprovalCount > 0) return pendingCashApprovalCount;
+    return (
+      cashSummaryMetrics.unreconciledStockReceiptsCount +
+      cashSummaryMetrics.openKasbonCount +
+      cashSummaryMetrics.pendingReceiptCount
+    );
+  }, [activeRole, cashCriticalAlertCount, pendingCashApprovalCount, cashSummaryMetrics]);
 
   return (
     <AppContext.Provider
@@ -1442,6 +2055,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         batalCashMutation,
         gantiCashMutation,
         advanceCashWorkflow,
+        lengkapiBuktiCashMutation,
+        selesaikanKasbonMutation,
         issueOfficialDocument,
         advanceDocumentWorkflow,
         batalOfficialDocument,
@@ -1454,6 +2069,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         outOfStockCount,
         lowStockCount,
         availableStockCount,
+        cashSummaryMetrics,
+        cashCriticalAlertCount,
+        cashActionBadgeCount,
+        pendingStockApprovalCount,
+        pendingCashApprovalCount,
+        pendingDocumentApprovalCount,
+        pendingApprovalCount,
+        cashTargetTab,
+        setCashTargetTab,
+        stockTargetTab,
+        setStockTargetTab,
         theme,
         toggleTheme,
         dataReady,

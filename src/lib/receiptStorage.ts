@@ -1,5 +1,48 @@
 import { getSupabaseClient } from './supabase';
-import { SupplierStore, MutasiBarang, ProjectReceiptAlbumItem, ProjectReceipt } from '../types';
+import {
+  SupplierStore,
+  MutasiBarang,
+  MutasiKas,
+  ProjectReceiptAlbumItem,
+  ProjectReceipt,
+  ReceiptScope,
+} from '../types';
+import {
+  doReceiptStoresMatch,
+  isClientSuppliedStockMutation,
+  normalizeReceiptRef,
+  normalizeReceiptStoreName,
+} from './cashflowEngine';
+
+/**
+ * Fallback aman untuk kolom NOT NULL pada tabel project_receipts
+ * (reference_no, nama_toko, tanggal_nota) khususnya untuk kuitansi kas kecil/lapangan.
+ */
+export function buildSafeReceiptFields(
+  receipt: Partial<ProjectReceipt>,
+  fallbackPic?: string
+): { reference_no: string; nama_toko: string; tanggal_nota: string } {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const todayStr = `${y}-${m}-${d}`;
+  const rand4 = Math.random().toString(36).substring(2, 6).toUpperCase();
+
+  const rawRef = (receipt.reference_no || '').trim();
+  const reference_no =
+    rawRef && rawRef !== '-' && rawRef.toLowerCase() !== 'null'
+      ? rawRef
+      : `KWT-${y}${m}${d}-${rand4}`;
+
+  const rawStore = (receipt.nama_toko || '').trim();
+  const nama_toko = rawStore || (fallbackPic?.trim() ? `${fallbackPic.trim()} / Kas Lapangan` : 'Kas Lapangan');
+
+  const rawDate = (receipt.tanggal_nota || '').trim();
+  const tanggal_nota = rawDate ? rawDate.slice(0, 10) : todayStr;
+
+  return { reference_no, nama_toko, tanggal_nota };
+}
 
 /**
  * Kompresi gambar nota di sisi peramban sebelum diunggah (Hemat Kuota & Cepat di Lapangan)
@@ -207,23 +250,28 @@ export async function fetchProjectReceipts(projectId: string): Promise<ProjectRe
 }
 
 /**
- * Buat entitas nota resmi baru di project_receipts
+ * Buat entitas nota resmi baru di project_receipts (mendukung Barang, Kas, maupun Terpadu)
  */
-export async function createProjectReceipt(receipt: Partial<ProjectReceipt>): Promise<ProjectReceipt | null> {
+export async function createProjectReceipt(
+  receipt: Partial<ProjectReceipt>,
+  fallbackPic?: string
+): Promise<ProjectReceipt | null> {
   try {
     const client = getSupabaseClient();
     if (!client) return null;
+    const safe = buildSafeReceiptFields(receipt, fallbackPic);
     const { data, error } = await client
       .from('project_receipts')
       .insert({
         project_id: receipt.project_id,
-        reference_no: receipt.reference_no,
-        nama_toko: receipt.nama_toko,
+        reference_no: safe.reference_no,
+        nama_toko: safe.nama_toko,
         toko_kontak: receipt.toko_kontak || null,
-        tanggal_nota: receipt.tanggal_nota,
+        tanggal_nota: safe.tanggal_nota,
         total_nota_fisik: receipt.total_nota_fisik || 0,
         lampiran_nota_urls: receipt.lampiran_nota_urls || [],
         notes: receipt.notes || null,
+        receipt_scope: receipt.receipt_scope || 'BELANJA_BARANG',
         status_verifikasi: receipt.status_verifikasi || 'TERCATAT',
         is_batal: false,
         is_ganti: false,
@@ -246,6 +294,58 @@ export async function createProjectReceipt(receipt: Partial<ProjectReceipt>): Pr
   }
 }
 
+/**
+ * Naikkan cakupan nota gudang menjadi TERPADU ketika sudah dilunasi lewat Mutasi Dana
+ */
+export async function upgradeReceiptScopeToTerpadu(receiptId: string): Promise<boolean> {
+  if (!isUUID(receiptId)) return false;
+  try {
+    const client = getSupabaseClient();
+    if (!client) return false;
+    const { error } = await client
+      .from('project_receipts')
+      .update({
+        receipt_scope: 'TERPADU',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', receiptId);
+    if (error) {
+      console.warn('Gagal menaikkan receipt_scope ke TERPADU:', error);
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Turunkan kembali cakupan nota dari TERPADU menjadi BELANJA_BARANG
+ * bila pembayaran kas yang menautkannya dibatalkan (BATAL) dan tidak ada pembayaran aktif lain.
+ */
+export async function downgradeReceiptScopeToBelanjaBarang(receiptId: string): Promise<boolean> {
+  if (!isUUID(receiptId)) return false;
+  try {
+    const client = getSupabaseClient();
+    if (!client) return false;
+    const { error } = await client
+      .from('project_receipts')
+      .update({
+        receipt_scope: 'BELANJA_BARANG',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', receiptId)
+      .eq('receipt_scope', 'TERPADU');
+    if (error) {
+      console.warn('Gagal menurunkan receipt_scope ke BELANJA_BARANG:', error);
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Helper untuk cek validitas UUID
 const isUUID = (str?: string | null): boolean => {
   if (!str) return false;
@@ -256,14 +356,15 @@ const isUUID = (str?: string | null): boolean => {
  * Metode GANTI Nota:
  * 1. Menerbitkan nota baru pengganti di tabel project_receipts
  * 2. Menandai nota lama sebagai DIGANTI (is_ganti = true) jika tercatat di project_receipts
- * 3. Mengalihkan seluruh mutasi barang yang tertaut ke nota lama agar otomatis tertaut ke nota baru
+ * 3. Mengalihkan seluruh mutasi barang & mutasi kas yang tertaut ke nota lama agar otomatis tertaut ke nota baru
  */
 export async function supersedeProjectReceipt(
   oldReceiptId: string,
   newReceiptData: Partial<ProjectReceipt>,
   reason: string,
   currentUser?: { id?: string; name?: string },
-  targetMutationIds?: string[]
+  targetMutationIds?: string[],
+  targetCashMutationIds?: string[]
 ): Promise<ProjectReceipt | null> {
   try {
     const client = getSupabaseClient();
@@ -272,13 +373,17 @@ export async function supersedeProjectReceipt(
     const oldIsUuid = isUUID(oldReceiptId);
 
     // 1. Buat Nota Baru di tabel project_receipts
-    const newReceipt = await createProjectReceipt({
-      ...newReceiptData,
-      referensi_ganti_id: oldIsUuid ? oldReceiptId : undefined,
-      alasan_batal_ganti: reason,
-      created_by: currentUser?.id,
-      created_by_name: currentUser?.name
-    });
+    const newReceipt = await createProjectReceipt(
+      {
+        ...newReceiptData,
+        receipt_scope: newReceiptData.receipt_scope || 'BELANJA_BARANG',
+        referensi_ganti_id: oldIsUuid ? oldReceiptId : undefined,
+        alasan_batal_ganti: reason,
+        created_by: currentUser?.id,
+        created_by_name: currentUser?.name
+      },
+      currentUser?.name
+    );
 
     if (!newReceipt) return null;
 
@@ -308,9 +413,24 @@ export async function supersedeProjectReceipt(
           status_harga: 'ADA_HARGA'
         })
         .eq('receipt_id', oldReceiptId);
+
+      // Otomatis alihkan seluruh mutasi kas yang tertaut ke oldReceiptId agar tertaut ke newReceipt.id
+      await client
+        .from('cash_transactions')
+        .update({
+          receipt_id: newReceipt.id,
+          reference_no: newReceipt.reference_no,
+          nama_toko: newReceipt.nama_toko,
+          toko_kontak: newReceipt.toko_kontak || null,
+          tanggal_nota: newReceipt.tanggal_nota,
+          total_nota_fisik: newReceipt.total_nota_fisik,
+          lampiran_nota_urls: newReceipt.lampiran_nota_urls,
+          status_bukti: newReceipt.receipt_scope === 'TERPADU' ? 'REKONSILIASI_NOTA' : 'TERLAMPIR'
+        })
+        .eq('receipt_id', oldReceiptId);
     }
 
-    // 3. Jika ada mutasi target eksplisit (misal data legacy atau mutasi tertentu)
+    // 3. Jika ada mutasi barang target eksplisit (misal data legacy atau mutasi tertentu)
     if (targetMutationIds && targetMutationIds.length > 0) {
       await client
         .from('inventory_transactions')
@@ -326,6 +446,23 @@ export async function supersedeProjectReceipt(
         .in('id', targetMutationIds);
     }
 
+    // 4. Jika ada mutasi kas target eksplisit
+    if (targetCashMutationIds && targetCashMutationIds.length > 0) {
+      await client
+        .from('cash_transactions')
+        .update({
+          receipt_id: newReceipt.id,
+          reference_no: newReceipt.reference_no,
+          nama_toko: newReceipt.nama_toko,
+          toko_kontak: newReceipt.toko_kontak || null,
+          tanggal_nota: newReceipt.tanggal_nota,
+          total_nota_fisik: newReceipt.total_nota_fisik,
+          lampiran_nota_urls: newReceipt.lampiran_nota_urls,
+          status_bukti: newReceipt.receipt_scope === 'TERPADU' ? 'REKONSILIASI_NOTA' : 'TERLAMPIR'
+        })
+        .in('id', targetCashMutationIds);
+    }
+
     return newReceipt;
   } catch (err) {
     console.error('Error supersedeProjectReceipt:', err);
@@ -336,13 +473,14 @@ export async function supersedeProjectReceipt(
 /**
  * Metode BATAL Nota:
  * 1. Menandai nota sebagai BATAL (is_batal = true, status_verifikasi = 'BATAL') di project_receipts
- * 2. Melepaskan tautan mutasi barang kembali ke status NOTA_MENYUSUL (tanpa nota sah)
+ * 2. Melepaskan tautan mutasi barang (NOTA_MENYUSUL) & mutasi kas (BUKTI_MENYUSUL)
  */
 export async function voidProjectReceipt(
   receiptId: string,
   reason: string,
   _currentUser?: { id?: string; name?: string },
-  targetMutationIds?: string[]
+  targetMutationIds?: string[],
+  targetCashMutationIds?: string[]
 ): Promise<boolean> {
   try {
     const client = getSupabaseClient();
@@ -376,9 +514,20 @@ export async function voidProjectReceipt(
           status_harga: 'NOTA_MENYUSUL'
         })
         .eq('receipt_id', receiptId);
+
+      // Lepaskan tautan kuitansi pada mutasi kas yang tertaut ke receipt_id ini
+      await client
+        .from('cash_transactions')
+        .update({
+          receipt_id: null,
+          total_nota_fisik: null,
+          lampiran_nota_urls: [],
+          status_bukti: 'BUKTI_MENYUSUL'
+        })
+        .eq('receipt_id', receiptId);
     }
 
-    // 2. Lepaskan juga jika ada daftar mutasi eksplisit (misal data legacy)
+    // 2. Lepaskan juga jika ada daftar mutasi barang eksplisit (misal data legacy)
     if (targetMutationIds && targetMutationIds.length > 0) {
       const { error: mutErr } = await client
         .from('inventory_transactions')
@@ -397,6 +546,24 @@ export async function voidProjectReceipt(
       }
     }
 
+    // 3. Lepaskan juga daftar mutasi kas eksplisit jika ada
+    if (targetCashMutationIds && targetCashMutationIds.length > 0) {
+      const { error: cashErr } = await client
+        .from('cash_transactions')
+        .update({
+          receipt_id: null,
+          total_nota_fisik: null,
+          lampiran_nota_urls: [],
+          status_bukti: 'BUKTI_MENYUSUL'
+        })
+        .in('id', targetCashMutationIds);
+
+      if (cashErr) {
+        console.error('Gagal melepaskan mutasi kas target:', cashErr);
+        return false;
+      }
+    }
+
     return true;
   } catch (err) {
     console.error('Error voidProjectReceipt:', err);
@@ -405,11 +572,14 @@ export async function voidProjectReceipt(
 }
 
 /**
- * Membangun Album Nota Fisik Proyek (Hybrid: Master Tabel project_receipts + Mutasi Terhubung)
+ * Membangun Album Nota & Kuitansi Fisik Proyek Terpadu
+ * (Hybrid: Master Tabel project_receipts + Mutasi Barang + Mutasi Kas)
  */
 export function buildProjectReceiptAlbum(
   mutations: MutasiBarang[],
-  dbReceipts: ProjectReceipt[] = []
+  dbReceipts: ProjectReceipt[] = [],
+  cashMutations: MutasiKas[] = [],
+  clientName?: string
 ): ProjectReceiptAlbumItem[] {
   const map = new Map<string, ProjectReceiptAlbumItem>();
 
@@ -428,6 +598,8 @@ export function buildProjectReceiptAlbum(
       linkedMutationsCount: 0,
       sampleItemNames: [],
       rawMutations: [],
+      rawCashMutations: [],
+      receiptScope: (rc.receipt_scope as ReceiptScope) || 'BELANJA_BARANG',
       is_batal: rc.is_batal,
       is_ganti: rc.is_ganti,
       referensi_ganti_id: rc.referensi_ganti_id,
@@ -437,7 +609,7 @@ export function buildProjectReceiptAlbum(
     });
   });
 
-  // 2. Petakan mutasi barang ke nota yang bersesuaian (berdasarkan receipt_id atau key nomor_nota + nama_toko)
+  // 2. Petakan mutasi barang ke nota yang bersesuaian
   (mutations || []).forEach((m) => {
     if (m.is_batal && !m.is_ganti) return;
 
@@ -445,15 +617,15 @@ export function buildProjectReceiptAlbum(
 
     if (m.receipt_id && map.has(m.receipt_id)) {
       targetItem = map.get(m.receipt_id);
-    } else {
-      // Cari kecocokan nomor nota & toko jika receipt_id belum terisi
-      const rNo = (m.nomor_nota || m.nomor_surat_jalan || '').trim().toLowerCase();
-      const sName = (m.nama_toko || m.source_name || '').trim().toLowerCase();
-      if (rNo && rNo !== '-' && rNo !== 'null') {
+    } else if (!m.receipt_id) {
+      const rNo = normalizeReceiptRef(m.nomor_nota || m.nomor_surat_jalan);
+      const rawStore = m.nama_toko || m.source_name;
+      if (rNo) {
         for (const item of map.values()) {
+          if (item.receiptScope === 'KAS_OPERASIONAL') continue;
           if (
-            item.receiptNo.trim().toLowerCase() === rNo &&
-            (!sName || item.storeName.trim().toLowerCase().includes(sName) || sName.includes(item.storeName.trim().toLowerCase()))
+            normalizeReceiptRef(item.receiptNo) === rNo &&
+            doReceiptStoresMatch(item.storeName, rawStore)
           ) {
             targetItem = item;
             break;
@@ -473,18 +645,17 @@ export function buildProjectReceiptAlbum(
       return;
     }
 
-    // Fallback: jika ada mutasi ber-nota tapi belum ada di project_receipts
     const rNo = (m.nomor_nota || m.nomor_surat_jalan || '').trim();
     const sName = (m.nama_toko || m.source_name || '').trim();
     const urls = Array.isArray(m.lampiran_nota_urls) ? m.lampiran_nota_urls.filter(Boolean) : [];
-    const hasValidDocNo = Boolean(rNo && rNo !== '-' && rNo !== 'null' && rNo !== 'undefined');
+    const hasValidDocNo = Boolean(normalizeReceiptRef(rNo));
     const hasAttachments = urls.length > 0;
-    // Hanya mutasi yang benar-benar memiliki bukti berkas nota fisik atau nomor nota sah yang layak masuk album berkas
     const isValidReceipt = hasAttachments || hasValidDocNo;
 
     if (!isValidReceipt) return;
 
-    const legacyKey = `legacy_${rNo.toLowerCase() || 'tanpa-no'}|${sName.toLowerCase() || 'toko-umum'}`;
+    const normStoreKey = normalizeReceiptStoreName(sName) || 'toko-umum';
+    const legacyKey = `legacy_${normalizeReceiptRef(rNo) || 'tanpa-no'}|${normStoreKey}`;
 
     if (!map.has(legacyKey)) {
       map.set(legacyKey, {
@@ -497,7 +668,9 @@ export function buildProjectReceiptAlbum(
         attachmentUrls: [...urls],
         linkedMutationsCount: !m.is_ganti ? 1 : 0,
         sampleItemNames: m.nama_barang ? [m.nama_barang] : [],
-        rawMutations: [m]
+        rawMutations: [m],
+        rawCashMutations: [],
+        receiptScope: 'BELANJA_BARANG'
       });
     } else {
       const item = map.get(legacyKey)!;
@@ -517,6 +690,109 @@ export function buildProjectReceiptAlbum(
         }
       });
     }
+  });
+
+  // 3. Petakan mutasi kas ke nota/kuitansi yang bersesuaian (termasuk penggabungan TERPADU berbasis toko)
+  (cashMutations || []).forEach((c) => {
+    if (c.is_batal || c.status_dokumen === 'BATAL') return;
+
+    const cashReceiptId =
+      c.receipt_id || (c.source_module === 'MUTASI_BARANG' ? c.source_entity_id : undefined);
+
+    let targetItem: ProjectReceiptAlbumItem | undefined;
+    if (cashReceiptId && map.has(cashReceiptId)) {
+      targetItem = map.get(cashReceiptId);
+    } else if (!cashReceiptId) {
+      const rNo = normalizeReceiptRef(c.nomor_kuitansi || c.nomor_nota || c.source_entity_no);
+      const cashStoreNorm = normalizeReceiptStoreName(c.nama_toko);
+      if (rNo) {
+        for (const item of map.values()) {
+          if (normalizeReceiptRef(item.receiptNo) !== rNo) continue;
+
+          const isStockAlbumItem = item.receiptScope !== 'KAS_OPERASIONAL';
+          if (isStockAlbumItem) {
+            // Hanya kas KELUAR yang dapat melunasi nota belanja gudang
+            if (c.jenis !== 'KELUAR') continue;
+            // Jangan pernah menautkan kas ke nota yang seluruh item aktifnya adalah Jatah Klien
+            const activeStockRows = item.rawMutations.filter(
+              (m) => !m.is_batal && !m.is_ganti && m.status_dokumen !== 'BATAL' && m.status_dokumen !== 'DIGANTI'
+            );
+            if (
+              activeStockRows.length > 0 &&
+              activeStockRows.every((m) => isClientSuppliedStockMutation(m, clientName))
+            ) {
+              continue;
+            }
+            const itemStoreNorm = normalizeReceiptStoreName(item.storeName);
+            if (
+              !itemStoreNorm &&
+              !cashStoreNorm &&
+              c.source_module !== 'MUTASI_BARANG' &&
+              c.kategori_keperluan !== 'Material' &&
+              c.kategori_keperluan !== 'Talangan Klien'
+            ) {
+              continue;
+            }
+          }
+
+          if (!doReceiptStoresMatch(item.storeName, c.nama_toko)) {
+            continue;
+          }
+          targetItem = item;
+          break;
+        }
+      }
+    }
+
+    if (targetItem) {
+      if (!targetItem.rawCashMutations) targetItem.rawCashMutations = [];
+      targetItem.rawCashMutations.push(c);
+      if (!c.is_ganti && c.status_dokumen !== 'DIGANTI') {
+        targetItem.linkedMutationsCount += 1;
+        // Jika ada mutasi barang MASUK Kontraktor DAN kas KELUAR aktif pada nota yang sama -> TERPADU
+        const hasContractorStock = targetItem.rawMutations.some(
+          (m) =>
+            m.jenis === 'MASUK' &&
+            !m.is_batal &&
+            !m.is_ganti &&
+            m.status_dokumen !== 'BATAL' &&
+            m.status_dokumen !== 'DIGANTI' &&
+            !isClientSuppliedStockMutation(m, clientName)
+        );
+        if (c.jenis === 'KELUAR' && hasContractorStock) {
+          targetItem.receiptScope = 'TERPADU';
+        }
+      }
+      if (c.untuk_apa && !targetItem.sampleItemNames.includes(c.untuk_apa) && targetItem.sampleItemNames.length < 5) {
+        targetItem.sampleItemNames.push(c.untuk_apa);
+      }
+      const urls = Array.isArray(c.lampiran_nota_urls) ? c.lampiran_nota_urls.filter(Boolean) : [];
+      urls.forEach((u) => {
+        if (!targetItem!.attachmentUrls.includes(u)) targetItem!.attachmentUrls.push(u);
+      });
+      return;
+    }
+
+    // Fallback: transaksi kas yang memiliki berkas bukti lampiran namun belum tercatat di project_receipts
+    const urls = Array.isArray(c.lampiran_nota_urls) ? c.lampiran_nota_urls.filter(Boolean) : [];
+    const rNo = (c.nomor_kuitansi || c.nomor_nota || '').trim();
+    if (urls.length === 0) return;
+
+    const cashKey = `cash_rc_${c.id}`;
+    map.set(cashKey, {
+      id: cashKey,
+      receiptNo: rNo && rNo !== '-' ? rNo : `KWT-${c.id.slice(0, 6).toUpperCase()}`,
+      storeName: c.nama_toko || `${c.pic || 'Kas'} · ${c.kategori_keperluan}`,
+      storeContact: c.toko_kontak,
+      receiptDate: c.tanggal_nota || c.tanggal,
+      totalPhysicalAmount: c.total_nota_fisik || c.jumlah_rp || 0,
+      attachmentUrls: [...urls],
+      linkedMutationsCount: !c.is_ganti ? 1 : 0,
+      sampleItemNames: c.untuk_apa ? [c.untuk_apa] : [],
+      rawMutations: [],
+      rawCashMutations: [c],
+      receiptScope: 'KAS_OPERASIONAL'
+    });
   });
 
   return Array.from(map.values()).sort((a, b) => {

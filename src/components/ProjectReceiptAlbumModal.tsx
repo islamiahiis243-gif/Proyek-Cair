@@ -26,7 +26,7 @@ import {
   Camera,
   Upload
 } from 'lucide-react';
-import { ProjectReceiptAlbumItem, MutasiBarang, UserProfile, ProjectReceipt } from '../types';
+import { ProjectReceiptAlbumItem, MutasiBarang, MutasiKas, UserProfile, ReceiptScope } from '../types';
 import { formatDateTime } from '../lib/pdfGenerator';
 import { supersedeProjectReceipt, voidProjectReceipt, uploadReceiptFile } from '../lib/receiptStorage';
 
@@ -36,9 +36,16 @@ interface ProjectReceiptAlbumModalProps {
   albumItems: ProjectReceiptAlbumItem[];
   currentUser: UserProfile;
   projectId?: string;
-  onOpenReceiptViewer: (mutation: MutasiBarang, related: MutasiBarang[]) => void;
+  onOpenReceiptViewer?: (mutation: MutasiBarang, related: MutasiBarang[]) => void;
+  onOpenCashReceiptViewer?: (
+    cash: MutasiKas,
+    relatedCash: MutasiKas[],
+    relatedStock: MutasiBarang[],
+    scope?: ReceiptScope
+  ) => void;
   onSelectForLinking?: (receipt: ProjectReceiptAlbumItem) => void;
   onDataChanged?: () => Promise<void> | void;
+  hideCashDetails?: boolean;
 }
 
 export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> = ({
@@ -48,11 +55,14 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
   currentUser,
   projectId = 'default_project',
   onOpenReceiptViewer,
+  onOpenCashReceiptViewer,
   onSelectForLinking,
-  onDataChanged
+  onDataChanged,
+  hideCashDetails = false,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'ALL' | 'ACTIVE' | 'HAS_FILE' | 'HISTORY'>('ALL');
+  const [scopeFilter, setScopeFilter] = useState<'ALL' | ReceiptScope>('ALL');
 
   // State Pratinjau Membesar (HD Zoomable Inspect ala Mobile)
   const [inspectingItem, setInspectingItem] = useState<ProjectReceiptAlbumItem | null>(null);
@@ -84,9 +94,17 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
+  const visibleAlbumItems = useMemo(() => {
+    if (!hideCashDetails) return albumItems;
+    return albumItems.filter((item) => item.receiptScope !== 'KAS_OPERASIONAL');
+  }, [albumItems, hideCashDetails]);
+
   const filteredItems = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return albumItems.filter((item) => {
+    return visibleAlbumItems.filter((item) => {
+      const itemScope: ReceiptScope = item.receiptScope || 'BELANJA_BARANG';
+      if (!hideCashDetails && scopeFilter !== 'ALL' && itemScope !== scopeFilter) return false;
+
       const matchSearch =
         !q ||
         item.storeName.toLowerCase().includes(q) ||
@@ -103,7 +121,7 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
 
       return matchSearch;
     });
-  }, [albumItems, searchQuery, activeTab]);
+  }, [visibleAlbumItems, searchQuery, activeTab, scopeFilter, hideCashDetails]);
 
   if (!isOpen) return null;
 
@@ -199,6 +217,7 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
 
       const oldId = replacingReceipt.receiptId || replacingReceipt.id;
       const targetMutationIds = (replacingReceipt.rawMutations || []).map((m) => m.id);
+      const targetCashIds = (replacingReceipt.rawCashMutations || []).map((c) => c.id);
       const result = await supersedeProjectReceipt(
         oldId,
         {
@@ -209,11 +228,13 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
           tanggal_nota: replaceReceiptDate || new Date().toISOString().slice(0, 10),
           total_nota_fisik: Number(replacePhysicalTotal) || replacingReceipt.totalPhysicalAmount,
           lampiran_nota_urls: uploadedUrls,
+          receipt_scope: replacingReceipt.receiptScope || 'BELANJA_BARANG',
           status_verifikasi: 'TERCATAT'
         },
         replaceReason.trim(),
         currentUser,
-        targetMutationIds
+        targetMutationIds,
+        targetCashIds
       );
 
       if (result) {
@@ -247,7 +268,14 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
 
       const targetId = voidingReceipt.receiptId || voidingReceipt.id;
       const targetMutationIds = (voidingReceipt.rawMutations || []).map((m) => m.id);
-      const success = await voidProjectReceipt(targetId, voidReason.trim(), currentUser, targetMutationIds);
+      const targetCashIds = (voidingReceipt.rawCashMutations || []).map((c) => c.id);
+      const success = await voidProjectReceipt(
+        targetId,
+        voidReason.trim(),
+        currentUser,
+        targetMutationIds,
+        targetCashIds
+      );
 
       if (success) {
         setFeedbackNotice(`Nota No. ${voidingReceipt.receiptNo} berhasil dibatalkan. Tautan mutasi barang terkait telah dikembalikan ke status NOTA MENYUSUL.`);
@@ -279,7 +307,7 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
                   Album Galeri Berkas Nota Resmi Proyek
                 </h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800">
-                  {albumItems.length} Nota Terdaftar
+                  {visibleAlbumItems.length} Nota Terdaftar
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
@@ -308,40 +336,69 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
           </div>
         )}
 
-        {/* Toolbar Pencarian & Filter Tab */}
-        <div className="p-3.5 sm:p-4 border-b border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white dark:bg-slate-900">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari nama toko, nomor faktur, atau nama material..."
-              className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
+        {/* Toolbar Pencarian, Filter Cakupan & Tab */}
+        <div className="p-3.5 sm:p-4 border-b border-slate-200/80 dark:border-slate-800 space-y-2.5 bg-white dark:bg-slate-900">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Cari nama toko, nomor faktur/kuitansi, atau uraian transaksi..."
+                className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 shrink-0">
+              {[
+                { id: 'ALL', label: `Semua (${visibleAlbumItems.length})` },
+                { id: 'ACTIVE', label: `Aktif (${visibleAlbumItems.filter((i) => !i.is_batal && !i.is_ganti).length})` },
+                { id: 'HAS_FILE', label: `Ada Berkas (${visibleAlbumItems.filter((i) => i.attachmentUrls.length > 0 && !i.is_batal && !i.is_ganti).length})` },
+                { id: 'HISTORY', label: `Riwayat Batal/Ganti (${visibleAlbumItems.filter((i) => i.is_batal || i.is_ganti).length})` }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                    activeTab === tab.id
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 shrink-0">
-            {[
-              { id: 'ALL', label: `Semua (${albumItems.length})` },
-              { id: 'ACTIVE', label: `Aktif (${albumItems.filter((i) => !i.is_batal && !i.is_ganti).length})` },
-              { id: 'HAS_FILE', label: `Ada Berkas (${albumItems.filter((i) => i.attachmentUrls.length > 0 && !i.is_batal && !i.is_ganti).length})` },
-              { id: 'HISTORY', label: `Riwayat Batal/Ganti (${albumItems.filter((i) => i.is_batal || i.is_ganti).length})` }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                  activeTab === tab.id
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          {!hideCashDetails && (
+            <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+              <span className="text-slate-500 dark:text-slate-400 font-semibold mr-1">Sumber Berkas:</span>
+              {(
+                [
+                  { id: 'ALL', label: 'Semua Sumber' },
+                  { id: 'BELANJA_BARANG', label: 'Nota Belanja' },
+                  { id: 'KAS_OPERASIONAL', label: 'Kuitansi Kas' },
+                  { id: 'TERPADU', label: 'Terpadu (Barang & Kas)' },
+                ] as const
+              ).map((sc) => (
+                <button
+                  key={sc.id}
+                  type="button"
+                  onClick={() => setScopeFilter(sc.id)}
+                  className={`px-2.5 py-1 rounded-full font-bold border transition-colors cursor-pointer ${
+                    scopeFilter === sc.id
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                      : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {sc.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Isi Galeri Album Nota (Responsive Grid & Mobile Touch Friendly) */}
@@ -402,6 +459,23 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
                           <h3 className="text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 truncate" title={item.receiptNo}>
                             {item.receiptNo}
                           </h3>
+                          {!hideCashDetails && (
+                            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                              {item.receiptScope === 'TERPADU' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-800">
+                                  ✓ Terbayar Kas
+                                </span>
+                              ) : item.receiptScope === 'KAS_OPERASIONAL' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/50 dark:text-blue-200 dark:border-blue-800">
+                                  Kuitansi Kas
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
+                                  Nota Belanja
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -485,9 +559,11 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
                             <Calendar className="w-3.5 h-3.5" />
                             <span>{item.receiptDate ? formatDateTime(item.receiptDate).split(',')[0] : '-'}</span>
                           </span>
-                          <span className="font-extrabold text-slate-900 dark:text-white">
-                            Rp {item.totalPhysicalAmount.toLocaleString('id-ID')}
-                          </span>
+                          {!hideCashDetails && (
+                            <span className="font-extrabold text-slate-900 dark:text-white">
+                              Rp {item.totalPhysicalAmount.toLocaleString('id-ID')}
+                            </span>
+                          )}
                         </div>
 
                         {item.sampleItemNames.length > 0 && (
@@ -521,7 +597,20 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
                         {pageCount > 0 && (
                           <button
                             type="button"
-                            onClick={() => handleOpenInspect(item, activeCardPage)}
+                            onClick={() => {
+                              if (!hideCashDetails && onOpenCashReceiptViewer && (item.rawCashMutations?.length || 0) > 0) {
+                                onOpenCashReceiptViewer(
+                                  item.rawCashMutations![0],
+                                  item.rawCashMutations!,
+                                  item.rawMutations || [],
+                                  item.receiptScope
+                                );
+                              } else if (onOpenReceiptViewer && item.rawMutations.length > 0) {
+                                onOpenReceiptViewer(item.rawMutations[0], item.rawMutations);
+                              } else {
+                                handleOpenInspect(item, activeCardPage);
+                              }
+                            }}
                             className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1"
                             title="Inspeksi Foto Besar"
                           >
@@ -531,8 +620,8 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
                         )}
                       </div>
 
-                      {/* Tombol Koreksi CRU: Ganti & Batal (Hanya untuk nota aktif) */}
-                      {!isVoid && !isReplaced && (
+                      {/* Tombol Koreksi CRU: Ganti & Batal (Hanya untuk nota aktif & non-Pengamat) */}
+                      {!hideCashDetails && !isVoid && !isReplaced && (
                         <div className="flex items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-800/60 text-[11px]">
                           <button
                             type="button"
@@ -599,7 +688,8 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500">
-                    Grand Total: Rp {inspectingItem.totalPhysicalAmount.toLocaleString('id-ID')} · Lembar {inspectingPageIndex + 1} dari {inspectingItem.attachmentUrls.length}
+                    {!hideCashDetails ? `Total Nota: Rp ${inspectingItem.totalPhysicalAmount.toLocaleString('id-ID')} · ` : ''}
+                    Lembar {inspectingPageIndex + 1} dari {inspectingItem.attachmentUrls.length}
                   </p>
                 </div>
               </div>
@@ -649,7 +739,7 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
                       setRotation(0);
                     }}
                     className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 cursor-pointer"
-                    title="Reset Ukuran"
+                    title="Atur Ulang Ukuran"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                   </button>
@@ -836,7 +926,7 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
 
                 <div className="space-y-1">
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Grand Total Bon (Rp)
+                    Total Fisik Bon (Rp)
                   </label>
                   <CurrencyInput
                     value={replacePhysicalTotal ? Number(replacePhysicalTotal) : null}
