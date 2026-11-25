@@ -1038,9 +1038,17 @@ export const ProcurementView: React.FC = () => {
                                 Pantau
                               </button>
                             ) : (
-                              <span className="text-[11px] font-medium text-teal-600 dark:text-teal-400">
-                                ✓ Terpenuhi
-                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCurrentView('stock-mutations');
+                                }}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 hover:underline cursor-pointer"
+                                title="Buka Mutasi Barang untuk melihat stok & riwayat pemakaian material ini"
+                              >
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>Terpenuhi</span>
+                              </button>
                             )}
                           </td>
                         </tr>

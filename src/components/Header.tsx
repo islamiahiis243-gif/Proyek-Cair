@@ -31,6 +31,7 @@ export const Header: React.FC = () => {
     toggleTheme,
     currentCashBalance,
     cashSummaryMetrics,
+    procurementSummary,
     cashAccess,
     stockMutations,
     documents,
@@ -239,7 +240,7 @@ export const Header: React.FC = () => {
   const cashApprovalTargetTab =
     cashSummaryMetrics.pendingWorkflowCount > 0 ? 'JOURNAL' : 'DOCUMENTS';
 
-  const getOperationalBellPillClass = (tone: 'sky' | 'amber' | 'teal' | 'blue') => {
+  const getOperationalBellPillClass = (tone: 'sky' | 'amber' | 'teal' | 'blue' | 'indigo') => {
     switch (tone) {
       case 'sky':
         return 'bg-sky-500/20 text-sky-300';
@@ -247,6 +248,8 @@ export const Header: React.FC = () => {
         return 'bg-amber-500/20 text-amber-300';
       case 'teal':
         return 'bg-teal-500/20 text-teal-300';
+      case 'indigo':
+        return 'bg-indigo-500/20 text-indigo-300';
       case 'blue':
       default:
         return 'bg-blue-500/20 text-blue-300';
@@ -347,6 +350,22 @@ export const Header: React.FC = () => {
                 },
               ]
             : []),
+          ...(activeRole === 'Clerk' && procurementSummary.waitingDeliveryCount > 0
+            ? [
+                {
+                  id: 'op-waiting-delivery',
+                  title: `${procurementSummary.waitingDeliveryCount} Surat Pesanan (PO) Menunggu Barang Tiba`,
+                  message: 'Catat kedatangan & Surat Jalan di Tab Penerimaan Barang.',
+                  tone: 'indigo' as const,
+                  actionLabel: 'Penerimaan Barang',
+                  onClick: () => {
+                    setProcurementTargetTab('DELIVERIES');
+                    setCurrentView('procurement');
+                    setNotifOpen(false);
+                  },
+                },
+              ]
+            : []),
         ]
       : [];
 
@@ -354,7 +373,9 @@ export const Header: React.FC = () => {
     notifications.length +
     (appMode === 'IMPERSONATE'
       ? pendingApprovalCount +
-        (activeRole === 'Clerk' ? cashSummaryMetrics.unreconciledStockReceiptsCount : 0)
+        (activeRole === 'Clerk'
+          ? (cashSummaryMetrics.unreconciledStockReceiptsCount + procurementSummary.waitingDeliveryCount)
+          : 0)
       : 0);
 
   return (
