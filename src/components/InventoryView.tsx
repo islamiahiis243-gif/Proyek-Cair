@@ -24,7 +24,7 @@ export const InventoryView:React.FC<InventoryViewProps>=({onQuickMutate,canMutat
  const visible=useMemo(()=>items.filter(x=>(scope==='ALL'||(scope==='STOCK'?x.is_stock_item:!x.is_stock_item))&&[x.kode_boq,x.nama_barang,x.kategori,x.keterangan||''].join(' ').toLowerCase().includes(query.toLowerCase())),[items,query,scope]);
  const exportMasterCsv=()=>{
   const csv=makeBoqCsv(boqSections,items);
-  const blob=new Blob(['\\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
   const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='proyek-cair-master-boq.csv';a.click();URL.revokeObjectURL(url);
  };
  const readCsvFile=async(file:File)=>{setImportMessage('');setCsvPreview(parseBoqCsv(await file.text()));};

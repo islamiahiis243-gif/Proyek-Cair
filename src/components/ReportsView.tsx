@@ -56,6 +56,14 @@ const DOC_STATUS_LABELS: Record<string, string> = {
   DIGANTI: 'Diganti',
 };
 
+// Helper tanggal lokal (anti pergeseran jam UTC vs WIB)
+function getLocalDateString(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export const ReportsView: React.FC = () => {
   const {
     stockMutations,
@@ -96,9 +104,9 @@ export const ReportsView: React.FC = () => {
   const [startDate, setStartDate] = useState<string>(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
-    return d.toISOString().split('T')[0];
+    return getLocalDateString(d);
   });
-  const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState<string>(() => getLocalDateString());
 
   // Filter & Pencarian
   const [filterType, setFilterType] = useState<'ALL' | 'MASUK' | 'KELUAR'>('ALL');
@@ -161,7 +169,7 @@ export const ReportsView: React.FC = () => {
   // Shortcut Tanggal Cepat (Prasetel)
   const applyDatePreset = (preset: 'today' | '7days' | '30days' | 'thisMonth' | 'all') => {
     const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = getLocalDateString(today);
 
     if (preset === 'today') {
       setStartDate(todayStr);
@@ -169,16 +177,16 @@ export const ReportsView: React.FC = () => {
     } else if (preset === '7days') {
       const d = new Date();
       d.setDate(d.getDate() - 7);
-      setStartDate(d.toISOString().split('T')[0]);
+      setStartDate(getLocalDateString(d));
       setEndDate(todayStr);
     } else if (preset === '30days') {
       const d = new Date();
       d.setDate(d.getDate() - 30);
-      setStartDate(d.toISOString().split('T')[0]);
+      setStartDate(getLocalDateString(d));
       setEndDate(todayStr);
     } else if (preset === 'thisMonth') {
       const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-      setStartDate(firstDay.toISOString().split('T')[0]);
+      setStartDate(getLocalDateString(firstDay));
       setEndDate(todayStr);
     } else if (preset === 'all') {
       setStartDate('2020-01-01');
@@ -231,7 +239,6 @@ export const ReportsView: React.FC = () => {
       const totalVolume = filtered.reduce((acc, m) => acc + (Number(m.jumlah) || 0), 0);
       const totalNilai = canViewFinancials
         ? filtered.reduce((acc, m) => {
-            if (m.total_nota_fisik) return acc + Number(m.total_nota_fisik);
             const explicitPrice =
               m.harga_satuan_beli != null && Number(m.harga_satuan_beli) > 0 ? Number(m.harga_satuan_beli) : null;
             const fallbackPrice =
@@ -562,6 +569,7 @@ export const ReportsView: React.FC = () => {
           projectName,
           signer: user,
           branding: tenantBranding,
+          hideFinancials: !config.includeFinancials || isViewer || !canViewFinancials,
           filterSummary: `Kontrol Pemenuhan Material BOQ (${items.length} Pos Pekerjaan)`,
           customTitle: config.customTitle || 'LAPORAN KONTROL PEMENUHAN MATERIAL KONTRAK BOQ',
           customNotes: config.customNotes,

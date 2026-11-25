@@ -599,11 +599,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Kebutuhan Pengadaan Material: {outOfStockCount} pos pekerjaan masih memerlukan pengadaan material lanjutan.
             </span>{' '}
             <span className="text-amber-800 dark:text-amber-300/80">
-              Terdapat pos pekerjaan BOQ yang belum terpenuhi dan stok gudang saat ini belum mencukupi. Segera jadwalkan pemesanan toko via menu{' '}
-              <strong className="underline cursor-pointer" onClick={() => onOpenStockModal('MASUK')}>
-                + Catat Stok Masuk
-              </strong>
-              {' '}saat barang tiba di lokasi proyek.
+              Terdapat pos pekerjaan BOQ yang belum terpenuhi dan stok gudang saat ini belum mencukupi.{' '}
+              {isViewer ? (
+                <span>Pantau kedatangan material melalui menu Mutasi Barang.</span>
+              ) : (
+                <>
+                  Segera jadwalkan pemesanan toko via menu{' '}
+                  <strong className="underline cursor-pointer" onClick={() => onOpenStockModal('MASUK')}>
+                    + Catat Stok Masuk
+                  </strong>{' '}
+                  saat barang tiba di lokasi proyek.
+                </>
+              )}
             </span>
           </div>
           <button

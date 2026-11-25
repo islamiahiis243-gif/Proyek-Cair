@@ -852,7 +852,7 @@ export const buildStockMutationPayload = (
 
   if (answers.mutationType === 'MASUK') {
     const prov = !isCustom && pm ? getProviderMetaForMaterial(pm, labels) : null;
-    const isClientFreeIssue = prov && !prov.isMixed && prov.defaultAsal === 'KLIEN';
+    const isClientFreeIssue = prov && !prov.isMixed && prov.defaultAsal === 'KLIEN' && answers.asalBarang !== 'KONTRAKTOR';
     const isClientSource = answers.asalBarang === 'KLIEN';
 
     if (isClientFreeIssue || isClientSource) {

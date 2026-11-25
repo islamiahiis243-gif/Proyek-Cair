@@ -98,7 +98,13 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
 
   const visibleAlbumItems = useMemo(() => {
     if (!hideCashDetails) return albumItems;
-    return albumItems.filter((item) => item.receiptScope !== 'KAS_OPERASIONAL');
+    return albumItems
+      .filter((item) => item.receiptScope !== 'KAS_OPERASIONAL')
+      .map((item) => ({
+        ...item,
+        storeName: 'Pemasok Rekanan Proyek',
+        storeContact: undefined
+      }));
   }, [albumItems, hideCashDetails]);
 
   const filteredItems = useMemo(() => {
@@ -124,8 +130,6 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
       return matchSearch;
     });
   }, [visibleAlbumItems, searchQuery, activeTab, scopeFilter, hideCashDetails]);
-
-  if (!isOpen) return null;
 
   // Navigasi lembar foto thumbnail di kartu
   const handleCardPageChange = (itemId: string, direction: 'prev' | 'next', totalPages: number, e: React.MouseEvent) => {
@@ -320,6 +324,8 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-5 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="relative w-full max-w-6xl max-h-[94vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
@@ -459,7 +465,7 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
                         ? 'bg-rose-50/20 dark:bg-rose-950/15 border-rose-200 dark:border-rose-900/60 opacity-80'
                         : isReplaced
                         ? 'bg-amber-50/20 dark:bg-amber-950/15 border-amber-200 dark:border-amber-900/60 opacity-80'
-                        : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-800 hover:border-indigo-500/80 hover:shadow-xl'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/80 hover:shadow-xl'
                     }`}
                   >
                     {/* Badge Status Audit */}
@@ -998,14 +1004,6 @@ export const ProjectReceiptAlbumModal: React.FC<ProjectReceiptAlbumModalProps> =
                   </span>
                 </div>
               </div>
-
-              {/* Kotak Error Inline Jika Ada */}
-              {feedbackError && (
-                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs font-semibold flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>{feedbackError}</span>
-                </div>
-              )}
 
               {/* Tombol Aksi Simpan */}
               <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">

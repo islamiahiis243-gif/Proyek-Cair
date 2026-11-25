@@ -136,7 +136,7 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
           { key: 'satuan', label: 'Satuan', defaultSelected: false },
           { key: 'harga_satuan_beli', label: 'Harga Nota / Satuan (Rp)', isFinancial: true, defaultSelected: canViewFinancials },
           { key: 'total_harga_nota', label: 'Total Belanja Riil (Rp)', isFinancial: true, defaultSelected: canViewFinancials },
-          { key: 'status_harga', label: 'Status Nota (Menyusul/Belum Tahu)', defaultSelected: true },
+          { key: 'status_harga', label: 'Status Nota (Menyusul/Belum Tahu)', isFinancial: true, defaultSelected: canViewFinancials },
           { key: 'tujuan_keperluan', label: 'Asal / Peruntukan / Pos BOQ', defaultSelected: true },
           { key: 'pic', label: 'PIC Petugas', defaultSelected: true },
           { key: 'status_dokumen', label: 'Status Alur Dokumen', defaultSelected: true }
@@ -167,7 +167,7 @@ export const ExportSettingsModal: React.FC<ExportSettingsModalProps> = React.mem
           { key: 'bab_anggaran_kas', label: 'Bab 4: Rekap Anggaran Kas & Metode Bayar', isFinancial: true, defaultSelected: canViewFinancials },
           { key: 'bab_indeks_nota', label: 'Bab 5: Indeks Bukti Nota & Kuitansi Terpadu', isFinancial: true, defaultSelected: canViewFinancials },
           { key: 'bab_pengesahan_tte', label: 'Bab 6: Pengesahan 4 Tingkat & Hash SHA-256', defaultSelected: true },
-          { key: 'lampirkan_talangan_klien', label: 'Lampirkan Rincian Talangan Klien', defaultSelected: false }
+          { key: 'lampirkan_talangan_klien', label: 'Lampirkan Rincian Talangan Klien', isFinancial: true, defaultSelected: false }
         ];
     }
   }, [targetType, canViewFinancials]);

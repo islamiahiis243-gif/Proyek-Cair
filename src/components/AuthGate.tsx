@@ -56,13 +56,13 @@ const AuthBrandingPanel: React.FC = React.memo(() => {
         </div>
 
         {/* Container Maskot 3D: Interaksi Parallax Smart-Gesture Lembut */}
-        <div className="w-full flex items-center justify-center py-0 my-0">
+        <div className="w-full flex items-center justify-center -my-2 sm:-my-2.5">
           <div
             style={{
               transform: `perspective(600px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
               transition: tilt.x === 0 && tilt.y === 0 ? 'transform 0.4s ease-out' : 'transform 0.08s ease-out'
             }}
-            className="w-full max-w-[125px] sm:max-w-[140px] lg:max-w-[150px] aspect-square flex items-center justify-center will-change-transform"
+            className="w-full max-w-[95px] sm:max-w-[105px] lg:max-w-[115px] aspect-square flex items-center justify-center will-change-transform"
           >
             <img
               src="/mascot_3d.png"
@@ -71,7 +71,7 @@ const AuthBrandingPanel: React.FC = React.memo(() => {
               decoding="async"
               width={180}
               height={180}
-              className="w-full h-full object-contain drop-shadow-[0_12px_24px_rgba(37,99,235,0.25)] hover:scale-105 transition-transform duration-300 pointer-events-none select-none"
+              className="w-full h-full object-contain drop-shadow-[0_8px_16px_rgba(37,99,235,0.25)] hover:scale-105 transition-transform duration-300 pointer-events-none select-none"
             />
           </div>
         </div>

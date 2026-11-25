@@ -72,6 +72,7 @@ export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
     primaryCashMutation?.nama_toko ||
     primaryCashMutation?.pic ||
     'Toko / Pihak Lawan';
+  const displayStoreName = hideFinancialDetails ? 'Pemasok Rekanan Proyek' : storeName;
   const storeContact = primaryMutation?.toko_kontak || primaryCashMutation?.toko_kontak;
   const receiptDate =
     primaryMutation?.tanggal_nota ||
@@ -150,7 +151,7 @@ export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
                 )}
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Pihak/Toko: <b>{storeName}</b>
+                Pihak/Toko: <b>{displayStoreName}</b>
                 {receiptDate && ` · Tanggal: ${new Date(receiptDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`}
               </p>
             </div>
@@ -312,9 +313,9 @@ export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-500">Nama Toko / Pihak:</span>
-                <span className="font-bold text-slate-900 dark:text-white">{storeName}</span>
+                <span className="font-bold text-slate-900 dark:text-white">{displayStoreName}</span>
               </div>
-              {storeContact && (
+              {!hideFinancialDetails && storeContact && (
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-slate-500">Kontak:</span>
                   <span className="text-slate-700 dark:text-slate-300">{storeContact}</span>

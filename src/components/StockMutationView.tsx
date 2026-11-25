@@ -173,8 +173,8 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
   // Indeks Nota Gudang terbayar kas berbasis receipt_id + (no. nota & nama toko), aman dari tabrakan lintas toko
   const terpaduReceiptIndex = useMemo(() => {
     if (isFinancialHidden) return buildTerpaduReceiptIndex([], []);
-    return buildTerpaduReceiptIndex(projectReceipts, cashMutations);
-  }, [projectReceipts, cashMutations, isFinancialHidden]);
+    return buildTerpaduReceiptIndex(projectReceipts, cashMutations, purchaseOrders);
+  }, [projectReceipts, cashMutations, purchaseOrders, isFinancialHidden]);
 
   const providerLabels = useMemo(
     () => ({
@@ -3332,7 +3332,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                    <span className="text-xs font-extrabold text-slate-850 dark:text-slate-100">
+                    <span className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
                       Filter & Metrik Mutasi Barang
                     </span>
                     {filterType !== 'ALL' && (

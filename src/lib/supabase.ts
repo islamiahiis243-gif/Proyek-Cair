@@ -3,9 +3,14 @@ import { SupabaseConfig, UserProfile } from '../types';
 
 const STORAGE_KEY_USER = 'proyek_cair_user';
 export const DEFAULT_USER: UserProfile = { id:'', name:'Pengguna', email:'', role:'User', provider:'email' };
-const env = (import.meta as any).env || {};
-const SUPABASE_URL = (env.VITE_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || env.SUPABASE_URL) as string | undefined;
-const SUPABASE_KEY = (env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || env.SUPABASE_PUBLISHABLE_KEY) as string | undefined;
+const SUPABASE_URL: string | undefined =
+  typeof import.meta.env !== 'undefined'
+    ? (import.meta.env.VITE_SUPABASE_URL || (import.meta.env as Record<string, string | undefined>).NEXT_PUBLIC_SUPABASE_URL)
+    : undefined;
+const SUPABASE_KEY: string | undefined =
+  typeof import.meta.env !== 'undefined'
+    ? (import.meta.env.VITE_SUPABASE_ANON_KEY || (import.meta.env as Record<string, string | undefined>).NEXT_PUBLIC_SUPABASE_ANON_KEY)
+    : undefined;
 
 let supabaseInstance: SupabaseClient | null = null;
 export function getSupabaseClient(): SupabaseClient {

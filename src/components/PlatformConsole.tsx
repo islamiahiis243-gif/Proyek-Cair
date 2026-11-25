@@ -77,7 +77,7 @@ const KartuStat = ({ label, nilai, icon: Icon, warna }: { label: string; nilai: 
 
 // ─── Komponen Utama ───────────────────────────────────────────────────────────
 export const PlatformConsole: React.FC = () => {
-  const { setCurrentView, goBack } = useApp();
+  const { currentView, setCurrentView, goBack } = useApp();
   const db = getSupabaseClient();
 
   // State utama
@@ -114,6 +114,14 @@ export const PlatformConsole: React.FC = () => {
 
   // Navigasi tab
   const [tab, setTab] = useState<'permohonan' | 'tenant' | 'profil' | 'role' | 'audit'>('permohonan');
+
+  useEffect(() => {
+    if (currentView === 'rfin-a-approval' || currentView === 'dashboard') {
+      setTab('permohonan');
+    } else if (currentView === 'settings') {
+      setTab('role');
+    }
+  }, [currentView]);
 
   // ─── Muat data ──────────────────────────────────────────────────────────────
   const muat = useCallback(async () => {

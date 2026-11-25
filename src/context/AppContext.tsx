@@ -1110,6 +1110,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Transaksi Baru Mutasi Barang (Diterbitkan oleh Clerk)
   const addStockMutation = async (data: Omit<MutasiBarang, 'id' | 'stok_sebelum' | 'stok_sesudah'>) => {
     try {
+      if (/viewer|pengamat|observer/i.test(activeRole || '')) {
+        return { success: false, message: 'Akses ditolak: Akun Pengamat (Viewer) tidak memiliki wewenang menerbitkan mutasi barang.' };
+      }
       const client = getSupabaseClient();
       const targetProj = activeProject || activeContext?.projects[0];
       const wsId = targetProj?.workspace_id || activeWorkspaceId || (activeContext?.workspaces.find(w => w.type === 'COMPANY')?.id as string);
@@ -1155,6 +1158,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Batalkan Mutasi Barang (Nominal dinolkan / tidak dihitung di stok, data tetap ada)
   const batalStockMutation = async (id: string, reason: string) => {
     try {
+      if (/viewer|pengamat|observer/i.test(activeRole || '')) {
+        return { success: false, message: 'Akses ditolak: Akun Pengamat (Viewer) tidak memiliki wewenang membatalkan mutasi barang.' };
+      }
       if (!reason || reason.trim().length < 5) throw new Error('Alasan pembatalan minimal 5 karakter.');
       const client = getSupabaseClient();
       const { error } = await client.from('inventory_transactions').update({
@@ -1174,6 +1180,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Ganti Mutasi Barang (Tautkan ke baris revisi baru, data lama dinolkan)
   const gantiStockMutation = async (id: string, newMutation: Omit<MutasiBarang, 'id' | 'stok_sebelum' | 'stok_sesudah'>, reason: string) => {
     try {
+      if (/viewer|pengamat|observer/i.test(activeRole || '')) {
+        return { success: false, message: 'Akses ditolak: Akun Pengamat (Viewer) tidak memiliki wewenang mengganti mutasi barang.' };
+      }
       if (!reason || reason.trim().length < 5) throw new Error('Alasan penggantian minimal 5 karakter.');
       const client = getSupabaseClient();
       const targetProj = activeProject || activeContext?.projects[0];
@@ -1319,6 +1328,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Transaksi Baru Mutasi Kas (Diterbitkan oleh Clerk)
   const addCashMutation = async (data: Omit<MutasiKas, 'id' | 'saldo_setelah'>) => {
     try {
+      if (/viewer|pengamat|observer/i.test(activeRole || '') || !canViewFinancials) {
+        return { success: false, message: 'Akses ditolak: Anda tidak memiliki wewenang mencatat kas proyek.' };
+      }
       const client = getSupabaseClient();
       const targetProj = activeProject || activeContext?.projects[0];
       const wsId = targetProj?.workspace_id || activeWorkspaceId || (activeContext?.workspaces.find(w => w.type === 'COMPANY')?.id as string);
@@ -1376,6 +1388,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Batalkan Mutasi Kas (Nominal tidak dihitung di saldo, data tetap ada; turunkan receipt_scope TERPADU bila perlu)
   const batalCashMutation = async (id: string, reason: string) => {
     try {
+      if (/viewer|pengamat|observer/i.test(activeRole || '') || !canViewFinancials) {
+        return { success: false, message: 'Akses ditolak: Anda tidak memiliki wewenang membatalkan kas proyek.' };
+      }
       if (!reason || reason.trim().length < 5) throw new Error('Alasan pembatalan minimal 5 karakter.');
       const client = getSupabaseClient();
       const targetTx = cashMutations.find((c) => c.id === id);
@@ -1409,6 +1424,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Ganti Mutasi Kas (Revisi ke baris baru, pertahankan tanggal asli & salin metadata lengkap)
   const gantiCashMutation = async (id: string, newMutation: Omit<MutasiKas, 'id' | 'saldo_setelah'>, reason: string) => {
     try {
+      if (/viewer|pengamat|observer/i.test(activeRole || '') || !canViewFinancials) {
+        return { success: false, message: 'Akses ditolak: Anda tidak memiliki wewenang mengganti transaksi kas proyek.' };
+      }
       if (!reason || reason.trim().length < 5) throw new Error('Alasan penggantian minimal 5 karakter.');
       const client = getSupabaseClient();
       const targetProj = activeProject || activeContext?.projects[0];
@@ -2037,7 +2055,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           status_harga: unitPrice > 0 ? 'TERCATAT' : 'BELUM_DIKETAHUI',
           nama_toko: targetPo.nama_toko,
           toko_kontak: targetPo.toko_kontak || null,
-          nomor_nota: cleanSj || targetPo.po_no,
           tanggal_nota: (input.tanggal || new Date().toISOString()).slice(0, 10),
           total_nota_fisik: totalBatchValueRp,
           lampiran_nota_urls: urls,
@@ -2620,7 +2637,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const canViewFinancials = useMemo(() => {
     // Pengamat/Klien 100% terproteksi dari finansial internal kontraktor (termasuk saat CSA meninjau mode Pengamat)
-    if (activeRole === 'Viewer/Pengamat') {
+    if (/viewer|pengamat|observer/i.test(activeRole || '')) {
       return false;
     }
     if (activeRole === 'CEO/Direktur') return true;

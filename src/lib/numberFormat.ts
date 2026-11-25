@@ -19,8 +19,27 @@ export function formatQtyInput(value: number | null | undefined): string {
 
 export function parseQtyInput(str: string): number {
   if (!str) return 0;
-  const sanitized = str.replace(/\./g, '').replace(',', '.');
-  const num = parseFloat(sanitized);
+  const trimmed = str.trim();
+  if (trimmed.includes(',')) {
+    const sanitized = trimmed.replace(/\./g, '').replace(',', '.');
+    const num = parseFloat(sanitized);
+    return isNaN(num) ? 0 : num;
+  }
+  const dotCount = (trimmed.match(/\./g) || []).length;
+  if (dotCount > 1) {
+    const num = parseFloat(trimmed.replace(/\./g, ''));
+    return isNaN(num) ? 0 : num;
+  }
+  if (dotCount === 1) {
+    const parts = trimmed.split('.');
+    if (parts[1].length === 3 && parts[0].length >= 1 && parts[0] !== '0') {
+      const num = parseFloat(parts[0] + parts[1]);
+      return isNaN(num) ? 0 : num;
+    }
+    const num = parseFloat(trimmed);
+    return isNaN(num) ? 0 : num;
+  }
+  const num = parseFloat(trimmed);
   return isNaN(num) ? 0 : num;
 }
 
@@ -59,7 +78,7 @@ function konversiRatusan(n: number): string {
 }
 
 export function terbilangRupiah(nominal: number | null | undefined): string {
-  if (nominal == null || isNaN(nominal) || nominal <= 0) return '';
+  if (nominal == null || isNaN(nominal) || nominal < 0) return '';
   const n = Math.round(nominal);
   if (n === 0) return 'Nol Rupiah';
 
@@ -75,7 +94,7 @@ export function terbilangRupiah(nominal: number | null | undefined): string {
   if (milyar > 0) bagian.push(konversiRatusan(milyar) + ' Miliar');
   if (juta > 0) bagian.push(konversiRatusan(juta) + ' Juta');
   if (ribu > 0) {
-    if (ribu === 1 && triliun === 0 && milyar === 0 && juta === 0) {
+    if (ribu === 1) {
       bagian.push('Seribu');
     } else {
       bagian.push(konversiRatusan(ribu) + ' Ribu');

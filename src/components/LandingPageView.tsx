@@ -1178,8 +1178,9 @@ export const LandingPageView: React.FC = () => {
   }, [setAppMode, setCurrentView]);
 
   const handleGoToDashboard = useCallback(() => {
+    setAppMode('IMPERSONATE');
     setCurrentView('dashboard');
-  }, [setCurrentView]);
+  }, [setAppMode, setCurrentView]);
 
   const handleGoToRfinB = useCallback(() => {
     setCurrentView('rfin-b-input');
@@ -1190,8 +1191,9 @@ export const LandingPageView: React.FC = () => {
   }, [setCurrentView]);
 
   const handleSelectModuleView = useCallback((view: any) => {
+    setAppMode('IMPERSONATE');
     setCurrentView(view);
-  }, [setCurrentView]);
+  }, [setAppMode, setCurrentView]);
 
   const handleNavigateToVerification = useCallback(() => {
     setCurrentView('verification');

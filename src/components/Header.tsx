@@ -374,12 +374,7 @@ export const Header: React.FC = () => {
           <img
             src="/words_PNG2.png"
             alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
-            className="h-8 sm:h-9 md:h-10 w-auto object-contain opacity-95 group-hover:opacity-100 transition-all shrink-0 dark:block hidden"
-          />
-          <img
-            src="/words_light.png"
-            alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
-            className="h-8 sm:h-9 md:h-10 w-auto object-contain opacity-95 group-hover:opacity-100 transition-all shrink-0 dark:hidden block"
+            className="h-8 sm:h-9 md:h-10 w-auto object-contain opacity-95 group-hover:opacity-100 transition-all shrink-0"
           />
         </button>
 
@@ -801,31 +796,26 @@ export const Header: React.FC = () => {
           </div>
         )}
 
-        {/* Toggle Mode Terang/Gelap (Khusus Mode Personal/Admin - Bebas Pengaturan di Impersonate) */}
-        {appMode !== 'IMPERSONATE' && (
-          <button
-            type="button"
-            onClick={toggleTheme}
-            aria-label={theme === 'dark' ? 'Beralih ke Mode Terang' : 'Beralih ke Mode Gelap'}
-            title={theme === 'dark' ? 'Beralih ke Mode Terang' : 'Beralih ke Mode Gelap'}
-            className="p-2 rounded-xl border border-slate-800 bg-slate-950 text-slate-300 hover:text-white hover:border-slate-700 transition-colors cursor-pointer"
-          >
-            {theme === 'dark' ? (
-              <Sun className="w-4 h-4 text-amber-400" />
-            ) : (
-              <Moon className="w-4 h-4 text-slate-300" />
-            )}
-          </button>
-        )}
+        {/* Toggle Mode Terang/Gelap (Tersedia di Semua Mode) */}
+        <button
+          type="button"
+          onClick={toggleTheme}
+          aria-label={theme === 'dark' ? 'Beralih ke Mode Terang' : 'Beralih ke Mode Gelap'}
+          title={theme === 'dark' ? 'Beralih ke Mode Terang' : 'Beralih ke Mode Gelap'}
+          className="p-2 rounded-xl border border-slate-800 bg-slate-950 text-slate-300 hover:text-white hover:border-slate-700 transition-colors cursor-pointer"
+        >
+          {theme === 'dark' ? (
+            <Sun className="w-4 h-4 text-amber-400" />
+          ) : (
+            <Moon className="w-4 h-4 text-slate-300" />
+          )}
+        </button>
 
         {/* FOTO PROFIL / AVATAR PENGGUNA BERDIRI SENDIRI DI TOPBAR */}
         {user.id && (
           <button
             type="button"
             onClick={() => {
-              if (appMode !== 'PERSONAL') {
-                setAppMode('PERSONAL');
-              }
               setCurrentView('settings');
             }}
             aria-label={`Profil ${user.name || user.email}`}

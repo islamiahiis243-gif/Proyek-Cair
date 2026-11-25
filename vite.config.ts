@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(() => {
   return {
-    envPrefix: ['VITE_', 'NEXT_PUBLIC_', 'SUPABASE_'],
+    envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

@@ -377,7 +377,9 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
 
         const targetWorkspaceId = isValidUuid((oldMutation as any)?.workspace_id)
           ? (oldMutation as any).workspace_id
-          : '50e273d9-735a-4f75-8204-badab2929f3a';
+          : isValidUuid((currentUser as any)?.workspace_id)
+          ? (currentUser as any).workspace_id
+          : null;
 
         if (client) {
           // B. Insert Baris Baru yang Sah Terlebih Dahulu
@@ -386,14 +388,14 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
             project_id: targetProjectId,
             workspace_id: targetWorkspaceId,
             receipt_id: activeReceiptId,
-            item_id: oldMutation.barang_id,
+            item_id: isValidUuid(oldMutation.barang_id) ? oldMutation.barang_id : null,
             transaction_type: 'MASUK',
             quantity: row.qty,
             uom: row.uom,
             occurred_at: oldMutation.tanggal || nowIso,
             reference_no: cleanReceiptNo,
             source_name: cleanStoreName,
-            counterparty: cleanStoreName,
+            counterparty: oldMutation.pic_penerima_penyerah || (oldMutation as any).counterparty || cleanStoreName,
             nama_toko: cleanStoreName,
             toko_kontak: storeContact.trim() || null,
             tanggal_nota: receiptDate ? new Date(receiptDate).toISOString() : nowIso,
@@ -406,6 +408,9 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
             purpose: oldMutation.tujuan_keperluan || oldMutation.purpose,
             owner_type: oldMutation.owner_type || 'KONTRAKTOR',
             beban_biaya: oldMutation.beban_biaya || 'PROYEK_BOQ',
+            is_custom_item: Boolean(oldMutation.is_custom_item),
+            po_id: oldMutation.po_id || null,
+            po_item_id: oldMutation.po_item_id || null,
             created_by_name: currentUser.name || 'Clerk',
             status_dokumen: 'DITERBITKAN',
             is_batal: false,
@@ -554,7 +559,7 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
               <button
                 type="button"
                 onClick={() => setFlowStep('FORM_NEW')}
-                className="p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-850 hover:border-blue-600 dark:hover:border-blue-400 hover:shadow-lg transition-all cursor-pointer flex flex-col justify-between group"
+                className="p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-600 dark:hover:border-blue-400 hover:shadow-lg transition-all cursor-pointer flex flex-col justify-between group"
               >
                 <div className="space-y-2.5">
                   <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 flex items-center justify-center group-hover:scale-110 transition-transform shadow-xs">
@@ -646,7 +651,7 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
                     <div
                       key={nota.id}
                       onClick={() => handleOpenInspectReceipt(nota)}
-                      className="group rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-850 hover:border-indigo-500 dark:hover:border-indigo-400 hover:shadow-xl transition-all p-3.5 flex flex-col justify-between cursor-pointer space-y-3"
+                      className="group rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-500 dark:hover:border-indigo-400 hover:shadow-xl transition-all p-3.5 flex flex-col justify-between cursor-pointer space-y-3"
                       title="Klik untuk memperbesar & memeriksa berkas fisik nota sebelum menautkan"
                     >
                       <div className="space-y-2">
@@ -1303,7 +1308,7 @@ export const BatchReceiptModal: React.FC<BatchReceiptModalProps> = ({
                       <div className="flex-1 flex items-center justify-center p-3 rounded-xl bg-slate-900/90 dark:bg-black/80 overflow-auto max-h-[58vh]">
                         {hasFiles ? (
                           isPdf ? (
-                            <div className="w-full h-[52vh] flex flex-col items-center justify-center gap-3 bg-white dark:bg-slate-850 rounded-lg p-4">
+                            <div className="w-full h-[52vh] flex flex-col items-center justify-center gap-3 bg-white dark:bg-slate-900 rounded-lg p-4">
                               <FileText className="w-16 h-16 text-rose-500" />
                               <div className="text-center">
                                 <div className="text-sm font-bold text-slate-800 dark:text-white">

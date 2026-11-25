@@ -11,6 +11,7 @@ import {
   MutasiKas,
   ProjectModuleCode,
   ProjectReceipt,
+  PurchaseOrder,
   StatusBuktiKas,
   StatusDokumenWorkflow,
   StatusKasbon,
@@ -467,6 +468,7 @@ export interface TerpaduReceiptIndex {
   paidRefsByNo: Map<string, Array<{ storeNorm: string; receiptId?: string }>>;
   paidPoIds: Set<string>;
   paidPoAmountById: Map<string, number>;
+  fullyPaidPoIds?: Set<string>;
 }
 
 export function normalizeReceiptRef(raw?: string | null): string {
@@ -644,12 +646,14 @@ export function isClientSuppliedStockMutation(
  */
 export function buildTerpaduReceiptIndex(
   projectReceipts: ProjectReceipt[],
-  cashMutations: MutasiKas[]
+  cashMutations: MutasiKas[],
+  purchaseOrders?: PurchaseOrder[]
 ): TerpaduReceiptIndex {
   const paidReceiptIds = new Set<string>();
   const paidRefsByNo = new Map<string, Array<{ storeNorm: string; receiptId?: string }>>();
   const paidPoIds = new Set<string>();
   const paidPoAmountById = new Map<string, number>();
+  let fullyPaidPoIds: Set<string> | undefined = undefined;
 
   const addRefEntry = (
     rawRef: string | undefined,
@@ -711,7 +715,25 @@ export function buildTerpaduReceiptIndex(
     }
   }
 
-  return { paidReceiptIds, paidRefsByNo, paidPoIds, paidPoAmountById };
+  if (purchaseOrders && purchaseOrders.length > 0) {
+    fullyPaidPoIds = new Set<string>();
+    for (const po of purchaseOrders) {
+      if (po.is_batal || po.is_ganti || po.status_dokumen === 'BATAL' || po.status_dokumen === 'DIGANTI') continue;
+      const totalPoRp =
+        Number(po.total_amount_rp) ||
+        (po.items || []).reduce(
+          (acc: number, it: any) =>
+            acc + (Number(it.qty_pesan || it.qty || 0) * Number(it.harga_satuan_po || it.harga_satuan || 0)),
+          0
+        );
+      const paidPoRp = paidPoAmountById.get(po.id) || 0;
+      if (totalPoRp > 0 && paidPoRp >= totalPoRp) {
+        fullyPaidPoIds.add(po.id);
+      }
+    }
+  }
+
+  return { paidReceiptIds, paidRefsByNo, paidPoIds, paidPoAmountById, fullyPaidPoIds };
 }
 
 function isReceiptPaidInIndex(
@@ -756,8 +778,11 @@ export function isStockMutationPaidViaCash(
   }
   if (isClientSuppliedStockMutation(mut, clientName)) return false;
 
-  if (mut.po_id && index.paidPoIds.has(mut.po_id)) {
-    return true;
+  if (mut.po_id) {
+    if (index.fullyPaidPoIds !== undefined) {
+      return index.fullyPaidPoIds.has(mut.po_id);
+    }
+    return index.paidPoIds.has(mut.po_id);
   }
 
   return isReceiptPaidInIndex(
