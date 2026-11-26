@@ -44,8 +44,8 @@ const AuthBrandingPanel: React.FC = React.memo(() => {
 
       {/* Bagian Atas: Banner Logo Resmi & Maskot 3D Kompak */}
       <div className="relative z-10 space-y-2 sm:space-y-2.5">
-        {/* Banner Resmi (words_PNG2.png) */}
-        <div className="w-full flex items-center justify-start">
+        {/* Banner Resmi (words_PNG2.png) - Rata Tengah Harmonis dengan Maskot 3D */}
+        <div className="w-full flex items-center justify-center">
           <img
             src="/words_PNG2.png"
             alt="Proyek Cair - Platform Operasional Proyek Konstruksi"
@@ -53,7 +53,7 @@ const AuthBrandingPanel: React.FC = React.memo(() => {
             decoding="async"
             width={280}
             height={95}
-            className="w-full max-w-[220px] sm:max-w-[250px] h-auto object-contain drop-shadow-xl"
+            className="w-full max-w-[220px] sm:max-w-[250px] h-auto object-contain drop-shadow-xl mx-auto"
           />
         </div>
 
