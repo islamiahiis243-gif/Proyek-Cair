@@ -11,6 +11,7 @@ import { RfinARequestView } from './components/RfinARequestView';
 import { RfinBInputView } from './components/RfinBInputView';
 import { NotificationBanner } from './components/NotificationBanner';
 import { AuthGate } from './components/AuthGate';
+import { LiveVoiceAssistantModal } from './components/LiveVoiceAssistantModal';
 import { ItemBarang, JenisMutasiBarang, JenisMutasiKas } from './types';
 
 // Code-splitting Lazy Loading untuk view-view besar demi optimasi INP (Interaction to Next Paint)
@@ -185,6 +186,9 @@ const MainApp: React.FC = () => {
           />
         )}
       </Suspense>
+
+      {/* Asisten Suara Mengambang Percakapan Langsung (Zero-Menu Live AI) */}
+      <LiveVoiceAssistantModal />
     </div>
   );
 };
