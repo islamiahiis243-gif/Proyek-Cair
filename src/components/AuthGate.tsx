@@ -8,9 +8,11 @@ import {
   Mail,
   Building2,
   ArrowRight,
+  ArrowLeft,
   Sparkles
 } from 'lucide-react';
 import { useSmartGesture } from '../hooks/useSmartGesture';
+import { PublicLandingView } from './PublicLandingView';
 
 /* =========================================================================
    PANEL BRANDING KIRI (ISOLASI REACT.MEMO - ZERO LATENCY PADA INPUT KEYUP)
@@ -125,6 +127,11 @@ AuthBrandingPanel.displayName = 'AuthBrandingPanel';
 export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [ready, setReady] = useState(false);
   const [authed, setAuthed] = useState(false);
+  const [showAuthForm, setShowAuthForm] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const p = new URLSearchParams(window.location.search);
+    return p.has('login') || p.has('auth') || p.has('signin') || p.has('signup');
+  });
   const [email, setEmail] = useState('');
   const [npwp, setNpwp] = useState('');
   const [password, setPassword] = useState('');
@@ -457,8 +464,48 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
   if (authed) return <>{children}</>;
 
+  // Bila pengguna belum terautentikasi dan tidak secara eksplisit membuka form login,
+  // sajikan Halaman Depan Publik (Landing Page) yang lengkap, informatif, dan persuasif.
+  if (!showAuthForm) {
+    return (
+      <PublicLandingView
+        onOpenAuth={(targetMode) => {
+          if (targetMode) setMode(targetMode);
+          setShowAuthForm(true);
+        }}
+        onNavigateToVerification={(docId) => {
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            if (docId) {
+              url.searchParams.set('verify_doc', docId);
+            } else {
+              url.searchParams.set('verify_doc', 'demo');
+            }
+            window.location.href = url.toString();
+          }
+        }}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-2 sm:p-4 lg:p-6 text-slate-100 selection:bg-blue-500 selection:text-white">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 p-2 sm:p-4 lg:p-6 text-slate-100 selection:bg-blue-500 selection:text-white">
+      {/* Tombol Cepat Kembali ke Halaman Depan Publik */}
+      <div className="w-full max-w-4xl lg:max-w-5xl mb-3 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setShowAuthForm(false)}
+          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-slate-800 bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold transition-all cursor-pointer shadow-xs"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Kembali ke Halaman Depan & Etalase Modul</span>
+        </button>
+        <span className="text-[11px] text-slate-500 hidden sm:inline-flex items-center gap-1">
+          <Lock className="w-3 h-3 text-emerald-400" />
+          <span>Portal Masuk Terenkripsi</span>
+        </span>
+      </div>
+
       {/* KARTU UTAMA DENGAN DUA KOLOM PROMOSI & LOGIN + SMART-GESTURE TOUCH */}
       <div 
         {...gestureProps}

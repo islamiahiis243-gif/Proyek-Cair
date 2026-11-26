@@ -336,7 +336,12 @@ CoretaxWelcomeCard.displayName = 'CoretaxWelcomeCard';
    3. SUBKOMPONEN 1: HERO SECTION (MEMOIZED & NON-BLOCKING DECODE)
    ========================================================================= */
 
-const HeroSection: React.FC = React.memo(() => {
+export interface HeroSectionProps {
+  onOpenAuth?: (mode: 'signin' | 'signup') => void;
+  onExploreModules?: () => void;
+}
+
+export const HeroSection: React.FC<HeroSectionProps> = React.memo(({ onOpenAuth, onExploreModules }) => {
   return (
     <section className="relative overflow-hidden rounded-3xl bg-linear-to-br from-slate-900 via-slate-900 to-blue-950 border border-slate-800 p-6 sm:p-10 lg:p-12 text-white shadow-2xl">
       <div className="absolute top-0 right-0 -mt-12 -mr-12 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -359,6 +364,36 @@ const HeroSection: React.FC = React.memo(() => {
             Selaraskan nota fisik toko, pantau realisasi BOQ secara presisi, dan sahkan berita acara 
             tanda tangan digital (TTE/QR) 4 jenjang dalam satu layar yang mudah bagi siapa saja.
           </p>
+
+          {/* Tombol Aksi Cepat Pengunjung Baru (Jika di Mode Publik) */}
+          {onOpenAuth && (
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => onOpenAuth('signin')}
+                className="px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-blue-600/30 transition-all cursor-pointer inline-flex items-center gap-2"
+              >
+                <span>Masuk ke Akun Anda</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenAuth('signup')}
+                className="px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs sm:text-sm border border-slate-700 transition-all cursor-pointer inline-flex items-center gap-2"
+              >
+                <span>Daftar Akun Baru</span>
+              </button>
+              {onExploreModules && (
+                <button
+                  type="button"
+                  onClick={onExploreModules}
+                  className="px-4 py-2.5 sm:py-3 text-slate-400 hover:text-slate-200 text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
+                >
+                  Lihat Etalase Modul ↓
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Kolom Kanan: Banner Branding Resmi (words_PNG2.png) */}
@@ -399,13 +434,13 @@ HeroSection.displayName = 'HeroSection';
    4. SUBKOMPONEN 2: ETALASE MODUL ODOO-STYLE (MEMOIZED CATALOG)
    ========================================================================= */
 
-interface ModuleCatalogSectionProps {
+export interface ModuleCatalogSectionProps {
   moduleFilter: 'ALL' | 'ACTIVE' | 'UPCOMING';
   onFilterChange: (filter: 'ALL' | 'ACTIVE' | 'UPCOMING') => void;
   onSelectView: (view: any) => void;
 }
 
-const ModuleCatalogSection: React.FC<ModuleCatalogSectionProps> = React.memo(({
+export const ModuleCatalogSection: React.FC<ModuleCatalogSectionProps> = React.memo(({
   moduleFilter,
   onFilterChange,
   onSelectView
@@ -543,13 +578,13 @@ ModuleCatalogSection.displayName = 'ModuleCatalogSection';
    5. SUBKOMPONEN 3: KALKULATOR SKEMA LISENSI RFIN-B (DENGAN useDeferredValue)
    ========================================================================= */
 
-interface PricingCalculatorSectionProps {
+export interface PricingCalculatorSectionProps {
   onGoToDashboard: () => void;
   onGoToRfinB: () => void;
   onGoToRfinA: () => void;
 }
 
-const PricingCalculatorSection: React.FC<PricingCalculatorSectionProps> = React.memo(({
+export const PricingCalculatorSection: React.FC<PricingCalculatorSectionProps> = React.memo(({
   onGoToDashboard,
   onGoToRfinB,
   onGoToRfinA
@@ -821,7 +856,7 @@ const COMPARISON_ITEMS = [
   }
 ];
 
-const ComparisonTableSection: React.FC = React.memo(() => {
+export const ComparisonTableSection: React.FC = React.memo(() => {
   const [activeIdx, setActiveIdx] = useState(0);
   const [viewMode, setViewMode] = useState<'table' | 'smart_card'>('table');
 
@@ -1009,12 +1044,12 @@ ComparisonTableSection.displayName = 'ComparisonTableSection';
    7. SUBKOMPONEN 5: WIDGET VERIFIKASI QR (ISOLATED FORM STATE)
    ========================================================================= */
 
-interface QuickVerifySectionProps {
+export interface QuickVerifySectionProps {
   documents: any[];
   onNavigateToVerification: () => void;
 }
 
-const QuickVerifySection: React.FC<QuickVerifySectionProps> = React.memo(({
+export const QuickVerifySection: React.FC<QuickVerifySectionProps> = React.memo(({
   documents,
   onNavigateToVerification
 }) => {
@@ -1104,7 +1139,7 @@ QuickVerifySection.displayName = 'QuickVerifySection';
    8. SUBKOMPONEN 6: CTA FOOTER PENUTUP (STATIC MEMO)
    ========================================================================= */
 
-const CallToActionFooter: React.FC<{ onGoToDashboard: () => void }> = React.memo(({ onGoToDashboard }) => {
+export const CallToActionFooter: React.FC<{ onGoToDashboard: () => void }> = React.memo(({ onGoToDashboard }) => {
   return (
     <section 
       style={{ contentVisibility: 'auto', containIntrinsicSize: '1px 160px' }}
