@@ -63,6 +63,8 @@ export async function testSupabaseConnection(_url?: string, _anonKey?: string): 
   }
 }
 
+import { CustomRolePermissions } from '../types';
+
 export interface ActiveContextPersona { persona_code:string; display_name:string; description:string }
 export interface ActiveContextWorkspace {
   id: string;
@@ -91,6 +93,7 @@ export interface ActiveContextProject {
   role_code?: string;
   role_name?: string;
   can_view_financials?: boolean;
+  custom_permissions?: CustomRolePermissions;
   permissions: string[];
 }
 export interface ActiveContext { authenticated:boolean; user_id?:string; is_platform_super_admin?:boolean; workspaces:ActiveContextWorkspace[]; projects:ActiveContextProject[] }

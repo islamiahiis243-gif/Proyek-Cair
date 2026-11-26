@@ -1,6 +1,31 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { KeyRound, Check, Copy, XCircle, RefreshCw, Send, AlertTriangle, ShieldCheck, Clock, Trash2, MoreVertical, UserX } from 'lucide-react';
+import {
+  KeyRound,
+  Check,
+  Copy,
+  XCircle,
+  RefreshCw,
+  Send,
+  AlertTriangle,
+  ShieldCheck,
+  Clock,
+  Trash2,
+  MoreVertical,
+  UserX,
+  Sparkles,
+  CheckCircle2,
+  FileEdit,
+  Search,
+  Award,
+  QrCode,
+  DollarSign,
+  Wallet,
+  Boxes,
+  FileCheck,
+  RotateCcw
+} from 'lucide-react';
 import { getSupabaseClient } from '../lib/supabase';
+import { CustomRolePermissions } from '../types';
 
 interface Project {
   id: string;
@@ -29,6 +54,98 @@ const ROLES = [
   { code: 'VIEWER', name: 'Viewer / Pengamat (Auditor, Konsultan, Pengawas Klien, Pendana)', desc: 'Akses pantau read-only: dasbor analitik, rekapitulasi, buku mutasi, dan ekspor PDF' }
 ];
 
+const ROLE_DEFAULT_PERMISSIONS: Record<string, CustomRolePermissions> = {
+  CLERK: {
+    canIssue: true,
+    canCheck: false,
+    canApprove: false,
+    canAcknowledge: false,
+    canInitiateBatalGanti: true,
+    canInstructBatalGanti: false,
+    canViewFinancials: true,
+    canManageCash: true,
+    canManageInventory: true,
+  },
+  FOREMAN: {
+    canIssue: false,
+    canCheck: true,
+    canApprove: false,
+    canAcknowledge: false,
+    canInitiateBatalGanti: false,
+    canInstructBatalGanti: true,
+    canViewFinancials: false,
+    canManageCash: false,
+    canManageInventory: true,
+  },
+  SUPERVISOR: {
+    canIssue: false,
+    canCheck: true,
+    canApprove: true,
+    canAcknowledge: false,
+    canInitiateBatalGanti: false,
+    canInstructBatalGanti: true,
+    canViewFinancials: true,
+    canManageCash: true,
+    canManageInventory: true,
+  },
+  DEPT_MANAGER: {
+    canIssue: false,
+    canCheck: false,
+    canApprove: true,
+    canAcknowledge: true,
+    canInitiateBatalGanti: false,
+    canInstructBatalGanti: true,
+    canViewFinancials: true,
+    canManageCash: true,
+    canManageInventory: true,
+  },
+  KTT_PM: {
+    canIssue: false,
+    canCheck: false,
+    canApprove: false,
+    canAcknowledge: true,
+    canInitiateBatalGanti: false,
+    canInstructBatalGanti: true,
+    canViewFinancials: true,
+    canManageCash: true,
+    canManageInventory: true,
+  },
+  CEO: {
+    canIssue: false,
+    canCheck: false,
+    canApprove: false,
+    canAcknowledge: true,
+    canInitiateBatalGanti: false,
+    canInstructBatalGanti: true,
+    canViewFinancials: true,
+    canManageCash: true,
+    canManageInventory: true,
+  },
+  VIEWER: {
+    canIssue: false,
+    canCheck: false,
+    canApprove: false,
+    canAcknowledge: false,
+    canInitiateBatalGanti: false,
+    canInstructBatalGanti: false,
+    canViewFinancials: false,
+    canManageCash: false,
+    canManageInventory: false,
+  },
+};
+
+const SOLO_CLERK_ALL_IN_ONE_PERMISSIONS: CustomRolePermissions = {
+  canIssue: true,
+  canCheck: true,
+  canApprove: true,
+  canAcknowledge: true,
+  canInitiateBatalGanti: true,
+  canInstructBatalGanti: true,
+  canViewFinancials: true,
+  canManageCash: true,
+  canManageInventory: true,
+};
+
 export const RfinBInvitationPanel: React.FC<{
   workspaceId: string;
   companyId: string;
@@ -45,7 +162,9 @@ export const RfinBInvitationPanel: React.FC<{
     return [];
   });
   const [expiryDays, setExpiryDays] = useState('7');
-  const [canViewFinancials, setCanViewFinancials] = useState(true);
+  const [customPermissions, setCustomPermissions] = useState<CustomRolePermissions>(() => ({
+    ...ROLE_DEFAULT_PERMISSIONS['CLERK']
+  }));
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -54,6 +173,42 @@ export const RfinBInvitationPanel: React.FC<{
   const [issuedCode, setIssuedCode] = useState('');
   const [copyState, setCopyState] = useState('');
   const [openMenuTokenId, setOpenMenuTokenId] = useState<string | null>(null);
+
+  // Perbarui wewenang saat peran dipilih (kecuali jika di-custom)
+  const handleRoleChange = (roleCode: string) => {
+    setSelectedRole(roleCode);
+    const defaults = ROLE_DEFAULT_PERMISSIONS[roleCode] || ROLE_DEFAULT_PERMISSIONS['CLERK'];
+    setCustomPermissions({ ...defaults });
+  };
+
+  const handleTogglePermission = (key: keyof CustomRolePermissions) => {
+    setCustomPermissions((prev) => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  // Preset 1: Klerk Mandiri Lapangan (Solo / All-in-One) - Solusi skala menengah-bawah
+  const handleApplySoloClerkPreset = () => {
+    setCustomPermissions({ ...SOLO_CLERK_ALL_IN_ONE_PERMISSIONS });
+    setNotice('Preset "Klerk Mandiri Lapangan (Solo / All-in-One)" diaktifkan: Wewenang penuh diberikan!');
+    setTimeout(() => setNotice(''), 3500);
+  };
+
+  // Preset 2: Standar Jabatan Baku
+  const handleApplyRoleDefaultPreset = () => {
+    const defaults = ROLE_DEFAULT_PERMISSIONS[selectedRole] || ROLE_DEFAULT_PERMISSIONS['CLERK'];
+    setCustomPermissions({ ...defaults });
+    setNotice(`Wewenang disetel ulang sesuai standar jabatan ${selectedRole}.`);
+    setTimeout(() => setNotice(''), 3000);
+  };
+
+  // Preset 3: Pengawas / Auditor (Read-Only)
+  const handleApplyReadOnlyPreset = () => {
+    setCustomPermissions({ ...ROLE_DEFAULT_PERMISSIONS['VIEWER'] });
+    setNotice('Preset "Pengawas / Read-Only" diaktifkan.');
+    setTimeout(() => setNotice(''), 3000);
+  };
 
   // Tutup dropdown jika klik di luar
   useEffect(() => {
@@ -117,17 +272,81 @@ export const RfinBInvitationPanel: React.FC<{
 
     setBusy(true);
     try {
-      const { data: code, error: rpcErr } = await db.rpc('issue_rfin_b', {
-        p_company_id: companyId,
-        p_recipient_email: email.trim().toLowerCase(),
-        p_role_code: selectedRole,
-        p_project_ids: selectedProjectIds,
-        p_expires_in: `${expiryDays} days`,
-        p_can_view_financials: canViewFinancials
-      });
+      let code: string | null = null;
+      let rpcErr: any = null;
 
-      if (rpcErr) throw rpcErr;
+      // 1. Coba panggil RPC dengan parameter custom_permissions
+      try {
+        const res = await db.rpc('issue_rfin_b', {
+          p_company_id: companyId,
+          p_recipient_email: email.trim().toLowerCase(),
+          p_role_code: selectedRole,
+          p_project_ids: selectedProjectIds,
+          p_expires_in: `${expiryDays} days`,
+          p_can_view_financials: Boolean(customPermissions.canViewFinancials),
+          p_custom_permissions: customPermissions
+        });
+        code = res.data;
+        rpcErr = res.error;
+      } catch (callErr) {
+        rpcErr = callErr;
+      }
+
+      // 2. Jika overload 7 parameter belum aktif di database, panggil dengan parameter dasar
+      if (rpcErr || !code) {
+        const fallbackRes = await db.rpc('issue_rfin_b', {
+          p_company_id: companyId,
+          p_recipient_email: email.trim().toLowerCase(),
+          p_role_code: selectedRole,
+          p_project_ids: selectedProjectIds,
+          p_expires_in: `${expiryDays} days`,
+          p_can_view_financials: Boolean(customPermissions.canViewFinancials)
+        });
+        code = fallbackRes.data;
+        if (fallbackRes.error) {
+          const f5 = await db.rpc('issue_rfin_b', {
+            p_company_id: companyId,
+            p_recipient_email: email.trim().toLowerCase(),
+            p_role_code: selectedRole,
+            p_project_ids: selectedProjectIds,
+            p_expires_in: `${expiryDays} days`
+          });
+          code = f5.data;
+          if (f5.error) throw f5.error;
+        }
+      }
+
       if (typeof code !== 'string') throw new Error('Gagal mendapatkan kode dari server.');
+
+      // 3. Simpan snapshot wewenang kustom langsung ke database rfin_tokens
+      const roleObj = ROLES.find((r) => r.code === selectedRole);
+      const roleName = roleObj ? roleObj.name : selectedRole;
+      try {
+        await db
+          .from('rfin_tokens')
+          .update({
+            snapshot: {
+              role_code: selectedRole,
+              personas: [{ name: roleName }],
+              project_ids: selectedProjectIds,
+              can_view_financials: Boolean(customPermissions.canViewFinancials),
+              custom_permissions: customPermissions
+            }
+          })
+          .eq('token_code', code);
+      } catch (snapErr) {
+        console.warn('Gagal update snapshot rfin_tokens:', snapErr);
+      }
+
+      // 4. Simpan ke local storage agar context aktif langsung mengenali wewenang kustom
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(`pc_rfin_b_custom_perms_${code}`, JSON.stringify(customPermissions));
+          for (const pid of selectedProjectIds) {
+            localStorage.setItem(`pc_project_custom_perms_${pid}`, JSON.stringify(customPermissions));
+          }
+        }
+      } catch {}
 
       setIssuedCode(code);
       setNotice(`Kode RFIN-B berhasil diterbitkan untuk ${email}!`);
@@ -367,7 +586,7 @@ export const RfinBInvitationPanel: React.FC<{
                         name="projectRole"
                         value={r.code}
                         checked={isSelected}
-                        onChange={() => setSelectedRole(r.code)}
+                        onChange={() => handleRoleChange(r.code)}
                         className="text-blue-600 focus:ring-blue-500"
                       />
                       <span className="text-xs font-bold text-slate-900 dark:text-white">{r.name}</span>
@@ -412,24 +631,248 @@ export const RfinBInvitationPanel: React.FC<{
             )}
           </div>
 
-          {/* Pengaturan Kewenangan Nominal & Finansial (Diatur CSA) */}
-          <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
-            <label className="flex items-start gap-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={canViewFinancials}
-                onChange={(e) => setCanViewFinancials(e.target.checked)}
-                className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-              />
+          {/* Pengaturan Wewenang Dinamis Lapangan & Kantor (Diatur CSA) */}
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-700/60 pb-3">
               <div>
-                <span className="text-xs font-bold text-slate-900 dark:text-white">
-                  Berikan Izin Akses Nominal & Finansial
-                </span>
-                <p className="text-[11px] text-slate-600 dark:text-slate-400 font-medium mt-0.5">
-                  Jika dicentang, anggota dapat melihat harga satuan nota, total belanja riil, dan nominal finansial proyek. Jika tidak dicentang, angka nominal akan disembunyikan.
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                    Pengaturan Wewenang Custom (Otoritas CSA)
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+                  Atur hak wewenang secara spesifik untuk penugasan ini, atau gunakan preset cepat di bawah.
                 </p>
               </div>
-            </label>
+
+              {/* Status Ringkasan Wewenang */}
+              <div className="flex items-center gap-1.5 self-start sm:self-auto">
+                {customPermissions.canCheck && customPermissions.canApprove && customPermissions.canAcknowledge ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                    <Sparkles className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                    Klerk Mandiri Lapangan (Solo)
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200">
+                    Wewenang Disesuaikan
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Smart Preset Bar */}
+            <div className="grid gap-2 sm:grid-cols-3">
+              {/* Preset 1: Solo Clerk All-in-One */}
+              <button
+                type="button"
+                onClick={handleApplySoloClerkPreset}
+                className="group flex flex-col text-left p-2.5 rounded-xl border border-emerald-300 bg-emerald-50/80 dark:border-emerald-700/70 dark:bg-emerald-950/30 hover:bg-emerald-100/80 dark:hover:bg-emerald-900/40 transition-all shadow-sm"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
+                    Klerk Mandiri Lapangan
+                  </span>
+                </div>
+                <span className="text-[10px] text-emerald-800/80 dark:text-emerald-300/80 mt-1 leading-snug">
+                  Wewenang lengkap input, periksa, setujui & TTE QR. Cocok untuk 1 klerk di lapangan tanpa multi-kursi.
+                </span>
+              </button>
+
+              {/* Preset 2: Sesuai Standar Jabatan */}
+              <button
+                type="button"
+                onClick={handleApplyRoleDefaultPreset}
+                className="flex flex-col text-left p-2.5 rounded-xl border border-blue-200 bg-blue-50/60 dark:border-blue-800/60 dark:bg-blue-950/20 hover:bg-blue-100/60 dark:hover:bg-blue-900/30 transition-all shadow-sm"
+              >
+                <div className="flex items-center gap-1.5">
+                  <RotateCcw className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  <span className="text-xs font-bold text-blue-900 dark:text-blue-200">
+                    Standar Jabatan Baku
+                  </span>
+                </div>
+                <span className="text-[10px] text-blue-800/80 dark:text-blue-300/80 mt-1 leading-snug">
+                  Reset wewenang sesuai hierarki baku standar peran {selectedRole} yang dipilih.
+                </span>
+              </button>
+
+              {/* Preset 3: Pengawas / Auditor */}
+              <button
+                type="button"
+                onClick={handleApplyReadOnlyPreset}
+                className="flex flex-col text-left p-2.5 rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-all shadow-sm"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Search className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
+                  <span className="text-xs font-bold text-slate-900 dark:text-slate-200">
+                    Pengawas (Read-Only)
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-600 dark:text-slate-400 mt-1 leading-snug">
+                  Hanya membaca laporan, tanpa izin membuat, memvalidasi, atau mengubah transaksi.
+                </span>
+              </button>
+            </div>
+
+            {/* 9 Interactive Authority Toggles */}
+            <div className="grid gap-3 pt-1">
+              {/* Grup 1: Alur Kerja & Pengesahan Dokumen */}
+              <div className="rounded-xl border border-slate-200/90 dark:border-slate-700/60 bg-white dark:bg-slate-900 p-3 space-y-2">
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide flex items-center gap-1.5">
+                  <FileCheck className="w-3.5 h-3.5 text-blue-500" />
+                  1. Alur Persetujuan & Pengesahan Dokumen (Workflow)
+                </span>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="flex items-start gap-2.5 p-2 rounded-lg border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(customPermissions.canIssue)}
+                      onChange={() => handleTogglePermission('canIssue')}
+                      className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-white">Input / Terbitkan Draft (Tahap 1)</span>
+                      <p className="text-[10px] text-slate-600 dark:text-slate-400">Dapat menginput mutasi kas, stok barang, atau dokumen arsip proyek.</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2.5 p-2 rounded-lg border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(customPermissions.canCheck)}
+                      onChange={() => handleTogglePermission('canCheck')}
+                      className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-white">Periksa Fisik Lapangan (Tahap 2)</span>
+                      <p className="text-[10px] text-slate-600 dark:text-slate-400">Dapat memvalidasi kecocokan fisik barang dan nota pengeluaran.</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2.5 p-2 rounded-lg border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(customPermissions.canApprove)}
+                      onChange={() => handleTogglePermission('canApprove')}
+                      className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-white">Setujui Dokumen (Tahap 3)</span>
+                      <p className="text-[10px] text-slate-600 dark:text-slate-400">Dapat menyetujui dokumen dan transaksi untuk diteruskan ke pengesahan.</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2.5 p-2 rounded-lg border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(customPermissions.canAcknowledge)}
+                      onChange={() => handleTogglePermission('canAcknowledge')}
+                      className="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-emerald-950 dark:text-emerald-300 flex items-center gap-1">
+                        Sahkan TTE & QR Code (Tahap 4)
+                        <QrCode className="w-3 h-3 text-emerald-600" />
+                      </span>
+                      <p className="text-[10px] text-slate-600 dark:text-slate-400">Dapat menandatangani resmi secara elektronik dan menerbitkan QR Code.</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Grup 2: Audit Trail Koreksi Batal / Ganti */}
+              <div className="rounded-xl border border-slate-200/90 dark:border-slate-700/60 bg-white dark:bg-slate-900 p-3 space-y-2">
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide flex items-center gap-1.5">
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-500" />
+                  2. Koreksi Transaksi (Zero-Delete Audit Trail)
+                </span>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="flex items-start gap-2.5 p-2 rounded-lg border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(customPermissions.canInitiateBatalGanti)}
+                      onChange={() => handleTogglePermission('canInitiateBatalGanti')}
+                      className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-white">Inisiasi Batal / Ganti (Draft Koreksi)</span>
+                      <p className="text-[10px] text-slate-600 dark:text-slate-400">Dapat mengajukan perbaikan kesalahan pencatatan transaksi lama.</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2.5 p-2 rounded-lg border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(customPermissions.canInstructBatalGanti)}
+                      onChange={() => handleTogglePermission('canInstructBatalGanti')}
+                      className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-white">Instruksikan / Putuskan Batal Ganti</span>
+                      <p className="text-[10px] text-slate-600 dark:text-slate-400">Dapat memutuskan pembatalan atau penggantian transaksi secara final.</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Grup 3: Akses Finansial & Modul Operasional */}
+              <div className="rounded-xl border border-slate-200/90 dark:border-slate-700/60 bg-white dark:bg-slate-900 p-3 space-y-2">
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide flex items-center gap-1.5">
+                  <Boxes className="w-3.5 h-3.5 text-indigo-500" />
+                  3. Modul Operasional & Akses Nilai Finansial
+                </span>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <label className="flex items-start gap-2.5 p-2 rounded-lg border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(customPermissions.canViewFinancials)}
+                      onChange={() => handleTogglePermission('canViewFinancials')}
+                      className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1">
+                        <DollarSign className="w-3 h-3 text-indigo-500" />
+                        Akses Nilai Finansial
+                      </span>
+                      <p className="text-[10px] text-slate-600 dark:text-slate-400">Dapat melihat harga nota, total belanja riil, dan nominal kas.</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2.5 p-2 rounded-lg border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(customPermissions.canManageCash)}
+                      onChange={() => handleTogglePermission('canManageCash')}
+                      className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1">
+                        <Wallet className="w-3 h-3 text-indigo-500" />
+                        Kelola Kas Proyek
+                      </span>
+                      <p className="text-[10px] text-slate-600 dark:text-slate-400">Dapat mengoperasikan buku kas, panjar, dan pencairan kas.</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2.5 p-2 rounded-lg border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(customPermissions.canManageInventory)}
+                      onChange={() => handleTogglePermission('canManageInventory')}
+                      className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1">
+                        <Boxes className="w-3 h-3 text-indigo-500" />
+                        Kelola Gudang Proyek
+                      </span>
+                      <p className="text-[10px] text-slate-600 dark:text-slate-400">Dapat mencatat penerimaan, pengeluaran & opname stok barang.</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="pt-2">
@@ -485,6 +928,50 @@ export const RfinBInvitationPanel: React.FC<{
                       <span>·</span>
                       <span>Kedaluwarsa: {new Date(inv.expires_at).toLocaleDateString('id-ID')}</span>
                     </div>
+
+                    {/* Badge Wewenang Dinamis */}
+                    {inv.snapshot?.custom_permissions && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                        {inv.snapshot.custom_permissions.canCheck &&
+                        inv.snapshot.custom_permissions.canApprove &&
+                        inv.snapshot.custom_permissions.canAcknowledge ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                            <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
+                            Klerk Solo Lapangan (All-in-One)
+                          </span>
+                        ) : (
+                          <>
+                            {inv.snapshot.custom_permissions.canIssue && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                Input
+                              </span>
+                            )}
+                            {inv.snapshot.custom_permissions.canCheck && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                                Periksa
+                              </span>
+                            )}
+                            {inv.snapshot.custom_permissions.canApprove && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                                Setujui
+                              </span>
+                            )}
+                            {inv.snapshot.custom_permissions.canAcknowledge && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                                TTE QR
+                              </span>
+                            )}
+                          </>
+                        )}
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${
+                          inv.snapshot.custom_permissions.canViewFinancials
+                            ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300'
+                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                        }`}>
+                          {inv.snapshot.custom_permissions.canViewFinancials ? 'Rp Terbuka' : 'Rp Disembunyikan'}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">

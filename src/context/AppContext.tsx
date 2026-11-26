@@ -25,6 +25,7 @@ import {
   PurchaseOrder,
   PurchaseOrderItem,
   SupplierStore,
+  CustomRolePermissions,
 } from '../types';
 import {
   getStoredConfig,
@@ -398,10 +399,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(ACTIVE_ROLE_KEY, role);
   };
 
-  const rolePermissions = getRolePermissions(activeRole);
-
   const activeProject = activeContext?.projects.find(p => p.id === activeProjectId && p.workspace_id === activeWorkspaceId) || null;
   const hasActiveProjectScope = Boolean(activeContext && activeProject && activeContext.projects.some(p => p.id === activeProject.id && p.workspace_id === activeWorkspaceId));
+
+  // Wewenang Dinamis: Menggabungkan wewenang standar peran + wewenang kustom yang diberikan CSA via RFIN-B
+  const rolePermissions = useMemo<RolePermissions>(() => {
+    const base = getRolePermissions(activeRole);
+    const projectCustom = activeProject?.custom_permissions;
+    let localCustom: any = null;
+    try {
+      if (typeof window !== 'undefined' && activeProject?.id) {
+        const stored = localStorage.getItem(`pc_project_custom_perms_${activeProject.id}`);
+        if (stored) localCustom = JSON.parse(stored);
+      }
+    } catch {}
+
+    const custom = projectCustom || localCustom;
+    if (custom && typeof custom === 'object') {
+      return {
+        canRead: true,
+        canIssue: custom.canIssue !== undefined ? Boolean(custom.canIssue) : base.canIssue,
+        canCheck: custom.canCheck !== undefined ? Boolean(custom.canCheck) : base.canCheck,
+        canApprove: custom.canApprove !== undefined ? Boolean(custom.canApprove) : base.canApprove,
+        canAcknowledge: custom.canAcknowledge !== undefined ? Boolean(custom.canAcknowledge) : base.canAcknowledge,
+        canInitiateBatalGanti: custom.canInitiateBatalGanti !== undefined ? Boolean(custom.canInitiateBatalGanti) : base.canInitiateBatalGanti,
+        canInstructBatalGanti: custom.canInstructBatalGanti !== undefined ? Boolean(custom.canInstructBatalGanti) : base.canInstructBatalGanti
+      };
+    }
+    return base;
+  }, [activeRole, activeProject?.id, activeProject?.custom_permissions]);
 
   const setActiveWorkspaceId = (id: string) => {
     setActiveWorkspaceIdState(prev => {
@@ -1238,15 +1264,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Alur Persetujuan Berjenjang (Berseri) Mutasi Barang — dengan validasi urutan serial ketat
+  // Alur Persetujuan Berjenjang (Berseri) Mutasi Barang — dengan validasi urutan serial ketat (Fleksibel Solo Clerk)
   const advanceStockWorkflow = async (id: string, nextStatus: StatusDokumenWorkflow) => {
     try {
       const client = getSupabaseClient();
       const targetRow = stockMutations.find((m) => m.id === id);
       if (!targetRow) throw new Error('Baris mutasi barang tidak ditemukan.');
       const currentStatus = targetRow.status_dokumen || 'DITERBITKAN';
-      const serialErr = validateSerialWorkflowTransition(currentStatus, nextStatus);
-      if (serialErr) throw new Error(serialErr);
+
+      // Jika memegang wewenang rangkap (Solo Clerk / Klerk Mandiri Lapangan), izinkan pengesahan langsung tanpa terkunci kursi ganda
+      const isSoloAllInOne = rolePermissions.canCheck && rolePermissions.canApprove && rolePermissions.canAcknowledge;
+      if (!isSoloAllInOne) {
+        const serialErr = validateSerialWorkflowTransition(currentStatus, nextStatus);
+        if (serialErr) throw new Error(serialErr);
+      }
 
       const payload: any = { status_dokumen: nextStatus };
       const actorTag = `${user.name} (${activeRole})`;
@@ -1259,6 +1290,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         payload.disetujui_oleh = actorTag;
       } else if (nextStatus === 'MENGETAHUI') {
         if (!rolePermissions.canAcknowledge) throw new Error('Jabatan Anda tidak memiliki hak untuk Mengesahkan (TTE/QR) dokumen ini.');
+        if (isSoloAllInOne) {
+          payload.diperiksa_oleh = payload.diperiksa_oleh || `${user.name} (Pemeriksa)`;
+          payload.disetujui_oleh = payload.disetujui_oleh || `${user.name} (Penyetuju)`;
+        }
         payload.mengetahui_oleh = actorTag;
         payload.tte_qr_code = `TTE-${activeCompany.npwp}-${id.slice(0, 8)}-${Date.now()}`;
       }
@@ -1706,15 +1741,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Alur Persetujuan Berjenjang (Berseri) Mutasi Kas — dengan validasi urutan serial ketat
+  // Alur Persetujuan Berjenjang (Berseri) Mutasi Kas — dengan validasi urutan serial ketat (Fleksibel Solo Clerk)
   const advanceCashWorkflow = async (id: string, nextStatus: StatusDokumenWorkflow) => {
     try {
       const client = getSupabaseClient();
       const targetRow = cashMutations.find((c) => c.id === id);
       if (!targetRow) throw new Error('Baris transaksi kas tidak ditemukan.');
       const currentStatus = targetRow.status_dokumen || 'DITERBITKAN';
-      const serialErr = validateSerialWorkflowTransition(currentStatus, nextStatus);
-      if (serialErr) throw new Error(serialErr);
+
+      // Jika memegang wewenang rangkap (Solo Clerk / Klerk Mandiri Lapangan), izinkan pengesahan langsung tanpa terkunci kursi ganda
+      const isSoloAllInOne = rolePermissions.canCheck && rolePermissions.canApprove && rolePermissions.canAcknowledge;
+      if (!isSoloAllInOne) {
+        const serialErr = validateSerialWorkflowTransition(currentStatus, nextStatus);
+        if (serialErr) throw new Error(serialErr);
+      }
 
       const payload: any = { status_dokumen: nextStatus };
       const actorTag = `${user.name} (${activeRole})`;
@@ -1727,6 +1767,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         payload.disetujui_oleh = actorTag;
       } else if (nextStatus === 'MENGETAHUI') {
         if (!rolePermissions.canAcknowledge) throw new Error('Jabatan Anda tidak memiliki hak untuk Mengesahkan (TTE/QR) dokumen ini.');
+        if (isSoloAllInOne) {
+          payload.diperiksa_oleh = payload.diperiksa_oleh || `${user.name} (Pemeriksa)`;
+          payload.disetujui_oleh = payload.disetujui_oleh || `${user.name} (Penyetuju)`;
+        }
         payload.mengetahui_oleh = actorTag;
         payload.tte_qr_code = `TTE-${activeCompany.npwp}-${id.slice(0, 8)}-${Date.now()}`;
       }
@@ -1896,7 +1940,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (serialErr) throw new Error(serialErr);
 
       const effectiveRole = customActorRole || activeRole;
-      const effectivePerms = getRolePermissions(effectiveRole);
+      const effectivePerms = customActorRole ? getRolePermissions(customActorRole) : rolePermissions;
+      const isSoloAllInOne = effectivePerms.canCheck && effectivePerms.canApprove && effectivePerms.canAcknowledge;
+      if (!isSoloAllInOne) {
+        const serialErr = validateSerialWorkflowTransition(targetPo.status_dokumen, nextStatus);
+        if (serialErr) throw new Error(serialErr);
+      }
+
       const actorTag = `${user.name} (${effectiveRole}) · ${new Date().toLocaleString('id-ID')}`;
       const payload: Record<string, any> = {
         status_dokumen: nextStatus,
@@ -1916,6 +1966,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else if (nextStatus === 'MENGETAHUI') {
         if (!effectivePerms.canAcknowledge) {
           throw new Error('Jabatan Anda tidak memiliki hak untuk Mengesahkan (TTE/QR) PO ini.');
+        }
+        if (isSoloAllInOne) {
+          payload.diperiksa_oleh = payload.diperiksa_oleh || `${user.name} (Pemeriksa)`;
+          payload.disetujui_oleh = payload.disetujui_oleh || `${user.name} (Penyetuju)`;
         }
         payload.mengetahui_oleh = actorTag;
         payload.tte_qr_code = `TTE-PO-${activeCompany.npwp || 'NA'}-${targetPo.po_no}-${Date.now()}`;
@@ -2379,7 +2433,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (serialErr) throw new Error(serialErr);
 
       const effectiveRole = customActorRole || activeRole;
-      const effectivePerms = getRolePermissions(effectiveRole);
+      const effectivePerms = customActorRole ? getRolePermissions(customActorRole) : rolePermissions;
+      const isSoloAllInOne = effectivePerms.canCheck && effectivePerms.canApprove && effectivePerms.canAcknowledge;
+      if (!isSoloAllInOne) {
+        const serialErr = validateSerialWorkflowTransition(currentStatus, nextStatus);
+        if (serialErr) throw new Error(serialErr);
+      }
+
       const actorTag = `${user.name} (${effectiveRole}) · ${new Date().toLocaleString('id-ID')}`;
       const payload: any = { status_dokumen: nextStatus };
 
@@ -2391,6 +2451,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         payload.disetujui_oleh = actorTag;
       } else if (nextStatus === 'MENGETAHUI') {
         if (!effectivePerms.canAcknowledge) throw new Error('Jabatan Anda tidak memiliki wewenang untuk Mengesahkan TTE/QR (Tahap 4) dokumen ini.');
+        if (isSoloAllInOne) {
+          payload.diperiksa_oleh = payload.diperiksa_oleh || `${user.name} (Pemeriksa)`;
+          payload.disetujui_oleh = payload.disetujui_oleh || `${user.name} (Penyetuju)`;
+        }
         payload.mengetahui_oleh = actorTag;
         payload.status = 'SIGNED';
         payload.tte_qr_code = `TTE-DOC-${activeCompany.npwp}-${docDbId.slice(0, 8).toUpperCase()}-${Date.now()}`;
@@ -2648,6 +2712,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (isCsa) return true;
 
     const currentProj = activeProject || activeContext?.projects.find(p => p.id === activeProjectId);
+    if (currentProj?.custom_permissions?.canViewFinancials !== undefined) {
+      return Boolean(currentProj.custom_permissions.canViewFinancials);
+    }
     if (currentProj && typeof currentProj.can_view_financials === 'boolean') {
       return currentProj.can_view_financials;
     }
