@@ -9,6 +9,9 @@ import {
   FileText,
   ShieldCheck,
   TrendingUp,
+  TrendingDown,
+  Scale,
+  CheckCircle2,
   PackageX,
   PackageCheck,
   Clock,
@@ -22,6 +25,8 @@ import {
   ArrowLeft,
   MoreVertical,
   Sparkles,
+  SlidersHorizontal,
+  Tag,
   X,
 } from 'lucide-react';
 import { formatRupiah, formatDateTime } from '../lib/pdfGenerator';
@@ -67,6 +72,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // State menu aksi cepat "Mau nyatat apa hari ini?"
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const actionMenuRef = useRef<HTMLDivElement>(null);
+
+  // State filter & ekspansi tabel deviasi harga satuan BOQ vs beli riil
+  const [varianceFilter, setVarianceFilter] = useState<'ALL' | 'HEMAT' | 'OVER_BUDGET' | 'OTHER'>('ALL');
+  const [isVarianceExpanded, setIsVarianceExpanded] = useState(false);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -284,6 +293,201 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       mainStoreName: mainStoreName || 'Penyedia Resmi'
     };
   }, [stockMutations, physicalMaterials, items, contractStats.material]);
+
+  // Kalkulasi Analisis Laba-Rugi Proyek & Deviasi Harga Satuan BOQ vs Beli Riil
+  const profitAndVarianceStats = useMemo(() => {
+    // 1. Kumpulkan harga riil material dari physicalMaterials
+    const materialPriceMap = new Map<string, number>();
+    (physicalMaterials || []).forEach((pm) => {
+      const price =
+        pm.harga_beli_rata_rata ||
+        pm.harga_beli_terakhir ||
+        (pm.total_qty_masuk > 0 && pm.total_nilai_belanja_riil != null && pm.total_nilai_belanja_riil > 0
+          ? Math.round(pm.total_nilai_belanja_riil / pm.total_qty_masuk)
+          : 0);
+      if (price > 0) {
+        materialPriceMap.set(pm.id, price);
+        materialPriceMap.set(pm.nama_barang.trim().toLowerCase(), price);
+      }
+    });
+
+    // 2. Agregasi mutasi masuk aktif non-batal non-klien
+    const materialAggrMap = new Map<
+      string,
+      {
+        nama_barang: string;
+        satuan: string;
+        totalQtyMasuk: number;
+        totalNilaiBeli: number;
+        barangId?: string;
+        hasExplicitPrice: boolean;
+      }
+    >();
+
+    stockMutations.forEach((m) => {
+      if (m.is_batal || m.is_ganti || m.status_dokumen === 'BATAL' || m.status_dokumen === 'DIGANTI') return;
+      if (m.jenis !== 'MASUK') return;
+      if (isClientProvidedRemark(m.tujuan_keperluan, tenantBranding.clientName)) return;
+      if (m.owner_type === 'KLIEN' || m.owner_type === 'IMK') return;
+
+      const normName = (m.nama_barang || '').trim().toLowerCase();
+      if (!normName) return;
+
+      const qty = Number(m.jumlah || 0);
+      const explicitPrice =
+        m.harga_satuan_beli != null && Number(m.harga_satuan_beli) > 0 ? Number(m.harga_satuan_beli) : null;
+      const fallbackPrice = materialPriceMap.get(m.barang_id) || materialPriceMap.get(normName) || 0;
+      const effectivePrice = explicitPrice ?? fallbackPrice;
+      const lineTotal = qty * effectivePrice;
+
+      if (!materialAggrMap.has(normName)) {
+        materialAggrMap.set(normName, {
+          nama_barang: m.nama_barang,
+          satuan: m.satuan || 'unit',
+          totalQtyMasuk: qty,
+          totalNilaiBeli: lineTotal,
+          barangId: m.barang_id,
+          hasExplicitPrice: explicitPrice != null && explicitPrice > 0,
+        });
+      } else {
+        const item = materialAggrMap.get(normName)!;
+        item.totalQtyMasuk += qty;
+        item.totalNilaiBeli += lineTotal;
+        if (!item.barangId && m.barang_id) item.barangId = m.barang_id;
+        if (explicitPrice != null && explicitPrice > 0) item.hasExplicitPrice = true;
+      }
+    });
+
+    // 3. Buat baris deviasi per item
+    interface LocalVarianceRow {
+      materialId: string;
+      namaBarang: string;
+      satuan: string;
+      kodeBoq?: string;
+      kategori?: string;
+      isStockItem: boolean;
+      totalQtyMasuk: number;
+      totalNilaiBeliRiil: number;
+      hargaSatuanBeliRiil: number;
+      hargaSatuanBoq: number;
+      selisihUnitRp: number;
+      selisihTotalRp: number;
+      persenMargin: number;
+      status: 'HEMAT' | 'OVER_BUDGET' | 'SESUAI' | 'BELUM_ADA_HARGA' | 'NON_BOQ';
+    }
+
+    const varianceRows: LocalVarianceRow[] = [];
+    let totalPenghematanRp = 0;
+    let totalPembengkakanRp = 0;
+
+    materialAggrMap.forEach((entry, normName) => {
+      const targetBoq = items.find((it) => {
+        if (entry.barangId && it.id === entry.barangId) return true;
+        const boqNorm = it.nama_barang.trim().toLowerCase();
+        return boqNorm === normName || normName.includes(boqNorm) || boqNorm.includes(normName);
+      });
+
+      const hargaBoq = targetBoq && Number(targetBoq.harga_satuan) > 0 ? Number(targetBoq.harga_satuan) : 0;
+      const hargaBeli =
+        entry.totalQtyMasuk > 0 && entry.totalNilaiBeli > 0
+          ? Math.round(entry.totalNilaiBeli / entry.totalQtyMasuk)
+          : 0;
+
+      let status: 'HEMAT' | 'OVER_BUDGET' | 'SESUAI' | 'BELUM_ADA_HARGA' | 'NON_BOQ' = 'SESUAI';
+      let selisihUnitRp = 0;
+      let selisihTotalRp = 0;
+      let persenMargin = 0;
+
+      if (hargaBeli <= 0) {
+        status = 'BELUM_ADA_HARGA';
+      } else if (hargaBoq <= 0) {
+        status = 'NON_BOQ';
+      } else if (hargaBeli < hargaBoq) {
+        status = 'HEMAT';
+        selisihUnitRp = hargaBoq - hargaBeli;
+        selisihTotalRp = selisihUnitRp * entry.totalQtyMasuk;
+        persenMargin = Math.round((selisihUnitRp / hargaBoq) * 1000) / 10;
+        totalPenghematanRp += selisihTotalRp;
+      } else if (hargaBeli > hargaBoq) {
+        status = 'OVER_BUDGET';
+        selisihUnitRp = hargaBoq - hargaBeli; // Negatif
+        selisihTotalRp = selisihUnitRp * entry.totalQtyMasuk; // Negatif
+        persenMargin = Math.round((selisihUnitRp / hargaBoq) * 1000) / 10;
+        totalPembengkakanRp += Math.abs(selisihTotalRp);
+      } else {
+        status = 'SESUAI';
+      }
+
+      varianceRows.push({
+        materialId: entry.barangId || normName,
+        namaBarang: entry.nama_barang,
+        satuan: entry.satuan,
+        kodeBoq: targetBoq?.kode_boq,
+        kategori: targetBoq?.kategori,
+        isStockItem: targetBoq ? targetBoq.is_stock_item : true,
+        totalQtyMasuk: entry.totalQtyMasuk,
+        totalNilaiBeliRiil: entry.totalNilaiBeli,
+        hargaSatuanBeliRiil: hargaBeli,
+        hargaSatuanBoq: hargaBoq,
+        selisihUnitRp,
+        selisihTotalRp,
+        persenMargin,
+        status,
+      });
+    });
+
+    // Urutkan: nominal selisih absolut terbesar paling atas
+    varianceRows.sort((a, b) => Math.abs(b.selisihTotalRp) - Math.abs(a.selisihTotalRp));
+
+    const hematCount = varianceRows.filter((r) => r.status === 'HEMAT').length;
+    const overCount = varianceRows.filter((r) => r.status === 'OVER_BUDGET').length;
+    const otherCount = varianceRows.filter((r) => r.status !== 'HEMAT' && r.status !== 'OVER_BUDGET').length;
+    const netEfisiensiBelanjaRp = totalPenghematanRp - totalPembengkakanRp;
+
+    // 4. Kalkulasi P&L Proyek Terpadu
+    const nilaiKontrakBoq = contractStats.total || 0;
+    const totalRealisasiMaterial = materialFinancialStats.totalInValue || 0;
+    const totalRealisasiKasLainnya = Math.max(0, cashSummaryMetrics.totalKeluarAktif);
+    const totalBiayaRiilProyek = totalRealisasiMaterial + totalRealisasiKasLainnya;
+    const proyeksiLabaBersih = nilaiKontrakBoq - totalBiayaRiilProyek;
+    const marginLabaPersen = nilaiKontrakBoq > 0 ? (proyeksiLabaBersih / nilaiKontrakBoq) * 100 : 0;
+
+    return {
+      varianceRows,
+      hematCount,
+      overCount,
+      otherCount,
+      totalPenghematanRp,
+      totalPembengkakanRp,
+      netEfisiensiBelanjaRp,
+      nilaiKontrakBoq,
+      totalRealisasiMaterial,
+      totalRealisasiKasLainnya,
+      totalBiayaRiilProyek,
+      proyeksiLabaBersih,
+      marginLabaPersen,
+    };
+  }, [
+    physicalMaterials,
+    stockMutations,
+    items,
+    tenantBranding.clientName,
+    contractStats.total,
+    materialFinancialStats.totalInValue,
+    cashSummaryMetrics.totalKeluarAktif,
+  ]);
+
+  const displayedVarianceRows = useMemo(() => {
+    let rows = profitAndVarianceStats.varianceRows;
+    if (varianceFilter === 'HEMAT') {
+      rows = rows.filter((r) => r.status === 'HEMAT');
+    } else if (varianceFilter === 'OVER_BUDGET') {
+      rows = rows.filter((r) => r.status === 'OVER_BUDGET');
+    } else if (varianceFilter === 'OTHER') {
+      rows = rows.filter((r) => r.status !== 'HEMAT' && r.status !== 'OVER_BUDGET');
+    }
+    return isVarianceExpanded ? rows : rows.slice(0, 4);
+  }, [profitAndVarianceStats.varianceRows, varianceFilter, isVarianceExpanded]);
 
   return (
     <div className="space-y-6">
@@ -973,6 +1177,358 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
 
+      {/* Analisis Laba – Rugi & Deviasi Harga Satuan BOQ (Hanya untuk Internal / Non-Viewer) */}
+      {!isViewer && (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
+          {/* Header Bagian */}
+          <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+                <Scale className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                    Analisis Laba – Rugi &amp; Deviasi Harga Satuan BOQ
+                  </h2>
+                  <span
+                    className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      profitAndVarianceStats.proyeksiLabaBersih >= 0
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+                        : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800'
+                    }`}
+                  >
+                    {profitAndVarianceStats.proyeksiLabaBersih >= 0 ? (
+                      <TrendingUp className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                    ) : (
+                      <TrendingDown className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+                    )}
+                    <span>
+                      {profitAndVarianceStats.proyeksiLabaBersih >= 0 ? 'Surplus Laba' : 'Defisit Anggaran'} (
+                      {profitAndVarianceStats.marginLabaPersen.toFixed(1)}%)
+                    </span>
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Membandingkan akumulasi pengeluaran terhadap kontrak BOQ serta mendeteksi penghematan / pembengkakan harga beli riil per unit material.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start md:self-auto">
+              <button
+                type="button"
+                onClick={() => setCurrentView('boq-monitoring')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/80 text-xs font-bold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+              >
+                <span>Buka Master BOQ</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* 4 Kartu Metrik Laba Rugi */}
+          <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 bg-slate-50/60 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-800">
+            {/* Metrik 1: Nilai Kontrak BOQ Kontraktor */}
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Pagu Kontrak BOQ Kontraktor
+              </span>
+              <div className="mt-1.5 text-lg font-bold font-mono tracking-tight text-slate-900 dark:text-white tabular-nums">
+                {formatRupiah(profitAndVarianceStats.nilaiKontrakBoq)}
+              </div>
+              <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-1.5">
+                <span>Material: {formatRupiah(contractStats.material)}</span>
+                <span>Upah: {formatRupiah(contractStats.manpower)}</span>
+              </div>
+            </div>
+
+            {/* Metrik 2: Total Realisasi Beban Riil */}
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Total Realisasi Beban Riil
+              </span>
+              <div className="mt-1.5 text-lg font-bold font-mono tracking-tight text-rose-700 dark:text-rose-400 tabular-nums">
+                {formatRupiah(profitAndVarianceStats.totalBiayaRiilProyek)}
+              </div>
+              <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-1.5">
+                <span>Belanja: {formatRupiah(profitAndVarianceStats.totalRealisasiMaterial)}</span>
+                <span>Kas/Upah: {formatRupiah(profitAndVarianceStats.totalRealisasiKasLainnya)}</span>
+              </div>
+            </div>
+
+            {/* Metrik 3: Proyeksi Laba Bersih Berjalan */}
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Proyeksi Laba Berjalan
+              </span>
+              <div
+                className={`mt-1.5 text-lg font-bold font-mono tracking-tight tabular-nums ${
+                  profitAndVarianceStats.proyeksiLabaBersih >= 0
+                    ? 'text-emerald-700 dark:text-emerald-400'
+                    : 'text-rose-700 dark:text-rose-400'
+                }`}
+              >
+                {profitAndVarianceStats.proyeksiLabaBersih >= 0 ? '+' : ''}
+                {formatRupiah(profitAndVarianceStats.proyeksiLabaBersih)}
+              </div>
+              <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-1.5">
+                <span>Margin Kontrak:</span>
+                <span
+                  className={`font-mono font-bold ${
+                    profitAndVarianceStats.marginLabaPersen >= 0
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-rose-600 dark:text-rose-400'
+                  }`}
+                >
+                  {profitAndVarianceStats.marginLabaPersen.toFixed(1)}%
+                </span>
+              </div>
+            </div>
+
+            {/* Metrik 4: Efisiensi Harga Satuan Material */}
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Efisiensi Harga Satuan Material
+              </span>
+              <div
+                className={`mt-1.5 text-lg font-bold font-mono tracking-tight tabular-nums ${
+                  profitAndVarianceStats.netEfisiensiBelanjaRp >= 0
+                    ? 'text-teal-700 dark:text-teal-400'
+                    : 'text-amber-700 dark:text-amber-400'
+                }`}
+              >
+                {profitAndVarianceStats.netEfisiensiBelanjaRp >= 0 ? '+' : ''}
+                {formatRupiah(profitAndVarianceStats.netEfisiensiBelanjaRp)}
+              </div>
+              <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-1.5">
+                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                  ✓ {profitAndVarianceStats.hematCount} Hemat
+                </span>
+                <span className="text-rose-600 dark:text-rose-400 font-semibold">
+                  {profitAndVarianceStats.overCount > 0 ? `⚠ ${profitAndVarianceStats.overCount} Over Pagu` : '0 Over Pagu'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Subheader Tabel & Filter Cepat */}
+          <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900">
+            <div className="flex items-center gap-2">
+              <Tag className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                Rincian Deviasi Harga Satuan Material (Acuan BOQ vs Riil Nota):
+              </span>
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex flex-wrap items-center gap-1 text-[11px]">
+              <button
+                type="button"
+                onClick={() => setVarianceFilter('ALL')}
+                className={`px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer ${
+                  varianceFilter === 'ALL'
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                Semua ({profitAndVarianceStats.varianceRows.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setVarianceFilter('HEMAT')}
+                className={`px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer flex items-center gap-1 ${
+                  varianceFilter === 'HEMAT'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                }`}
+              >
+                <span>🟢 Hemat</span>
+                <span className="font-mono">({profitAndVarianceStats.hematCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setVarianceFilter('OVER_BUDGET')}
+                className={`px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer flex items-center gap-1 ${
+                  varianceFilter === 'OVER_BUDGET'
+                    ? 'bg-rose-600 text-white'
+                    : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/50'
+                }`}
+              >
+                <span>🔴 Over Pagu</span>
+                <span className="font-mono">({profitAndVarianceStats.overCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setVarianceFilter('OTHER')}
+                className={`px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer ${
+                  varianceFilter === 'OTHER'
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                Lainnya ({profitAndVarianceStats.otherCount})
+              </button>
+            </div>
+          </div>
+
+          {/* Tabel Rincian Deviasi Harga Satuan */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-100/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-bold uppercase tracking-wider text-[10px]">
+                  <th className="py-2.5 px-4">Nama Material &amp; Satuan</th>
+                  <th className="py-2.5 px-3 text-center">Vol. Masuk</th>
+                  <th className="py-2.5 px-3.5 text-right">Harga Satuan BOQ</th>
+                  <th className="py-2.5 px-3.5 text-right">Harga Beli Riil</th>
+                  <th className="py-2.5 px-3.5 text-right">Deviasi / Unit</th>
+                  <th className="py-2.5 px-4 text-right">Dampak Total Untung/(Rugi)</th>
+                  <th className="py-2.5 px-3 text-center">Status Efisiensi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {displayedVarianceRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
+                      Tidak ada material dalam kategori filter ini.
+                    </td>
+                  </tr>
+                ) : (
+                  displayedVarianceRows.map((row) => {
+                    const isHemat = row.status === 'HEMAT';
+                    const isOver = row.status === 'OVER_BUDGET';
+                    const isNonBoq = row.status === 'NON_BOQ';
+                    const isNoPrice = row.status === 'BELUM_ADA_HARGA';
+
+                    return (
+                      <tr
+                        key={row.materialId}
+                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                      >
+                        <td className="py-3 px-4">
+                          <div className="font-semibold text-slate-900 dark:text-white">
+                            {row.namaBarang}
+                          </div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
+                            {row.kodeBoq && (
+                              <span className="font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded font-bold">
+                                {row.kodeBoq}
+                              </span>
+                            )}
+                            <span>{row.kategori || 'Material Proyek'}</span>
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-3 text-center font-mono text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                          {row.totalQtyMasuk.toLocaleString('id-ID')} {row.satuan}
+                        </td>
+
+                        <td className="py-3 px-3.5 text-right font-mono text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                          {row.hargaSatuanBoq > 0 ? (
+                            formatRupiah(row.hargaSatuanBoq)
+                          ) : (
+                            <span className="text-slate-400">Non-BOQ</span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-3.5 text-right font-mono font-semibold text-slate-900 dark:text-white whitespace-nowrap">
+                          {row.hargaSatuanBeliRiil > 0 ? (
+                            formatRupiah(row.hargaSatuanBeliRiil)
+                          ) : (
+                            <span className="text-amber-600 dark:text-amber-400 text-[11px]">Nota Menyusul</span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-3.5 text-right font-mono whitespace-nowrap">
+                          {isHemat ? (
+                            <div>
+                              <div className="font-bold text-emerald-600 dark:text-emerald-400">
+                                +{formatRupiah(row.selisihUnitRp)}
+                              </div>
+                              <div className="text-[10px] text-emerald-700 dark:text-emerald-300 font-semibold">
+                                Hemat {row.persenMargin}%
+                              </div>
+                            </div>
+                          ) : isOver ? (
+                            <div>
+                              <div className="font-bold text-rose-600 dark:text-rose-400">
+                                {formatRupiah(row.selisihUnitRp)}
+                              </div>
+                              <div className="text-[10px] text-rose-700 dark:text-rose-300 font-semibold">
+                                Boros {Math.abs(row.persenMargin)}%
+                              </div>
+                            </div>
+                          ) : isNoPrice ? (
+                            <span className="text-slate-400">—</span>
+                          ) : (
+                            <span className="text-slate-500 font-medium">Sesuai (0%)</span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-4 text-right font-mono whitespace-nowrap">
+                          {isHemat ? (
+                            <span className="font-bold text-emerald-700 dark:text-emerald-300">
+                              +{formatRupiah(row.selisihTotalRp)}
+                            </span>
+                          ) : isOver ? (
+                            <span className="font-bold text-rose-700 dark:text-rose-300">
+                              {formatRupiah(row.selisihTotalRp)}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">Rp 0</span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-3 text-center whitespace-nowrap">
+                          {isHemat ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800">
+                              ✓ Hemat
+                            </span>
+                          ) : isOver ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800">
+                              ⚠ Over Pagu
+                            </span>
+                          ) : isNoPrice ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800">
+                              Belum Berharga
+                            </span>
+                          ) : isNonBoq ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
+                              Non-BOQ
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
+                              Sesuai Target
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Footer Ekspansi / Ciutkan */}
+          {profitAndVarianceStats.varianceRows.length > 4 && (
+            <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between text-xs">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                Menampilkan {displayedVarianceRows.length} dari {profitAndVarianceStats.varianceRows.length} material yang telah masuk gudang.
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsVarianceExpanded((prev) => !prev)}
+                className="inline-flex items-center gap-1 font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 cursor-pointer"
+              >
+                <span>{isVarianceExpanded ? 'Ciutkan Baris' : `Tampilkan Seluruh ${profitAndVarianceStats.varianceRows.length} Material`}</span>
+                <ChevronRight className={`w-3.5 h-3.5 transition-transform ${isVarianceExpanded ? '-rotate-90' : 'rotate-90'}`} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Two-Column Analytics: Recent Stock vs Recent Cash Mutations */}
       <div className={`grid grid-cols-1 ${isViewer ? 'lg:grid-cols-1' : 'lg:grid-cols-2'} gap-6`}>
         {/* Left: Recent Stock Mutations */}
@@ -997,7 +1553,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 Belum ada transaksi mutasi barang.
               </div>
             ) : (
-              stockMutations.slice(0, 5).map((mut) => (
+              stockMutations.slice(0, 2).map((mut) => (
                 <div key={mut.id} className="p-3.5 hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
                     <div
@@ -1066,7 +1622,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   {cashAccess?'Belum ada transaksi kas.':'Data kas tidak tersedia untuk role akun ini.'}
                 </div>
               ) : (
-                cashMutations.slice(0, 5).map((c) => {
+                cashMutations.slice(0, 2).map((c) => {
                   const excluded = isCashRowExcluded(c);
                   return (
                   <div key={c.id} className={`p-3.5 hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-between gap-3 ${excluded ? 'opacity-55' : ''}`}>
