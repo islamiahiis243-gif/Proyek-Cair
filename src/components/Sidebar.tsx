@@ -291,8 +291,8 @@ export const Sidebar: React.FC = () => {
             type="button"
             onClick={toggleCollapsed}
             className="hidden md:flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            title={isCollapsed ? 'Luaskan Bilah Sisi (Expand)' : 'Ciutkan Bilah Sisi (Collapse)'}
-            aria-label={isCollapsed ? 'Luaskan Bilah Sisi' : 'Ciutkan Bilah Sisi'}
+            title={isCollapsed ? 'Perluas Menu Samping' : 'Ciutkan Menu Samping'}
+            aria-label={isCollapsed ? 'Perluas Menu Samping' : 'Ciutkan Menu Samping'}
           >
             {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </button>
@@ -387,9 +387,9 @@ export const Sidebar: React.FC = () => {
             <button
               type="button"
               onClick={toggleCollapsed}
-              aria-label="Luaskan Bilah Sisi"
+              aria-label="Perluas Menu Samping"
               className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              title="Luaskan Bilah Sisi (Expand)"
+              title="Perluas Menu Samping"
             >
               <ChevronRight className="h-4 w-4" />
             </button>

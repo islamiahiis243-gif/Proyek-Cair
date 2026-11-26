@@ -2690,7 +2690,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                         </div>
                       </div>
 
-                      {/* KONTAINER 4 (VIEWER): KEWAJIBAN FREE-ISSUE KLIEN */}
+                      {/* KONTAINER 4 (VIEWER): KEWAJIBAN JATAH KLIEN */}
                       <div className="bg-purple-950/40 p-4 rounded-xl border border-purple-800/40 flex flex-col justify-between">
                         <div>
                           <div className="flex items-center justify-between gap-1 text-[10px] uppercase font-bold text-purple-300 tracking-wider">

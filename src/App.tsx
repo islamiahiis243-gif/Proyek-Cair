@@ -190,6 +190,31 @@ const MainApp: React.FC = () => {
 };
 
 export default function App() {
+  const [publicVerifyId, setPublicVerifyId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get('verify_doc');
+  });
+
+  if (publicVerifyId) {
+    return (
+      <AppProvider>
+        <Suspense fallback={<ViewFallback />}>
+          <div className="min-h-screen bg-slate-50 dark:bg-slate-950 p-3 sm:p-6 lg:p-8">
+            <VerificationPortal
+              publicDocId={publicVerifyId}
+              onExitToAuth={() => {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('verify_doc');
+                window.history.replaceState({}, '', url.toString());
+                setPublicVerifyId(null);
+              }}
+            />
+          </div>
+        </Suspense>
+      </AppProvider>
+    );
+  }
+
   return (
     <AuthGate>
       <AppProvider>

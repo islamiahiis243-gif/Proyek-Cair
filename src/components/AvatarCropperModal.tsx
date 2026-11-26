@@ -358,13 +358,10 @@ export const AvatarCropperModal: React.FC<AvatarCropperModalProps> = ({
       const scaleMultiplier = outSize / previewCropDiameter;
 
       ctx.save();
-      // Center of output canvas
-      ctx.translate(outSize / 2, outSize / 2);
+      // Center of output canvas + pan scaled to output canvas (sama persis dengan preview canvas)
+      ctx.translate(outSize / 2 + pan.x * scaleMultiplier, outSize / 2 + pan.y * scaleMultiplier);
       ctx.rotate((rotation * Math.PI) / 180);
       ctx.scale(zoom * scaleMultiplier, zoom * scaleMultiplier);
-
-      // Translate pan proportional to scaling
-      ctx.translate(pan.x / (previewCropDiameter / outSize), pan.y / (previewCropDiameter / outSize));
 
       let drawWidth = previewCropDiameter;
       let drawHeight = previewCropDiameter;

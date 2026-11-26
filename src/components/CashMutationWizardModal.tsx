@@ -214,6 +214,8 @@ export const CashMutationWizardModal: React.FC<CashMutationWizardModalProps> = (
       beban_biaya: deriveBebanBiayaFromCategory(nextJenis, nextCat),
       linked_stock_receipt: null,
       receipt_id: undefined,
+      kasbon_induk_id: undefined,
+      boq_item_id: undefined,
       source_module: 'KAS_LANGSUNG',
       source_entity_id: undefined,
       source_entity_no: undefined,
@@ -227,6 +229,10 @@ export const CashMutationWizardModal: React.FC<CashMutationWizardModalProps> = (
       ...prev,
       kategori_keperluan: cat,
       beban_biaya: deriveBebanBiayaFromCategory(prev.jenis, cat),
+      kasbon_induk_id: cat === 'Pengembalian Panjar' ? prev.kasbon_induk_id : undefined,
+      linked_stock_receipt: (cat === 'Material' || cat === 'Talangan Klien') ? prev.linked_stock_receipt : null,
+      receipt_id: (cat === 'Material' || cat === 'Talangan Klien') ? prev.receipt_id : undefined,
+      boq_item_id: (cat === 'Material' || cat === 'Upah & Konsumsi' || cat === 'Sewa Alat & Angkut') ? prev.boq_item_id : undefined,
     }));
     setStepError(null);
   };

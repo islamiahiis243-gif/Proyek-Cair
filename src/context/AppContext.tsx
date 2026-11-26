@@ -314,8 +314,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeProjectId, setActiveProjectIdState] = useState(() => localStorage.getItem('udu_active_project') || '');
   const [user, setUser] = useState<UserProfile>(() => getStoredUser());
   const [supabaseConfig] = useState<SupabaseConfig>(() => getStoredConfig());
-  const [currentView, setCurrentViewRaw] = useState('landing');
-  const [viewHistory, setViewHistory] = useState<string[]>(['landing']);
+  const initialVerifyDoc = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('verify_doc') || null
+    : null;
+  const [currentView, setCurrentViewRaw] = useState(initialVerifyDoc ? 'verification' : 'landing');
+  const [viewHistory, setViewHistory] = useState<string[]>([initialVerifyDoc ? 'verification' : 'landing']);
 
   const setCurrentView = useCallback((view: string) => {
     startTransition(() => {
@@ -344,7 +347,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const previousView = viewHistory.length > 1 ? viewHistory[viewHistory.length - 2] : null;
-  const [verifyingDocId, setVerifyingDocId] = useState<string | null>(null);
+  const [verifyingDocId, setVerifyingDocId] = useState<string | null>(initialVerifyDoc);
   const [cashTargetTab, setCashTargetTab] = useState<CashflowTabKey | null>(null);
   const [stockTargetTab, setStockTargetTab] = useState<string | null>(null);
   const [procurementTargetTab, setProcurementTargetTab] = useState<ProcurementTabKey | null>(null);

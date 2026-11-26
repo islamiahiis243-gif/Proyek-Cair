@@ -180,8 +180,16 @@ export const RfinBInvitationPanel: React.FC<{
     setError('');
     setNotice('');
     try {
+      let rpcSuccess = false;
       const { data, error: rpcErr } = await db.rpc('revoke_rfin_invitation', { p_token_id: inv.token_id });
-      if (rpcErr || !data?.ok) {
+      if (!rpcErr && data?.ok) {
+        rpcSuccess = true;
+      } else {
+        const { error: fErr } = await db.rpc('revoke_rfin', { p_token_id: inv.token_id });
+        if (!fErr) rpcSuccess = true;
+      }
+
+      if (!rpcSuccess) {
         // Fallback langsung update project_memberships
         const roleCode = inv.snapshot?.role_code;
         const projectIds: string[] = inv.snapshot?.project_ids || [];

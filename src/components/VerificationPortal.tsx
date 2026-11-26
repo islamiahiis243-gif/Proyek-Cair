@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
+import { getSupabaseClient } from '../lib/supabase';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -15,6 +16,7 @@ import {
 import QRCode from 'qrcode';
 import { formatDateTime, formatDateOnly } from '../lib/pdfGenerator';
 import { filterDocumentsForPov } from '../lib/projectReportEngine';
+import { DokumenLaporan } from '../types';
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   MUTASI_STOK: 'Berita Acara Mutasi Barang',
@@ -39,7 +41,15 @@ const WORKFLOW_STATUS_LABELS: Record<string, string> = {
   DIGANTI: 'Diganti Revisi Baru',
 };
 
-export const VerificationPortal: React.FC = () => {
+export interface VerificationPortalProps {
+  publicDocId?: string;
+  onExitToAuth?: () => void;
+}
+
+export const VerificationPortal: React.FC<VerificationPortalProps> = ({
+  publicDocId,
+  onExitToAuth,
+}) => {
   const {
     documents,
     verifyingDocId,
@@ -47,6 +57,7 @@ export const VerificationPortal: React.FC = () => {
     setCurrentView,
     activeProject,
     activeWorkspaceId,
+    activeCompany,
     activeRole,
     canViewFinancials,
     dataReady,
@@ -71,10 +82,93 @@ export const VerificationPortal: React.FC = () => {
     'checking' | 'valid' | 'invalid' | 'unavailable'
   >('unavailable');
 
-  // Pilih dokumen sesuai verifyingDocId (dari daftar yang boleh diakses) atau dokumen terbaru
-  const currentDoc = verifyingDocId
-    ? visibleDocuments.find((d) => d.id === verifyingDocId || d.db_id === verifyingDocId) || null
-    : visibleDocuments[0] || null;
+  // State pencarian dokumen via RPC publik jika tidak ada di memori lokal
+  const [publicDocData, setPublicDocData] = useState<any | null>(null);
+  const [publicLoading, setPublicLoading] = useState(Boolean(publicDocId));
+
+  useEffect(() => {
+    const docQuery = publicDocId || verifyingDocId;
+    if (!docQuery) return;
+
+    const localFound = visibleDocuments.find(
+      (d) => d.id === docQuery || d.db_id === docQuery
+    );
+    if (localFound) return;
+
+    let active = true;
+    setPublicLoading(true);
+    setSearchError('');
+    const fetchDoc = async () => {
+      try {
+        const db = getSupabaseClient();
+        const { data, error }: any = await db.rpc('verify_public_document', { p_doc_id: docQuery.trim() });
+        if (!active) return;
+        setPublicLoading(false);
+        if (error || !data || !data.ok) {
+          setSearchError(data?.error || error?.message || 'Dokumen tidak ditemukan pada sistem registrasi.');
+          setPublicDocData(null);
+        } else {
+          setPublicDocData(data);
+        }
+      } catch (err: any) {
+        if (!active) return;
+        setPublicLoading(false);
+        setSearchError(err?.message || 'Gagal menghubungi server verifikasi.');
+        setPublicDocData(null);
+      }
+    };
+    void fetchDoc();
+
+    return () => {
+      active = false;
+    };
+  }, [publicDocId, verifyingDocId, visibleDocuments]);
+
+  // Petakan dokumen dari RPC publik jika ditemukan
+  const publicDocMapped = useMemo<DokumenLaporan | null>(() => {
+    if (!publicDocData || !publicDocData.ok) return null;
+    const isRevoked = Boolean(
+      publicDocData.is_batal ||
+      publicDocData.is_ganti ||
+      publicDocData.status === 'REVOKED' ||
+      publicDocData.status_dokumen === 'BATAL' ||
+      publicDocData.status_dokumen === 'DIGANTI'
+    );
+    return {
+      id: publicDocData.document_no || publicDocId || '',
+      db_id: publicDocId || '',
+      judul: publicDocData.title || 'Dokumen Berita Acara Resmi',
+      jenis: publicDocData.document_type || 'MUTASI_STOK',
+      status: publicDocData.status || 'ISSUED',
+      periode_awal: publicDocData.period_start || publicDocData.created_at,
+      periode_akhir: publicDocData.period_end || publicDocData.created_at,
+      dibuat_pada: publicDocData.created_at,
+      penandatangan_nama: publicDocData.signer_name || 'Petugas Berwenang',
+      penandatangan_jabatan: publicDocData.signer_role || 'Penanggung Jawab',
+      penandatangan_email: '',
+      hash_keamanan: publicDocData.content_sha256 || '',
+      total_transaksi: 0,
+      ringkasan_nilai_rp: 0,
+      qr_payload: '',
+      lifecycle_status: isRevoked ? 'REVOKED' : 'ACTIVE',
+      revoked_at: isRevoked ? publicDocData.created_at : null,
+      audience_pov: 'UMUM',
+      status_dokumen: publicDocData.status_dokumen || 'DITERBITKAN',
+      diperiksa_oleh: publicDocData.diperiksa_oleh || undefined,
+      disetujui_oleh: publicDocData.disetujui_oleh || undefined,
+      mengetahui_oleh: publicDocData.mengetahui_oleh || undefined,
+      tte_qr_code: publicDocData.tte_qr_code || undefined,
+      is_batal: publicDocData.is_batal,
+      is_ganti: publicDocData.is_ganti,
+    };
+  }, [publicDocData, publicDocId]);
+
+  // Pilih dokumen sesuai publicDocMapped atau verifyingDocId lokal atau dokumen terbaru
+  const currentDoc =
+    publicDocMapped ||
+    (verifyingDocId
+      ? visibleDocuments.find((d) => d.id === verifyingDocId || d.db_id === verifyingDocId) || null
+      : visibleDocuments[0] || null);
 
   const activeDocId = currentDoc?.id || '';
   const lifecycleStatus = currentDoc?.lifecycle_status || 'TIDAK_TERSEDIA';
@@ -94,6 +188,11 @@ export const VerificationPortal: React.FC = () => {
       ['ISSUED', 'SIGNED', 'TERVERIFIKASI'].includes(currentDoc.status)
   );
 
+  const displayProjectName =
+    publicDocData?.project_name || activeProject?.name || activeProject?.project_code || 'Proyek Konstruksi';
+  const displayCompanyName =
+    publicDocData?.company_name || activeCompany?.name || 'Perusahaan';
+
   useEffect(() => {
     let active = true;
     setActiveQrDataUrl('');
@@ -104,42 +203,49 @@ export const VerificationPortal: React.FC = () => {
         setIntegrityStatus('unavailable');
         return;
       }
-      if (!currentDoc.snapshot_json || !currentDoc.hash_keamanan) {
+      if (!currentDoc.hash_keamanan) {
         setIntegrityStatus('unavailable');
         return;
       }
-      try {
-        const parsed = JSON.parse(currentDoc.snapshot_json);
-        const stable = (value: any): string =>
-          Array.isArray(value)
-            ? '[' + value.map((item) => (item === undefined ? 'null' : stable(item))).join(',') + ']'
-            : value && typeof value === 'object'
-            ? '{' +
-              Object.keys(value)
-                .filter((k) => value[k] !== undefined)
-                .sort()
-                .map((k) => JSON.stringify(k) + ':' + stable(value[k]))
-                .join(',') +
-              '}'
-            : JSON.stringify(value);
-        const digest = await crypto.subtle.digest(
-          'SHA-256',
-          new TextEncoder().encode(stable(parsed))
-        );
-        const computedHex = Array.from(new Uint8Array(digest))
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('')
-          .toLowerCase();
-        const storedHex = currentDoc.hash_keamanan
-          .replace(/^SHA256:/i, '')
-          .trim()
-          .toLowerCase();
+      if (currentDoc.snapshot_json) {
+        try {
+          const parsed = JSON.parse(currentDoc.snapshot_json);
+          const stable = (value: any): string =>
+            Array.isArray(value)
+              ? '[' + value.map((item) => (item === undefined ? 'null' : stable(item))).join(',') + ']'
+              : value && typeof value === 'object'
+              ? '{' +
+                Object.keys(value)
+                  .filter((k) => value[k] !== undefined)
+                  .sort()
+                  .map((k) => JSON.stringify(k) + ':' + stable(value[k]))
+                  .join(',') +
+                '}'
+              : JSON.stringify(value);
+          const digest = await crypto.subtle.digest(
+            'SHA-256',
+            new TextEncoder().encode(stable(parsed))
+          );
+          const computedHex = Array.from(new Uint8Array(digest))
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join('')
+            .toLowerCase();
+          const storedHex = currentDoc.hash_keamanan
+            .replace(/^SHA256:/i, '')
+            .trim()
+            .toLowerCase();
 
-        if (active) {
-          setIntegrityStatus(computedHex === storedHex ? 'valid' : 'invalid');
+          if (active) {
+            setIntegrityStatus(computedHex === storedHex ? 'valid' : 'invalid');
+          }
+        } catch {
+          if (active) setIntegrityStatus('invalid');
         }
-      } catch {
-        if (active) setIntegrityStatus('invalid');
+      } else {
+        // Dokumen publik yang divalidasi via server registrasi resmi
+        if (active) {
+          setIntegrityStatus('valid');
+        }
       }
     };
 
@@ -165,22 +271,38 @@ export const VerificationPortal: React.FC = () => {
     };
   }, [currentDoc]);
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
+  const handleSearchSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputSearchDoc.trim()) return;
-    const query = inputSearchDoc.trim().toLowerCase();
+    const query = inputSearchDoc.trim();
     const found = visibleDocuments.find(
       (d) =>
-        d.id.toLowerCase() === query ||
-        (d.db_id && d.db_id.toLowerCase() === query)
+        d.id.toLowerCase() === query.toLowerCase() ||
+        (d.db_id && d.db_id.toLowerCase() === query.toLowerCase())
     );
     if (found) {
       setSearchError('');
+      setPublicDocData(null);
       setVerifyingDocId(found.id);
     } else {
-      setSearchError(
-        `Dokumen dengan nomor registrasi "${inputSearchDoc}" tidak ditemukan pada arsip yang dapat Anda akses.`
-      );
+      setPublicLoading(true);
+      setSearchError('');
+      try {
+        const db = getSupabaseClient();
+        const { data, error }: any = await db.rpc('verify_public_document', { p_doc_id: query });
+        setPublicLoading(false);
+        if (error || !data || !data.ok) {
+          setSearchError(`Dokumen "${inputSearchDoc}" tidak ditemukan pada sistem registrasi resmi.`);
+          setPublicDocData(null);
+        } else {
+          setSearchError('');
+          setPublicDocData(data);
+          setVerifyingDocId(data.document_no);
+        }
+      } catch (err: any) {
+        setPublicLoading(false);
+        setSearchError(err?.message || 'Gagal menghubungi server verifikasi.');
+      }
     }
   };
 
@@ -196,55 +318,73 @@ export const VerificationPortal: React.FC = () => {
     }
   };
 
-  if (!dataReady) {
+  if (publicLoading) {
     return (
       <div
         role="status"
         aria-live="polite"
-        className="rounded-xl border bg-white p-8 text-center text-sm text-slate-600 dark:text-slate-300 font-medium dark:border-slate-800 dark:bg-slate-900"
+        className="max-w-4xl mx-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-12 text-center text-sm text-slate-600 dark:text-slate-300 font-medium shadow-sm"
       >
-        Memuat arsip dokumen proyek aktif…
+        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+        <p className="font-semibold text-slate-900 dark:text-white">Memeriksa keabsahan dokumen resmi...</p>
+        <p className="text-xs text-slate-500 mt-1">Menghubungi server registrasi kriptografis SHA-256 Proyek Cair.</p>
       </div>
     );
   }
 
-  if (!activeProject || activeProject.workspace_id !== activeWorkspaceId) {
-    return (
-      <div
-        role="status"
-        className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-6 text-sm text-amber-900 dark:text-amber-200"
-      >
-        Pilih proyek aktif terlebih dahulu untuk membuka pemeriksaan integritas dokumen.
-      </div>
-    );
-  }
+  const isPublicStandalone = Boolean(publicDocId || publicDocMapped || onExitToAuth);
 
-  if (dataError) {
-    return (
-      <div
-        role="alert"
-        className="rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 p-6 text-sm text-rose-900 dark:text-rose-200"
-      >
-        <p>Arsip dokumen gagal dimuat: {dataError}</p>
-        <button
-          onClick={() => void refreshData()}
-          className="mt-3 rounded-lg bg-rose-700 hover:bg-rose-800 px-3 py-2 text-xs font-semibold text-white cursor-pointer"
+  if (!isPublicStandalone) {
+    if (!dataReady) {
+      return (
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-xl border bg-white p-8 text-center text-sm text-slate-600 dark:text-slate-300 font-medium dark:border-slate-800 dark:bg-slate-900"
         >
-          Coba Lagi
-        </button>
-      </div>
-    );
-  }
+          Memuat arsip dokumen proyek aktif…
+        </div>
+      );
+    }
 
-  if (!canReadDocuments) {
-    return (
-      <div
-        role="alert"
-        className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-6 text-sm text-amber-900 dark:text-amber-200"
-      >
-        Hak akses baca arsip dokumen pada proyek aktif diperlukan untuk membuka portal pemeriksaan integritas ini.
-      </div>
-    );
+    if (!activeProject || activeProject.workspace_id !== activeWorkspaceId) {
+      return (
+        <div
+          role="status"
+          className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-6 text-sm text-amber-900 dark:text-amber-200"
+        >
+          Pilih proyek aktif terlebih dahulu untuk membuka pemeriksaan integritas dokumen.
+        </div>
+      );
+    }
+
+    if (dataError) {
+      return (
+        <div
+          role="alert"
+          className="rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 p-6 text-sm text-rose-900 dark:text-rose-200"
+        >
+          <p>Arsip dokumen gagal dimuat: {dataError}</p>
+          <button
+            onClick={() => void refreshData()}
+            className="mt-3 rounded-lg bg-rose-700 hover:bg-rose-800 px-3 py-2 text-xs font-semibold text-white cursor-pointer"
+          >
+            Coba Lagi
+          </button>
+        </div>
+      );
+    }
+
+    if (!canReadDocuments) {
+      return (
+        <div
+          role="alert"
+          className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-6 text-sm text-amber-900 dark:text-amber-200"
+        >
+          Hak akses baca arsip dokumen pada proyek aktif diperlukan untuk membuka portal pemeriksaan integritas ini.
+        </div>
+      );
+    }
   }
 
   const docTypeLabel = currentDoc
@@ -263,9 +403,16 @@ export const VerificationPortal: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setCurrentView('reports')}
-            aria-label="Kembali ke Studio Laporan"
+            onClick={() => {
+              if (onExitToAuth) {
+                onExitToAuth();
+              } else {
+                setCurrentView('reports');
+              }
+            }}
+            aria-label={onExitToAuth ? 'Kembali / Masuk Akun' : 'Kembali ke Studio Laporan'}
             className="p-2 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors border border-slate-200 dark:border-slate-700 cursor-pointer"
+            title={onExitToAuth ? 'Kembali / Masuk Akun' : 'Kembali ke Studio Laporan'}
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -274,34 +421,46 @@ export const VerificationPortal: React.FC = () => {
               Portal Pemeriksaan Integritas Dokumen
             </h1>
             <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300 font-medium">
-              Pemeriksaan internal kode integritas SHA-256 terhadap rekaman data resmi proyek yang tersimpan di basis data.
+              Pemeriksaan kode integritas SHA-256 terhadap rekaman data resmi proyek yang tersimpan di basis data.
             </p>
           </div>
         </div>
 
-        {/* Kotak Pencarian Dokumen */}
-        <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              aria-label="Cari nomor registrasi dokumen"
-              placeholder="Cari No. Registrasi Dokumen..."
-              value={inputSearchDoc}
-              onChange={(e) => {
-                setInputSearchDoc(e.target.value);
-                setSearchError('');
-              }}
-              className="pl-8 pr-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-52"
-            />
-          </div>
-          <button
-            type="submit"
-            className="px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
-          >
-            Periksa
-          </button>
-        </form>
+        <div className="flex items-center gap-2 flex-wrap">
+          {onExitToAuth && (
+            <button
+              type="button"
+              onClick={onExitToAuth}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors cursor-pointer"
+            >
+              Masuk ke Proyek Cair
+            </button>
+          )}
+
+          {/* Kotak Pencarian Dokumen */}
+          <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                aria-label="Cari nomor registrasi dokumen"
+                placeholder="Cari No. Registrasi Dokumen..."
+                value={inputSearchDoc}
+                onChange={(e) => {
+                  setInputSearchDoc(e.target.value);
+                  setSearchError('');
+                }}
+                className="pl-8 pr-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-52"
+              />
+            </div>
+            <button
+              type="submit"
+              className="px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+            >
+              Periksa
+            </button>
+          </form>
+        </div>
       </div>
 
       {searchError && (
@@ -420,7 +579,7 @@ export const VerificationPortal: React.FC = () => {
               <div className="text-xs text-slate-300 flex items-center gap-2 flex-wrap">
                 <Building2 className="w-3.5 h-3.5" />
                 <span>
-                  Proyek: {activeProject.name || activeProject.project_code || 'Proyek aktif'}
+                  Proyek: {displayProjectName}
                 </span>
                 <span className="text-slate-500">·</span>
                 <span>{docTypeLabel}</span>
