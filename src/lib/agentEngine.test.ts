@@ -138,3 +138,41 @@ test('9. parseAgentQuery handles affirmative confirm and cancel words', () => {
   const cancelRes = parseAgentQuery('batal', MOCK_CONTEXT);
   assert.equal(cancelRes.type, 'CANCEL_ACTION');
 });
+
+test('10. parseAgentQuery recognizes Scenario A: prepaid by office (CBD/Transfer Kantor)', () => {
+  const result = parseAgentQuery('catat besi masuk 40 batang dari TB Berkah lunas transfer kantor pusat', MOCK_CONTEXT);
+  assert.equal(result.type, 'STOCK_IN_ONLY');
+  assert.equal(result.data.paymentScenario, 'KANTOR_PUSAT');
+  assert.ok(result.spokenResponse.includes('kantor pusat'));
+  assert.ok(result.proposedActionTitle?.includes('Lunas Transfer Kantor Pusat'));
+});
+
+test('11. parseAgentQuery recognizes Scenario B: store credit / tempo toko', () => {
+  const result = parseAgentQuery('semen masuk 100 sak dari TB Maju Jaya tempo 30 hari tagihan menyusul', MOCK_CONTEXT);
+  assert.equal(result.type, 'STOCK_IN_ONLY');
+  assert.equal(result.data.paymentScenario, 'TEMPO_TOKO');
+  assert.ok(result.spokenResponse.includes('tempo toko'));
+  assert.ok(result.proposedActionTitle?.includes('Tempo Toko'));
+});
+
+test('12. parseAgentQuery recognizes Scenario C: petty cash / panjar lapangan', () => {
+  const result = parseAgentQuery('catat paku masuk 5 box dari Toko Jaya tiga ratus ribu bayar pakai uang panjar mandor', MOCK_CONTEXT);
+  assert.equal(result.type, 'STOCK_IN_AND_CASH');
+  assert.equal(result.data.paymentScenario, 'PANJAR_LAPANGAN');
+  assert.ok(result.spokenResponse.includes('panjar lapangan'));
+  assert.ok(result.proposedActionTitle?.includes('Panjar'));
+});
+
+test('13. parseAgentQuery correctly distinguishes payment words from material usage', () => {
+  // Masuk barang bayar pakai kas dengan nominal -> STOCK_IN_AND_CASH
+  const inResult = parseAgentQuery('semen masuk 10 sak beli di TB Maju Jaya total lima ratus ribu bayar pakai kas proyek', MOCK_CONTEXT);
+  assert.equal(inResult.type, 'STOCK_IN_AND_CASH');
+  assert.equal(inResult.data.paymentScenario, 'KAS_PROYEK');
+  assert.equal(inResult.data.totalAmount, 500000);
+
+  // Pengeluaran barang pakai ke lapangan -> STOCK_OUT
+  const outResult = parseAgentQuery('pakai 10 sak semen untuk lantai 2', MOCK_CONTEXT);
+  assert.equal(outResult.type, 'STOCK_OUT');
+  assert.equal(outResult.data.quantity, 10);
+});
+

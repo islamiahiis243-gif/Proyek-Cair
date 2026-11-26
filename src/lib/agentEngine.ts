@@ -19,6 +19,8 @@ export type AgentIntentType =
   | 'CANCEL_ACTION'
   | 'GENERAL_QUERY';
 
+export type PaymentScenario = 'KANTOR_PUSAT' | 'KAS_PROYEK' | 'TEMPO_TOKO' | 'PANJAR_LAPANGAN';
+
 export interface ParsedTransactionData {
   itemCandidate?: string;
   matchedItemId?: string;
@@ -31,6 +33,9 @@ export interface ParsedTransactionData {
   category?: 'Material' | 'Upah & Konsumsi' | 'Sewa Alat & Angkut' | 'Operasional Kantor & Lapangan' | 'Subkon & Spesialis' | 'Lain-lain / Tak Terduga';
   notes?: string;
   targetView?: string;
+  paymentScenario?: PaymentScenario;
+  poNumber?: string;
+  attachedImageUrl?: string;
 }
 
 export interface AgentIntentResult {
@@ -336,7 +341,8 @@ export function parseAgentQuery(rawQuery: string, context: AgentContextSnapshot)
   }
 
   // 6. Pencatatan Mutasi Barang Keluar (Pakai ke Lapangan)
-  if (text.includes('keluar') || text.includes('pakai') || text.includes('ambil') || text.includes('gunakan') || text.includes('distribusi')) {
+  const isIncomingGoods = text.includes('masuk') || text.includes('tiba') || text.includes('terima') || text.includes('datang') || text.includes('drop') || text.includes('beli');
+  if (!isIncomingGoods && (text.includes('keluar') || text.includes('pakai') || text.includes('ambil') || text.includes('gunakan') || text.includes('distribusi'))) {
     // Ekstraksi kuantitas
     const qtyMatch = text.match(/(\d+)\s*(sak|rit|m3|m2|batang|lembar|kg|buah|lonjor|unit|set|zak)?/i);
     const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : parseIndonesianNumber(text) || 1;
@@ -420,24 +426,57 @@ export function parseAgentQuery(rawQuery: string, context: AgentContextSnapshot)
       }
     }
 
-    const isPaidWithCash = text.includes('bayar') || text.includes('lunas') || text.includes('kas') || text.includes('tunai');
-    const intentType: AgentIntentType = isPaidWithCash && totalRp ? 'STOCK_IN_AND_CASH' : 'STOCK_IN_ONLY';
+    // Deteksi 4 Skenario Riil Lapangan (Dokumen UPCOMING_PLAN)
+    let paymentScenario: PaymentScenario = 'KAS_PROYEK';
+    if (text.includes('kantor') || text.includes('pusat') || text.includes('cbd') || text.includes('transfer di depan') || text.includes('lunas kantor')) {
+      paymentScenario = 'KANTOR_PUSAT';
+    } else if (text.includes('tempo') || text.includes('hutang') || text.includes('kredit') || text.includes('tagihan menyusul') || text.includes('invoice')) {
+      paymentScenario = 'TEMPO_TOKO';
+    } else if (text.includes('panjar') || text.includes('kasbon')) {
+      paymentScenario = 'PANJAR_LAPANGAN';
+    } else if (text.includes('bayar') || text.includes('lunas') || text.includes('kas') || text.includes('tunai') || text.includes('cod')) {
+      paymentScenario = 'KAS_PROYEK';
+    } else {
+      paymentScenario = totalRp ? 'KAS_PROYEK' : 'TEMPO_TOKO';
+    }
 
     const formattedRp = totalRp
       ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(totalRp)
       : null;
 
-    const responseText = isPaidWithCash && totalRp
-      ? `Siap mencatat kedatangan ${qty} ${itemUnit} ${itemName} dari ${storeName} senilai ${formattedRp}, sekaligus membukukan pembayaran lunas dari kas proyek. Silakan konfirmasi untuk membukukan.`
-      : `Siap mencatat kedatangan ${qty} ${itemUnit} ${itemName} dari ${storeName}. Stok gudang akan bertambah. Silakan konfirmasi.`;
+    let intentType: AgentIntentType = 'STOCK_IN_AND_CASH';
+    let responseText = '';
+    let actionTitle = '';
+    let actionSubtitle = '';
 
-    const actionTitle = isPaidWithCash && totalRp
-      ? `📦 Barang Masuk + 💸 Bayar Kas: ${qty} ${itemUnit} ${itemName}`
-      : `📦 Penerimaan Barang Masuk: ${qty} ${itemUnit} ${itemName}`;
-
-    const actionSubtitle = isPaidWithCash && totalRp
-      ? `Toko: ${storeName} · Nilai: ${formattedRp} · Stok bertambah & Kas berkurang otomatis.`
-      : `Toko: ${storeName} · Saldo fisik gudang akan bertambah ${qty} ${itemUnit}.`;
+    if (paymentScenario === 'KANTOR_PUSAT') {
+      intentType = 'STOCK_IN_ONLY';
+      responseText = `Siap mencatat kedatangan ${qty} ${itemUnit} ${itemName} dari ${storeName}. Pembayaran telah lunas ditransfer kantor pusat, kas proyek tidak akan dipotong ganda. Silakan konfirmasi untuk mencatat.`;
+      actionTitle = `📦 Barang Masuk: ${qty} ${itemUnit} ${itemName} (Lunas Transfer Kantor Pusat)`;
+      actionSubtitle = `Toko: ${storeName} · Nilai: ${formattedRp || 'Sesuai PO'} · Saldo fisik bertambah & bebas beban kas proyek.`;
+    } else if (paymentScenario === 'TEMPO_TOKO') {
+      intentType = 'STOCK_IN_ONLY';
+      responseText = `Siap mencatat kedatangan ${qty} ${itemUnit} ${itemName} dari ${storeName} tempo toko. Nota akan masuk ke antrean kasir untuk pembayaran jatuh tempo. Silakan konfirmasi.`;
+      actionTitle = `📦 Barang Masuk: ${qty} ${itemUnit} ${itemName} (Tempo Toko)`;
+      actionSubtitle = `Toko: ${storeName} · Nilai: ${formattedRp || 'Menyusul'} · Stok gudang bertambah & masuk antrean tagihan kasir.`;
+    } else if (paymentScenario === 'PANJAR_LAPANGAN') {
+      intentType = 'STOCK_IN_AND_CASH';
+      responseText = `Siap mencatat kedatangan ${qty} ${itemUnit} ${itemName} dari ${storeName} senilai ${formattedRp} dari panjar lapangan. Sekaligus disiapkan draf pertanggungjawaban panjar mandor. Silakan konfirmasi.`;
+      actionTitle = `📦 Barang Masuk + 💼 Pertanggungjawaban Panjar (LPJ): ${qty} ${itemUnit} ${itemName}`;
+      actionSubtitle = `Toko: ${storeName} · Nilai: ${formattedRp} · Stok bertambah & panjar mandor dipertanggungjawabkan.`;
+    } else {
+      // KAS_PROYEK
+      intentType = totalRp ? 'STOCK_IN_AND_CASH' : 'STOCK_IN_ONLY';
+      responseText = totalRp
+        ? `Siap mencatat kedatangan ${qty} ${itemUnit} ${itemName} dari ${storeName} senilai ${formattedRp}, sekaligus membukukan pembayaran lunas dari kas proyek. Silakan konfirmasi untuk membukukan.`
+        : `Siap mencatat kedatangan ${qty} ${itemUnit} ${itemName} dari ${storeName}. Stok gudang akan bertambah. Silakan konfirmasi.`;
+      actionTitle = totalRp
+        ? `📦 Barang Masuk + 💸 Pelunasan Kas Proyek: ${qty} ${itemUnit} ${itemName}`
+        : `📦 Penerimaan Barang Masuk: ${qty} ${itemUnit} ${itemName}`;
+      actionSubtitle = totalRp
+        ? `Toko: ${storeName} · Nilai: ${formattedRp} · Stok bertambah & Kas berkurang otomatis.`
+        : `Toko: ${storeName} · Saldo fisik gudang akan bertambah ${qty} ${itemUnit}.`;
+    }
 
     return {
       type: intentType,
@@ -455,6 +494,7 @@ export function parseAgentQuery(rawQuery: string, context: AgentContextSnapshot)
         pricePerUnit: totalRp ? Math.round(totalRp / qty) : undefined,
         storeName: storeName,
         category: 'Material',
+        paymentScenario: paymentScenario,
         notes: rawQuery
       }
     };

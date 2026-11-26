@@ -13,7 +13,14 @@ import {
   Wallet,
   ArrowRight,
   TrendingUp,
-  MessageSquare
+  MessageSquare,
+  Camera,
+  Paperclip,
+  Image as ImageIcon,
+  Building2,
+  Clock,
+  ShieldCheck,
+  Receipt
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import {
@@ -22,6 +29,7 @@ import {
   AgentContextSnapshot
 } from '../lib/agentEngine';
 import { formatRupiah } from '../lib/pdfGenerator';
+import { uploadReceiptFile } from '../lib/receiptStorage';
 
 interface ChatMessage {
   id: string;
@@ -53,6 +61,26 @@ export const LiveVoiceAssistantModal: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [pendingAction, setPendingAction] = useState<AgentIntentResult | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [attachedPreview, setAttachedPreview] = useState<string | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = (file: File) => {
+    setAttachedFile(file);
+    const previewUrl = URL.createObjectURL(file);
+    setAttachedPreview(previewUrl);
+  };
+
+  const clearAttachment = () => {
+    setAttachedFile(null);
+    if (attachedPreview) {
+      URL.revokeObjectURL(attachedPreview);
+      setAttachedPreview(null);
+    }
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
       id: 'welcome-1',
@@ -159,15 +187,53 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     try {
       const { type, data } = action;
 
+      // Unggah foto nota jika ada lampiran berkas / kamera
+      let uploadedReceiptUrl: string | undefined = undefined;
+      if (attachedFile) {
+        try {
+          uploadedReceiptUrl = await uploadReceiptFile(
+            attachedFile,
+            activeProject?.id || 'proyek_cair',
+            data.storeName || 'nota_ai'
+          );
+        } catch (uploadErr) {
+          console.warn('Gagal unggah foto nota ke Supabase Storage, menggunakan offline data fallback:', uploadErr);
+        }
+      }
+      const receiptUrls = uploadedReceiptUrl ? [uploadedReceiptUrl] : [];
+
+      // Skenario Pembayaran Lapangan: KAS_PROYEK | KANTOR_PUSAT | TEMPO_TOKO | PANJAR_LAPANGAN
+      const scenario = data.paymentScenario || (type === 'STOCK_IN_AND_CASH' ? 'KAS_PROYEK' : undefined);
+
       // 1. Eksekusi Barang Masuk + Kas Keluar
       if (type === 'STOCK_IN_AND_CASH' || type === 'STOCK_IN_ONLY') {
         const itemToMutate = items.find(it => it.id === data.matchedItemId) || items[0];
         const qty = data.quantity || 1;
         const total = data.totalAmount || (itemToMutate ? itemToMutate.harga_satuan * qty : 0);
         const store = data.storeName || 'Toko Rekanan';
+        const unit = data.unit || (itemToMutate ? itemToMutate.satuan : 'unit');
 
         if (!itemToMutate) {
           throw new Error('Item material tidak ditemukan dalam daftar inventaris.');
+        }
+
+        // Tentukan status harga dan catatan sesuai skenario pembayaran (Skenario A-D)
+        let statusHarga: 'TERCATAT' | 'NOTA_MENYUSUL' = 'TERCATAT';
+        let stockNotes = `Dicatat via Live AI: ${data.notes || ''}`;
+
+        if (scenario === 'KANTOR_PUSAT') {
+          stockNotes += ' [Lunas via Transfer Kantor Pusat - Kas Proyek Aman]';
+        } else if (scenario === 'TEMPO_TOKO') {
+          statusHarga = 'NOTA_MENYUSUL';
+          stockNotes += ' [Hutang Toko/Tempo - Menunggu Tagihan Kasir]';
+        } else if (scenario === 'PANJAR_LAPANGAN') {
+          stockNotes += ' [Dibayar via Panjar Lapangan - Menunggu LPJ]';
+        } else if (scenario === 'KAS_PROYEK') {
+          stockNotes += ' [Lunas Kas Proyek]';
+        }
+
+        if (receiptUrls.length > 0) {
+          stockNotes += ' (Foto Nota Fisik Terlampir)';
         }
 
         // Tambah mutasi gudang
@@ -176,41 +242,78 @@ export const LiveVoiceAssistantModal: React.FC = () => {
           nama_barang: itemToMutate.nama_barang,
           jenis: 'MASUK',
           jumlah: qty,
-          satuan: data.unit || itemToMutate.satuan,
+          satuan: unit,
           tujuan_keperluan: 'Penyediaan Stok Gudang Proyek',
           pic_penerima_penyerah: user?.name || 'Petugas Lapangan',
-          harga_satuan_beli: data.pricePerUnit || itemToMutate.harga_satuan,
+          harga_satuan_beli: data.pricePerUnit || (total && qty ? Math.round(total / qty) : itemToMutate.harga_satuan),
           total_nota_fisik: total,
           tanggal: new Date().toISOString().split('T')[0],
           nomor_nota: `INV-AI-${Date.now().toString().slice(-6)}`,
           nama_toko: store,
           nama_item_aktual: itemToMutate.nama_barang,
-          status_harga: 'TERCATAT',
+          status_harga: statusHarga,
           beban_biaya: 'KONTRAKTOR',
-          catatan: `Dicatat via Live AI Assistant: ${data.notes || ''}`
+          catatan: stockNotes,
+          lampiran_nota_urls: receiptUrls.length > 0 ? receiptUrls : undefined
         });
 
         if (!stockRes.success) {
           throw new Error(stockRes.message);
         }
 
-        // Jika terhubung kas keluar
-        if (type === 'STOCK_IN_AND_CASH' && total > 0) {
+        // Efek Domino ke Pembukuan Kas berdasarkan Skenario:
+        // Skenario A: KAS_PROYEK -> Potong kas langsung (status REKONSILIASI_NOTA)
+        if (scenario === 'KAS_PROYEK' && total > 0) {
           await addCashMutation({
             jenis: 'KELUAR',
             jumlah_rp: total,
             kategori_keperluan: 'Material',
-            untuk_apa: `Pelunasan belanja ${qty} ${data.unit || itemToMutate.satuan} ${itemToMutate.nama_barang} dari ${store}`,
+            untuk_apa: `Pelunasan belanja ${qty} ${unit} ${itemToMutate.nama_barang} dari ${store}`,
             pic: user?.name || 'Kasir Proyek',
             tanggal: new Date().toISOString().split('T')[0],
             nomor_kuitansi: `KAS-AI-${Date.now().toString().slice(-6)}`,
             beban_biaya: 'KONTRAKTOR',
-            status_bukti: 'REKONSILIASI_NOTA',
-            catatan: `Dibayar via Live AI: ${data.notes || ''}`
+            status_bukti: receiptUrls.length > 0 ? 'TERLAMPIR' : 'REKONSILIASI_NOTA',
+            catatan: `Dibayar via Live AI: ${data.notes || ''}`,
+            lampiran_nota_urls: receiptUrls.length > 0 ? receiptUrls : undefined
           });
         }
+        // Skenario D: PANJAR_LAPANGAN -> Potong kas sebagai Panjar/Kasbon terbuka (is_kasbon = true)
+        else if (scenario === 'PANJAR_LAPANGAN' && total > 0) {
+          await addCashMutation({
+            jenis: 'KELUAR',
+            jumlah_rp: total,
+            kategori_keperluan: 'Panjar / Kasbon',
+            untuk_apa: `Panjar pembelian ${qty} ${unit} ${itemToMutate.nama_barang} dari ${store}`,
+            pic: user?.name || 'Petugas Lapangan',
+            tanggal: new Date().toISOString().split('T')[0],
+            nomor_kuitansi: `PJR-AI-${Date.now().toString().slice(-6)}`,
+            beban_biaya: 'KONTRAKTOR',
+            is_kasbon: true,
+            status_kasbon: 'TERBUKA',
+            status_bukti: receiptUrls.length > 0 ? 'TERLAMPIR' : 'BUKTI_MENYUSUL',
+            catatan: `Panjar Lapangan via Live AI: ${data.notes || ''}`,
+            lampiran_nota_urls: receiptUrls.length > 0 ? receiptUrls : undefined
+          });
+        }
+        // Skenario B & C: KANTOR_PUSAT & TEMPO_TOKO -> TIDAK memotong kas proyek (mencegah double-payment & defisit fiktif)
 
-        const successMsg = `Berhasil dibukukan! ${qty} ${data.unit || itemToMutate.satuan} ${itemToMutate.nama_barang} telah masuk gudang${type === 'STOCK_IN_AND_CASH' ? ` dan pembayaran ${formatRupiah(total)} telah dicatat di buku kas.` : '.'}`;
+        // Respon suara & teks informatif native Indonesia
+        let successMsg = `Berhasil dibukukan! ${qty} ${unit} ${itemToMutate.nama_barang} telah masuk gudang.`;
+        if (scenario === 'KANTOR_PUSAT') {
+          successMsg += ` Pelunasan ${formatRupiah(total)} dibayarkan via Transfer Kantor Pusat (kas proyek tetap utuh).`;
+        } else if (scenario === 'TEMPO_TOKO') {
+          successMsg += ` Pembayaran ${formatRupiah(total)} dicatat Tempo/Hutang Toko (tidak ada potongan kas saat ini).`;
+        } else if (scenario === 'PANJAR_LAPANGAN') {
+          successMsg += ` Kasbon panjar ${formatRupiah(total)} dicatat terbuka untuk dipertanggungjawabkan (LPJ).`;
+        } else if (scenario === 'KAS_PROYEK' && total > 0) {
+          successMsg += ` Pelunasan tunai ${formatRupiah(total)} telah dipotong dari buku kas proyek.`;
+        }
+
+        if (receiptUrls.length > 0) {
+          successMsg += ' Foto nota fisik berhasil diarsipkan ke album.';
+        }
+
         setMessages(prev => [
           ...prev,
           {
@@ -222,6 +325,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
         ]);
         speakResponse(successMsg);
         setPendingAction(null);
+        clearAttachment();
       }
 
       // 2. Eksekusi Barang Keluar (Pakai Lapangan)
@@ -266,6 +370,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
         ]);
         speakResponse(successMsg);
         setPendingAction(null);
+        clearAttachment();
       }
 
       // 3. Eksekusi Pengeluaran Kas Murni
@@ -284,15 +389,19 @@ export const LiveVoiceAssistantModal: React.FC = () => {
           tanggal: new Date().toISOString().split('T')[0],
           nomor_kuitansi: `KAS-AI-${Date.now().toString().slice(-6)}`,
           beban_biaya: 'KONTRAKTOR',
-          status_bukti: 'TERLAMPIR',
-          catatan: data.storeName ? `Penerima/Toko: ${data.storeName}` : undefined
+          status_bukti: receiptUrls.length > 0 ? 'TERLAMPIR' : 'TERLAMPIR',
+          catatan: data.storeName ? `Penerima/Toko: ${data.storeName}` : undefined,
+          lampiran_nota_urls: receiptUrls.length > 0 ? receiptUrls : undefined
         });
 
         if (!cashRes.success) {
           throw new Error(cashRes.message);
         }
 
-        const successMsg = `Pengeluaran kas ${data.category || ''} sebesar ${formatRupiah(amount)} telah berhasil dibukukan ke jurnal kas.`;
+        let successMsg = `Pengeluaran kas ${data.category || ''} sebesar ${formatRupiah(amount)} telah berhasil dibukukan ke jurnal kas.`;
+        if (receiptUrls.length > 0) {
+          successMsg += ' Foto bukti nota berhasil diarsipkan ke album.';
+        }
         setMessages(prev => [
           ...prev,
           {
@@ -304,6 +413,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
         ]);
         speakResponse(successMsg);
         setPendingAction(null);
+        clearAttachment();
       }
     } catch (err: any) {
       const errMsg = `Gagal mengeksekusi: ${err.message || 'Terjadi kesalahan sistem'}`;
@@ -541,15 +651,59 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                     <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5">
                       <Sparkles className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <h4 className="text-xs font-bold text-slate-900 dark:text-white">
                         {pendingAction.proposedActionTitle}
                       </h4>
                       <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
                         {pendingAction.proposedActionSubtitle}
                       </p>
+
+                      {/* Badge Skenario Pembayaran Nyata (Skenario A-D) */}
+                      {pendingAction.data.paymentScenario && (
+                        <div className="flex items-center gap-1.5 pt-2">
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Skema:</span>
+                          {pendingAction.data.paymentScenario === 'KANTOR_PUSAT' && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                              <Building2 className="w-3 h-3" /> Kantor Pusat (Kas Proyek Utuh)
+                            </span>
+                          )}
+                          {pendingAction.data.paymentScenario === 'TEMPO_TOKO' && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                              <Clock className="w-3 h-3" /> Tempo / Hutang Toko
+                            </span>
+                          )}
+                          {pendingAction.data.paymentScenario === 'PANJAR_LAPANGAN' && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              <Receipt className="w-3 h-3" /> Panjar Lapangan (Kasbon Terbuka)
+                            </span>
+                          )}
+                          {pendingAction.data.paymentScenario === 'KAS_PROYEK' && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                              <Wallet className="w-3 h-3" /> Kas Proyek / Tunai
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
+
+                  {/* Thumbnail Foto Nota Terlampir di Kartu Konfirmasi */}
+                  {attachedPreview && (
+                    <div className="flex items-center gap-2.5 p-2 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-blue-200 dark:border-blue-900/50">
+                      <img
+                        src={attachedPreview}
+                        alt="Bukti Nota Terlampir"
+                        className="w-11 h-11 object-cover rounded-lg border border-blue-300 dark:border-blue-700 shadow-xs shrink-0"
+                      />
+                      <div className="text-[11px] min-w-0">
+                        <p className="font-bold text-slate-800 dark:text-slate-200 truncate">Foto Nota Terlampir</p>
+                        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                          Akan diarsipkan ke Album & ditautkan ke mutasi
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="pt-2 border-t border-blue-200 dark:border-blue-900/60 flex items-center gap-2">
                     <button
@@ -579,7 +733,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
               <div ref={chatBottomRef} />
             </div>
 
-            {/* Chips Rekomendasi Cepat */}
+            {/* Chips Rekomendasi Cepat & Skenario Lapangan */}
             <div className="px-3 py-2 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/50 flex items-center gap-1.5 overflow-x-auto text-[11px] whitespace-nowrap scrollbar-none">
               <span className="text-slate-400 dark:text-slate-500 font-semibold text-[10px]">Coba:</span>
               <button
@@ -594,7 +748,21 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                 onClick={() => handleProcessInput('Catat semen masuk 50 sak dari TB Maju Jaya total dua juta lima ratus bayar kas')}
                 className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-400 transition-colors cursor-pointer"
               >
-                Masuk Semen & Bayar
+                Masuk Semen & Bayar Kas
+              </button>
+              <button
+                type="button"
+                onClick={() => handleProcessInput('Beli keramik 30 dus lunas transfer kantor pusat')}
+                className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-400 transition-colors cursor-pointer"
+              >
+                Transfer Kantor Pusat
+              </button>
+              <button
+                type="button"
+                onClick={() => handleProcessInput('Catat pasir 1 truk dari TB Sumber Rejeki tempo toko')}
+                className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-400 transition-colors cursor-pointer"
+              >
+                Tempo / Hutang Toko
               </button>
               <button
                 type="button"
@@ -612,22 +780,100 @@ export const LiveVoiceAssistantModal: React.FC = () => {
               </button>
             </div>
 
-            {/* Input Bar & Mic Trigger */}
+            {/* Chip Pratinjau Foto Nota Terlampir */}
+            {attachedPreview && (
+              <div className="mx-3 my-2 p-2 rounded-xl bg-blue-50/90 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 flex items-center justify-between animate-in fade-in slide-in-from-bottom-1">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <img
+                    src={attachedPreview}
+                    alt="Pratinjau Nota"
+                    className="w-10 h-10 object-cover rounded-lg border border-blue-300 dark:border-blue-700 shadow-xs shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-blue-900 dark:text-blue-100 truncate">1 Foto Nota Terlampir</span>
+                      <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                        Siap Diunggah
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                      Otomatis diarsipkan ke album nota & ditautkan ke mutasi
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearAttachment}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-2"
+                  title="Hapus foto nota"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Input Tersembunyi untuk Kamera HP & File Galeri */}
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={e => {
+                if (e.target.files && e.target.files[0]) {
+                  handleFileSelect(e.target.files[0]);
+                }
+              }}
+              className="hidden"
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.pdf"
+              onChange={e => {
+                if (e.target.files && e.target.files[0]) {
+                  handleFileSelect(e.target.files[0]);
+                }
+              }}
+              className="hidden"
+            />
+
+            {/* Input Bar, Kamera & Mic Trigger */}
             <form
               onSubmit={handleFormSubmit}
               className="p-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2"
             >
+              {/* Tombol Kamera Langsung */}
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                className="w-10 h-10 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-blue-400 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 flex items-center justify-center shrink-0 transition-all cursor-pointer shadow-xs active:scale-95"
+                title="Foto Nota Fisik (Kamera HP Langsung)"
+              >
+                <Camera className="w-4.5 h-4.5" />
+              </button>
+
+              {/* Tombol Lampiran Galeri / Dokumen */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-10 h-10 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-blue-400 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 flex items-center justify-center shrink-0 transition-all cursor-pointer shadow-xs active:scale-95"
+                title="Pilih Berkas Nota / Galeri / PDF"
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
+
+              {/* Tombol Mic Suara Indonesia */}
               <button
                 type="button"
                 onClick={toggleListening}
-                className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-all cursor-pointer shadow-md ${
+                className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-all cursor-pointer shadow-md ${
                   isListening
                     ? 'bg-rose-600 text-white animate-pulse ring-4 ring-rose-500/30 shadow-rose-600/30'
-                    : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/25'
+                    : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/25 active:scale-95'
                 }`}
                 title={isListening ? 'Klik untuk berhenti mendengarkan' : 'Klik untuk bicara bahasa Indonesia'}
               >
-                {isListening ? <MicOff className="w-5 h-5 animate-spin" /> : <Mic className="w-5 h-5" />}
+                {isListening ? <MicOff className="w-4.5 h-4.5 animate-spin" /> : <Mic className="w-4.5 h-4.5" />}
               </button>
 
               <input
