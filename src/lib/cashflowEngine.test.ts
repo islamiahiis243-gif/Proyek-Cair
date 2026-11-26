@@ -8,6 +8,7 @@ import {
   countPendingCashApprovals,
   createInitialCashWizardAnswers,
   deriveBebanBiayaFromCategory,
+  detectCashCategoryFromStockReceipt,
   doReceiptStoresMatch,
   evaluateBudgetCategories,
   evaluateCashRow,
@@ -1490,4 +1491,67 @@ test('findUnreconciledStockReceipts prevents double-billing for stock receipts w
     findLinkedCashMutationsForStockMutation(stockFromPo, [cashPayPo], branding.clientName).map((c) => c.id),
     ['c-po-pay-1']
   );
+});
+
+test('auto-reconciles stock/manpower receipt with blank receipt number via generated INV- ref and matches smart category', () => {
+  const mutId = 'cd8b5ca1-dbc3-4958-a312-81c7e2604c4c';
+  const manpowerStock: MutasiBarang = {
+    id: mutId,
+    barang_id: 'b-manpower',
+    nama_barang: 'Tenaga Kerja Sipil',
+    jenis: 'MASUK',
+    jumlah: 500,
+    satuan: 'oh',
+    tujuan_keperluan: 'Pekerjaan Sipil',
+    pic_penerima_penyerah: 'Sumarlin',
+    tanggal: '2026-11-23T03:42:16Z',
+    stok_sebelum: 0,
+    stok_sesudah: 500,
+    owner_type: 'KONTRAKTOR',
+    harga_satuan_beli: 280_000,
+    nama_toko: 'Pengadaan Kontraktor (CV. MENARA MEGAH)',
+    // nomor_nota & nomor_surat_jalan kosong
+  };
+
+  // 1. Sebelum dibayar: masuk ke antrean rekonsiliasi dengan ref INV-CD8B5C
+  const queueBefore = findUnreconciledStockReceipts([manpowerStock], [], [], branding.clientName);
+  assert.equal(queueBefore.length, 1);
+  assert.equal(queueBefore[0].receiptNo, 'INV-CD8B5C');
+  assert.equal(queueBefore[0].totalAmountRp, 140_000_000);
+  assert.deepEqual(queueBefore[0].mutationIds, [mutId]);
+
+  // 2. Deteksi cerdas kategori: Tenaga Kerja otomatis menjadi Upah & Konsumsi (bukan Material)
+  const smartCat = detectCashCategoryFromStockReceipt(queueBefore[0]);
+  assert.equal(smartCat, 'Upah & Konsumsi');
+
+  // 3. Wizard answers otomatis mengisi kategori Upah & Konsumsi dan source_entity_id = mutId
+  const wizardAnswers = createInitialCashWizardAnswers({
+    jenis: 'KELUAR',
+    defaultPic: 'Clerk',
+    preselectedReceipt: queueBefore[0],
+  });
+  assert.equal(wizardAnswers.kategori_keperluan, 'Upah & Konsumsi');
+  assert.equal(wizardAnswers.source_entity_id, mutId);
+  assert.equal(wizardAnswers.source_entity_no, 'INV-CD8B5C');
+
+  // 4. Setelah transaksi kas dicatat (dengan ref INV-CD8B5C):
+  const cashPayManpower = makeCash({
+    id: 'c-pay-manpower',
+    jenis: 'KELUAR',
+    jumlah_rp: 140_000_000,
+    kategori_keperluan: 'Upah & Konsumsi',
+    source_module: 'MUTASI_BARANG',
+    source_entity_id: mutId,
+    source_entity_no: 'INV-CD8B5C',
+    nomor_kuitansi: 'INV-CD8B5C',
+    nama_toko: 'Pengadaan Kontraktor (CV. MENARA MEGAH)',
+  });
+
+  // Antrean rekonsiliasi harus bersih (0 antrean)
+  const queueAfter = findUnreconciledStockReceipts([manpowerStock], [], [cashPayManpower], branding.clientName);
+  assert.equal(queueAfter.length, 0);
+
+  // Status mutasi barang harus Terbayar Kas
+  const index = buildTerpaduReceiptIndex([], [cashPayManpower]);
+  assert.equal(isStockMutationPaidViaCash(manpowerStock, index, branding.clientName), true);
 });

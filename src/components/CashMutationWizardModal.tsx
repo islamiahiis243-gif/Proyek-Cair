@@ -43,6 +43,7 @@ import {
   CashWizardStepId,
   createInitialCashWizardAnswers,
   deriveBebanBiayaFromCategory,
+  detectCashCategoryFromStockReceipt,
   OpenKasbonItem,
   PAYMENT_METHOD_LABELS,
   UnreconciledStockReceiptItem,
@@ -121,6 +122,7 @@ export const CashMutationWizardModal: React.FC<CashMutationWizardModalProps> = (
       preselectedReceipt,
       preselectedAmount,
       preselectedPurpose,
+      boqItems: items,
     })
   );
   const [stepId, setStepId] = useState<CashWizardStepId>(
@@ -143,6 +145,7 @@ export const CashMutationWizardModal: React.FC<CashMutationWizardModalProps> = (
       preselectedReceipt,
       preselectedAmount,
       preselectedPurpose,
+      boqItems: items,
     });
     setAnswers(init);
     setStepId(preselectedReceipt ? 'REVIEW' : 'PURPOSE_AMOUNT');
@@ -151,7 +154,7 @@ export const CashMutationWizardModal: React.FC<CashMutationWizardModalProps> = (
     setUploadingFiles(false);
     setSessionSavedCount(0);
     setLastSavedSummary('');
-  }, [isOpen, defaultType, preselectedCategory, preselectedReceipt, preselectedAmount, preselectedPurpose, user.name]);
+  }, [isOpen, defaultType, preselectedCategory, preselectedReceipt, preselectedAmount, preselectedPurpose, user.name, items]);
 
   // Muat daftar toko langganan untuk autocomplete
   useEffect(() => {
@@ -238,7 +241,12 @@ export const CashMutationWizardModal: React.FC<CashMutationWizardModalProps> = (
   };
 
   const handleLinkStockReceipt = (rc: UnreconciledStockReceiptItem) => {
-    const cat: KategoriMutasiKas = rc.isTalangan ? 'Talangan Klien' : 'Material';
+    const cat: KategoriMutasiKas = detectCashCategoryFromStockReceipt(rc, items);
+    const primaryMutationId =
+      rc.receiptId ||
+      (rc.mutationIds && rc.mutationIds[0]) ||
+      (rc.key.startsWith('tx:') ? rc.key.replace(/^tx:/, '') : undefined);
+
     setAnswers((prev) => ({
       ...prev,
       jenis: 'KELUAR',
@@ -252,7 +260,7 @@ export const CashMutationWizardModal: React.FC<CashMutationWizardModalProps> = (
       receipt_id: rc.receiptId,
       linked_stock_receipt: rc,
       source_module: 'MUTASI_BARANG',
-      source_entity_id: rc.receiptId,
+      source_entity_id: primaryMutationId,
       source_entity_no: rc.receiptNo,
       status_bukti: rc.attachmentUrls.length > 0 ? 'REKONSILIASI_NOTA' : 'BUKTI_MENYUSUL',
       lampiran_nota_urls: [...rc.attachmentUrls],

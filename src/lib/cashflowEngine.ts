@@ -173,6 +173,7 @@ export interface CashRowEvaluation {
 export interface UnreconciledStockReceiptItem {
   key: string;
   receiptId?: string;
+  mutationIds?: string[];
   receiptNo: string;
   storeName: string;
   storeContact?: string;
@@ -465,6 +466,7 @@ export function resolveStockApprovalTargetTab(
 
 export interface TerpaduReceiptIndex {
   paidReceiptIds: Set<string>;
+  paidStockMutationIds: Set<string>;
   paidRefsByNo: Map<string, Array<{ storeNorm: string; receiptId?: string }>>;
   paidPoIds: Set<string>;
   paidPoAmountById: Map<string, number>;
@@ -650,6 +652,7 @@ export function buildTerpaduReceiptIndex(
   purchaseOrders?: PurchaseOrder[]
 ): TerpaduReceiptIndex {
   const paidReceiptIds = new Set<string>();
+  const paidStockMutationIds = new Set<string>();
   const paidRefsByNo = new Map<string, Array<{ storeNorm: string; receiptId?: string }>>();
   const paidPoIds = new Set<string>();
   const paidPoAmountById = new Map<string, number>();
@@ -705,6 +708,9 @@ export function buildTerpaduReceiptIndex(
     if (linkedReceiptId) {
       paidReceiptIds.add(linkedReceiptId);
     }
+    if (c.source_module === 'MUTASI_BARANG' && c.source_entity_id) {
+      paidStockMutationIds.add(c.source_entity_id);
+    }
     const storeNorm = normalizeReceiptStoreName(c.nama_toko);
     if (storeNorm || isEligibleForStorelessStockFallback(c)) {
       addRefEntry(
@@ -712,6 +718,12 @@ export function buildTerpaduReceiptIndex(
         c.nama_toko,
         linkedReceiptId
       );
+      if (c.source_entity_no) {
+        addRefEntry(c.source_entity_no, c.nama_toko, linkedReceiptId);
+      }
+      if ((c as any).reference_no) {
+        addRefEntry((c as any).reference_no, c.nama_toko, linkedReceiptId);
+      }
     }
   }
 
@@ -733,16 +745,20 @@ export function buildTerpaduReceiptIndex(
     }
   }
 
-  return { paidReceiptIds, paidRefsByNo, paidPoIds, paidPoAmountById, fullyPaidPoIds };
+  return { paidReceiptIds, paidStockMutationIds, paidRefsByNo, paidPoIds, paidPoAmountById, fullyPaidPoIds };
 }
 
 function isReceiptPaidInIndex(
   receiptId: string | undefined,
   rawReceiptNo: string | undefined,
   rawStoreName: string | undefined,
-  index: TerpaduReceiptIndex
+  index: TerpaduReceiptIndex,
+  mutationId?: string
 ): boolean {
   if (receiptId && index.paidReceiptIds.has(receiptId)) {
+    return true;
+  }
+  if (mutationId && index.paidStockMutationIds && index.paidStockMutationIds.has(mutationId)) {
     return true;
   }
   const refNo = normalizeReceiptRef(rawReceiptNo);
@@ -785,11 +801,19 @@ export function isStockMutationPaidViaCash(
     return index.paidPoIds.has(mut.po_id);
   }
 
+  if (index.paidStockMutationIds && index.paidStockMutationIds.has(mut.id)) {
+    return true;
+  }
+
+  const rawNo = (mut.nomor_nota || mut.nomor_surat_jalan || '').trim();
+  const effectiveRef = rawNo && rawNo !== '-' ? rawNo : `INV-${mut.id.slice(0, 6).toUpperCase()}`;
+
   return isReceiptPaidInIndex(
     mut.receipt_id,
-    mut.nomor_nota || mut.nomor_surat_jalan,
+    effectiveRef,
     mut.nama_toko || mut.source_name,
-    index
+    index,
+    mut.id
   );
 }
 
@@ -985,6 +1009,7 @@ export function findUnreconciledStockReceipts(
     itemNames: string[];
     itemCount: number;
     isTalangan: boolean;
+    mutationIds: string[];
   };
 
   const groups = new Map<string, GroupAcc>();
@@ -1018,6 +1043,7 @@ export function findUnreconciledStockReceipts(
       itemNames: [],
       itemCount: 0,
       isTalangan: false,
+      mutationIds: [],
     });
   }
 
@@ -1031,11 +1057,16 @@ export function findUnreconciledStockReceipts(
     }
 
     const rNoRaw = (m.nomor_nota || m.nomor_surat_jalan || '').trim();
+    const effectiveRef = rNoRaw && rNoRaw !== '-' ? rNoRaw : (m.id ? `INV-${m.id.slice(0, 6).toUpperCase()}` : '');
     const sNameRaw = (m.nama_toko || m.source_name || 'Toko / Suplier').trim();
     const rNoNorm = normalizeReceiptRef(rNoRaw);
     const sNameNorm = normalizeReceiptStoreName(m.nama_toko || m.source_name) || sNameRaw.toLowerCase();
 
-    if (isReceiptPaidInIndex(m.receipt_id, rNoRaw, m.nama_toko || m.source_name, paymentIndex)) {
+    if (
+      isReceiptPaidInIndex(m.receipt_id, effectiveRef, m.nama_toko || m.source_name, paymentIndex, m.id) ||
+      (paymentIndex.paidStockMutationIds && paymentIndex.paidStockMutationIds.has(m.id)) ||
+      (m.receipt_id && paymentIndex.paidReceiptIds.has(m.receipt_id))
+    ) {
       continue;
     }
     if (isPoReceiptCoveredByPoPayment(m.po_id)) {
@@ -1086,11 +1117,15 @@ export function findUnreconciledStockReceipts(
         itemNames: m.nama_barang ? [m.nama_barang] : [],
         itemCount: 1,
         isTalangan,
+        mutationIds: m.id ? [m.id] : [],
       });
     } else {
       const g = groups.get(groupKey)!;
       g.computedItemsTotalRp += lineValue;
       g.itemCount += 1;
+      if (m.id && !g.mutationIds.includes(m.id)) {
+        g.mutationIds.push(m.id);
+      }
       if (m.nama_barang && !g.itemNames.includes(m.nama_barang)) {
         g.itemNames.push(m.nama_barang);
       }
@@ -1117,6 +1152,7 @@ export function findUnreconciledStockReceipts(
     results.push({
       key: g.key,
       receiptId: g.receiptId,
+      mutationIds: g.mutationIds,
       receiptNo: g.receiptNo,
       storeName: g.storeName,
       storeContact: g.storeContact,
@@ -2046,6 +2082,64 @@ export function getCashActionVariantClass(variant: CashActionVariant): string {
 }
 
 /**
+ * Deteksi pintar kategori pengeluaran kas dari nota belanja gudang / upah
+ */
+export function detectCashCategoryFromStockReceipt(
+  rc: UnreconciledStockReceiptItem,
+  boqItems?: Array<{ id: string; nama_barang: string; kategori?: string; is_stock_item?: boolean }>
+): CashOutCategory {
+  if (rc.isTalangan) return 'Talangan Klien';
+
+  const summary = (rc.itemSummary || '').toLowerCase();
+  const store = (rc.storeName || '').toLowerCase();
+
+  const isManpower =
+    summary.includes('tenaga') ||
+    summary.includes('upah') ||
+    summary.includes('tukang') ||
+    summary.includes('mandor') ||
+    summary.includes('pekerja') ||
+    summary.includes('konsumsi') ||
+    summary.includes('gaji') ||
+    summary.includes('lembur') ||
+    summary.includes('borongan') ||
+    summary.includes('ongkos');
+
+  if (isManpower) return 'Upah & Konsumsi';
+
+  const isRentalEquipment =
+    summary.includes('sewa') ||
+    summary.includes('rental') ||
+    summary.includes('scaffolding') ||
+    summary.includes('molen') ||
+    summary.includes('alat berat') ||
+    summary.includes('excavator') ||
+    summary.includes('angkut') ||
+    summary.includes('ongkir') ||
+    summary.includes('ekspedisi');
+
+  if (isRentalEquipment) return 'Sewa Alat & Angkut';
+
+  if (boqItems && boqItems.length > 0) {
+    const matchedBoq = boqItems.find((it) => {
+      const itName = it.nama_barang.toLowerCase();
+      return summary.includes(itName) || itName.includes(summary);
+    });
+    if (matchedBoq) {
+      const catUpper = (matchedBoq.kategori || '').toUpperCase();
+      if (!matchedBoq.is_stock_item || catUpper.includes('UPAH') || catUpper.includes('TENAGA') || catUpper.includes('JASA')) {
+        return 'Upah & Konsumsi';
+      }
+      if (catUpper.includes('SEWA') || catUpper.includes('ALAT')) {
+        return 'Sewa Alat & Angkut';
+      }
+    }
+  }
+
+  return 'Material';
+}
+
+/**
  * Buat jawaban awal Wizard 3 Langkah (atau 2-Klik Ekspres dari Nota Gudang)
  */
 export function createInitialCashWizardAnswers(params: {
@@ -2055,6 +2149,7 @@ export function createInitialCashWizardAnswers(params: {
   preselectedReceipt?: UnreconciledStockReceiptItem | null;
   preselectedAmount?: number;
   preselectedPurpose?: string;
+  boqItems?: Array<{ id: string; nama_barang: string; kategori?: string; is_stock_item?: boolean }>;
 }): CashWizardAnswers {
   const {
     jenis,
@@ -2063,10 +2158,19 @@ export function createInitialCashWizardAnswers(params: {
     preselectedReceipt,
     preselectedAmount,
     preselectedPurpose,
+    boqItems,
   } = params;
 
   if (preselectedReceipt) {
-    const cat: CashOutCategory = preselectedReceipt.isTalangan ? 'Talangan Klien' : 'Material';
+    const isOutCat = (c?: string): c is CashOutCategory =>
+      Boolean(c && (CASH_OUT_CATEGORIES as readonly string[]).includes(c));
+    const cat: CashOutCategory =
+      isOutCat(preselectedCategory) ? preselectedCategory : detectCashCategoryFromStockReceipt(preselectedReceipt, boqItems);
+    const primaryMutationId =
+      preselectedReceipt.receiptId ||
+      (preselectedReceipt.mutationIds && preselectedReceipt.mutationIds[0]) ||
+      (preselectedReceipt.key.startsWith('tx:') ? preselectedReceipt.key.replace(/^tx:/, '') : undefined);
+
     return {
       jenis: 'KELUAR',
       kategori_keperluan: cat,
@@ -2075,7 +2179,7 @@ export function createInitialCashWizardAnswers(params: {
       receipt_id: preselectedReceipt.receiptId,
       linked_stock_receipt: preselectedReceipt,
       source_module: 'MUTASI_BARANG',
-      source_entity_id: preselectedReceipt.receiptId,
+      source_entity_id: primaryMutationId,
       source_entity_no: preselectedReceipt.receiptNo,
       jumlah_rp: preselectedReceipt.totalAmountRp,
       tanggal: getTodayLocalDate(),
