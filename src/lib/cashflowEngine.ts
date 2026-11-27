@@ -76,6 +76,9 @@ export interface CashEvalContext {
   canIssue: boolean;
   canCorrect: boolean;
   canViewFinancials: boolean;
+  canCheck?: boolean;
+  canApprove?: boolean;
+  canAcknowledge?: boolean;
   contractorName: string;
   clientName: string;
 }
@@ -348,7 +351,14 @@ export function computeRunningCashBalances(cashMutations: MutasiKas[]): Map<stri
  */
 export function resolveCashEvalContext(
   activeRole: ImpersonateRole,
-  permissions: { canIssue: boolean; canInitiateBatalGanti: boolean; canInstructBatalGanti: boolean },
+  permissions: {
+    canIssue: boolean;
+    canInitiateBatalGanti: boolean;
+    canInstructBatalGanti: boolean;
+    canCheck?: boolean;
+    canApprove?: boolean;
+    canAcknowledge?: boolean;
+  },
   branding: { contractorName?: string; clientName?: string },
   canViewFinancialsFlag: boolean
 ): CashEvalContext {
@@ -363,6 +373,9 @@ export function resolveCashEvalContext(
       canIssue: false,
       canCorrect: false,
       canViewFinancials: false,
+      canCheck: false,
+      canApprove: false,
+      canAcknowledge: false,
       contractorName,
       clientName,
     };
@@ -379,21 +392,40 @@ export function resolveCashEvalContext(
     canIssue,
     canCorrect,
     canViewFinancials: Boolean(canViewFinancialsFlag),
+    canCheck: Boolean(permissions.canCheck),
+    canApprove: Boolean(permissions.canApprove),
+    canAcknowledge: Boolean(permissions.canAcknowledge),
     contractorName,
     clientName,
   };
 }
 
 /**
- * Cek apakah sebuah dokumen / baris sedang menunggu giliran persetujuan peran aktif (eksekusi serial)
+ * Cek apakah sebuah dokumen / baris sedang menunggu giliran persetujuan peran aktif (eksekusi serial).
+ * Mendukung wewenang kustom dinamis (misal Klerk Mandiri Lapangan / Solo Clerk dari CSA).
  */
 export function getPendingApprovalForRole(
   statusDokumen: StatusDokumenWorkflow | undefined,
-  activeRole: ImpersonateRole
+  activeRole: ImpersonateRole,
+  permissions?: { canCheck?: boolean; canApprove?: boolean; canAcknowledge?: boolean }
 ): { action: PendingApprovalAction; nextTarget: 'DIPERIKSA' | 'DISETUJUI' | 'MENGETAHUI' } | null {
   const wf = statusDokumen || 'DITERBITKAN';
   if (wf === 'BATAL' || wf === 'DIGANTI' || wf === 'MENGETAHUI') return null;
 
+  // Jika diberikan wewenang eksplisit (misal wewenang kustom CSA / Solo Lapangan)
+  if (permissions) {
+    if (wf === 'DITERBITKAN' && permissions.canCheck) {
+      return { action: 'PERIKSA', nextTarget: 'DIPERIKSA' };
+    }
+    if (wf === 'DIPERIKSA' && permissions.canApprove) {
+      return { action: 'SETUJU', nextTarget: 'DISETUJUI' };
+    }
+    if (wf === 'DISETUJUI' && permissions.canAcknowledge) {
+      return { action: 'SAHKAN', nextTarget: 'MENGETAHUI' };
+    }
+  }
+
+  // Fallback ke hierarki baku standar peran
   if (activeRole === 'Foreman' && wf === 'DITERBITKAN') {
     return { action: 'PERIKSA', nextTarget: 'DIPERIKSA' };
   }
@@ -413,37 +445,40 @@ export function getPendingApprovalForRole(
 
 export function countPendingCashApprovals(
   cashMutations: MutasiKas[],
-  activeRole: ImpersonateRole
+  activeRole: ImpersonateRole,
+  permissions?: { canCheck?: boolean; canApprove?: boolean; canAcknowledge?: boolean }
 ): number {
   return (cashMutations || []).filter((tx) => {
     if (isCashRowExcluded(tx)) return false;
-    return getPendingApprovalForRole(tx.status_dokumen, activeRole) !== null;
+    return getPendingApprovalForRole(tx.status_dokumen, activeRole, permissions) !== null;
   }).length;
 }
 
 export function countPendingStockApprovals(
   stockMutations: MutasiBarang[],
-  activeRole: ImpersonateRole
+  activeRole: ImpersonateRole,
+  permissions?: { canCheck?: boolean; canApprove?: boolean; canAcknowledge?: boolean }
 ): number {
   return (stockMutations || []).filter((m) => {
     if (m.is_batal || m.is_ganti || m.status_dokumen === 'BATAL' || m.status_dokumen === 'DIGANTI') {
       return false;
     }
-    return getPendingApprovalForRole(m.status_dokumen, activeRole) !== null;
+    return getPendingApprovalForRole(m.status_dokumen, activeRole, permissions) !== null;
   }).length;
 }
 
 export function countPendingDocumentApprovals(
   documents: DokumenLaporan[],
   activeRole: ImpersonateRole,
-  jenisFilter?: DokumenLaporan['jenis']
+  jenisFilter?: DokumenLaporan['jenis'],
+  permissions?: { canCheck?: boolean; canApprove?: boolean; canAcknowledge?: boolean }
 ): number {
   return (documents || []).filter((doc) => {
     if (jenisFilter && doc.jenis !== jenisFilter) return false;
     if (doc.is_batal || doc.is_ganti || doc.status_dokumen === 'BATAL' || doc.status_dokumen === 'DIGANTI') {
       return false;
     }
-    return getPendingApprovalForRole(doc.status_dokumen, activeRole) !== null;
+    return getPendingApprovalForRole(doc.status_dokumen, activeRole, permissions) !== null;
   }).length;
 }
 
@@ -455,11 +490,12 @@ export function countPendingDocumentApprovals(
 export function resolveStockApprovalTargetTab(
   stockMutations: MutasiBarang[],
   documents: DokumenLaporan[],
-  activeRole: ImpersonateRole
+  activeRole: ImpersonateRole,
+  permissions?: { canCheck?: boolean; canApprove?: boolean; canAcknowledge?: boolean }
 ): 'MUTATION_HISTORY' | 'OFFICIAL_DOCUMENTS' {
-  const pendingRows = countPendingStockApprovals(stockMutations, activeRole);
+  const pendingRows = countPendingStockApprovals(stockMutations, activeRole, permissions);
   if (pendingRows > 0) return 'MUTATION_HISTORY';
-  const pendingDocs = countPendingDocumentApprovals(documents, activeRole, 'MUTASI_STOK');
+  const pendingDocs = countPendingDocumentApprovals(documents, activeRole, 'MUTASI_STOK', permissions);
   if (pendingDocs > 0) return 'OFFICIAL_DOCUMENTS';
   return 'MUTATION_HISTORY';
 }
@@ -1626,7 +1662,11 @@ export function computeCashSummaryMetrics(
     all,
     context.clientName
   );
-  const pendingWorkflowCount = countPendingCashApprovals(all, context.activeRole);
+  const pendingWorkflowCount = countPendingCashApprovals(all, context.activeRole, {
+    canCheck: context.canCheck,
+    canApprove: context.canApprove,
+    canAcknowledge: context.canAcknowledge,
+  });
 
   return {
     activeCount,
@@ -1896,11 +1936,18 @@ export function evaluateCashRow(tx: MutasiKas, context: CashEvalContext): CashRo
     };
   }
 
-  // T-3: Giliran persetujuan Pengawas Internal (Foreman / Spv. / Dept. Mgr / KTT-PM / CEO)
-  const pendingApproval =
-    context.authority === 'PENGAWAS_INTERNAL'
-      ? getPendingApprovalForRole(wf, context.activeRole)
-      : null;
+  // T-3: Giliran persetujuan Pengawas Internal / Wewenang Custom CSA (Solo Lapangan)
+  const hasApprovalAuthority =
+    context.authority === 'PENGAWAS_INTERNAL' ||
+    Boolean(context.canCheck || context.canApprove || context.canAcknowledge);
+
+  const pendingApproval = hasApprovalAuthority
+    ? getPendingApprovalForRole(wf, context.activeRole, {
+        canCheck: context.canCheck,
+        canApprove: context.canApprove,
+        canAcknowledge: context.canAcknowledge,
+      })
+    : null;
 
   if (pendingApproval) {
     const labelMap: Record<PendingApprovalAction, { label: string; variant: CashActionVariant; tip: string }> = {

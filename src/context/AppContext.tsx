@@ -2745,9 +2745,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         items,
         stockMutations,
         cashMutations,
-        activeRole
+        activeRole,
+        undefined,
+        rolePermissions
       ),
-    [purchaseOrders, items, stockMutations, cashMutations, activeRole]
+    [purchaseOrders, items, stockMutations, cashMutations, activeRole, rolePermissions]
   );
 
   const currentCashBalance = cashSummaryMetrics.saldoSaatIni;
@@ -2756,35 +2758,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const pendingStockApprovalCount = useMemo(
     () =>
-      countPendingStockApprovals(stockMutations, activeRole) +
-      countPendingDocumentApprovals(documents, activeRole, 'MUTASI_STOK'),
-    [stockMutations, documents, activeRole]
+      countPendingStockApprovals(stockMutations, activeRole, rolePermissions) +
+      countPendingDocumentApprovals(documents, activeRole, 'MUTASI_STOK', rolePermissions),
+    [stockMutations, documents, activeRole, rolePermissions]
   );
 
   const pendingCashApprovalCount = useMemo(
     () =>
       activeRole === 'Viewer/Pengamat'
         ? 0
-        : countPendingCashApprovals(cashMutations, activeRole) +
-          countPendingDocumentApprovals(documents, activeRole, 'MUTASI_KAS'),
-    [cashMutations, documents, activeRole]
+        : countPendingCashApprovals(cashMutations, activeRole, rolePermissions) +
+          countPendingDocumentApprovals(documents, activeRole, 'MUTASI_KAS', rolePermissions),
+    [cashMutations, documents, activeRole, rolePermissions]
   );
 
   const pendingPoApprovalCount = useMemo(
     () =>
       activeRole === 'Viewer/Pengamat'
         ? 0
-        : countPendingPoApprovals(purchaseOrders, activeRole) +
-          countPendingDocumentApprovals(documents, activeRole, 'PO_PENGADAAN'),
-    [purchaseOrders, documents, activeRole]
+        : countPendingPoApprovals(purchaseOrders, activeRole, rolePermissions) +
+          countPendingDocumentApprovals(documents, activeRole, 'PO_PENGADAAN', rolePermissions),
+    [purchaseOrders, documents, activeRole, rolePermissions]
   );
 
   const pendingDocumentApprovalCount = useMemo(
     () =>
       activeRole === 'Viewer/Pengamat'
         ? 0
-        : countPendingDocumentApprovals(documents, activeRole, 'GABUNGAN_PROYEK'),
-    [documents, activeRole]
+        : countPendingDocumentApprovals(documents, activeRole, 'GABUNGAN_PROYEK', rolePermissions),
+    [documents, activeRole, rolePermissions]
   );
 
   const pendingApprovalCount =

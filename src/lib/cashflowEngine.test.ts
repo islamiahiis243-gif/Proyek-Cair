@@ -16,6 +16,7 @@ import {
   findRelatedStockMutationsForReceipt,
   findUnreconciledStockReceipts,
   getCashActionVariantClass,
+  getPendingApprovalForRole,
   isCashRowExcluded,
   isClientSuppliedStockMutation,
   isStockMutationPaidViaCash,
@@ -1554,4 +1555,66 @@ test('auto-reconciles stock/manpower receipt with blank receipt number via gener
   // Status mutasi barang harus Terbayar Kas
   const index = buildTerpaduReceiptIndex([], [cashPayManpower]);
   assert.equal(isStockMutationPaidViaCash(manpowerStock, index, branding.clientName), true);
+});
+
+test('Wewenang Dinamis RFIN-B & Preset Klerk Mandiri Lapangan (Solo / All-in-One)', () => {
+  const soloPerms = {
+    canIssue: true,
+    canInitiateBatalGanti: true,
+    canInstructBatalGanti: true,
+    canCheck: true,
+    canApprove: true,
+    canAcknowledge: true,
+  };
+
+  // 1. Klerk standar tanpa wewenang kustom tidak mendapatkan giliran persetujuan
+  assert.equal(getPendingApprovalForRole('DITERBITKAN', 'Clerk'), null);
+  assert.equal(getPendingApprovalForRole('DIPERIKSA', 'Clerk'), null);
+  assert.equal(getPendingApprovalForRole('DISETUJUI', 'Clerk'), null);
+
+  // 2. Klerk Solo Lapangan dengan custom_permissions mendapatkan giliran di setiap tahap
+  const turn1 = getPendingApprovalForRole('DITERBITKAN', 'Clerk', soloPerms);
+  assert.ok(turn1);
+  assert.equal(turn1.action, 'PERIKSA');
+  assert.equal(turn1.nextTarget, 'DIPERIKSA');
+
+  const turn2 = getPendingApprovalForRole('DIPERIKSA', 'Clerk', soloPerms);
+  assert.ok(turn2);
+  assert.equal(turn2.action, 'SETUJU');
+  assert.equal(turn2.nextTarget, 'DISETUJUI');
+
+  const turn3 = getPendingApprovalForRole('DISETUJUI', 'Clerk', soloPerms);
+  assert.ok(turn3);
+  assert.equal(turn3.action, 'SAHKAN');
+  assert.equal(turn3.nextTarget, 'MENGETAHUI');
+
+  // 3. Wewenang parsial kustom: CSA hanya memberikan canCheck kepada jabatan tertentu
+  const checkOnlyPerms = { canCheck: true, canApprove: false, canAcknowledge: false };
+  assert.equal(getPendingApprovalForRole('DITERBITKAN', 'Clerk', checkOnlyPerms)?.action, 'PERIKSA');
+  assert.equal(getPendingApprovalForRole('DIPERIKSA', 'Clerk', checkOnlyPerms), null);
+  assert.equal(getPendingApprovalForRole('DISETUJUI', 'Clerk', checkOnlyPerms), null);
+
+  // 4. Hitungan antrean (countPendingCashApprovals & countPendingStockApprovals) akurat untuk Klerk Solo
+  const tx1 = makeCash({ id: 'c1', jenis: 'KELUAR', jumlah_rp: 500_000, status_dokumen: 'DITERBITKAN' });
+  const tx2 = makeCash({ id: 'c2', jenis: 'KELUAR', jumlah_rp: 1_000_000, status_dokumen: 'DIPERIKSA' });
+  const tx3 = makeCash({ id: 'c3', jenis: 'KELUAR', jumlah_rp: 750_000, status_dokumen: 'DISETUJUI' });
+  const tx4 = makeCash({ id: 'c4', jenis: 'KELUAR', jumlah_rp: 200_000, status_dokumen: 'MENGETAHUI' });
+
+  // Klerk biasa: 0 antrean
+  assert.equal(countPendingCashApprovals([tx1, tx2, tx3, tx4], 'Clerk'), 0);
+
+  // Klerk Solo: 3 antrean aktif (DITERBITKAN, DIPERIKSA, DISETUJUI)
+  assert.equal(countPendingCashApprovals([tx1, tx2, tx3, tx4], 'Clerk', soloPerms), 3);
+
+  // 5. Smart-Button evaluateCashRow menghasilkan tombol APPROVE yang tepat untuk Klerk Solo
+  const soloCtx = resolveCashEvalContext('Clerk', soloPerms, branding, true);
+  const evalRow1 = evaluateCashRow(tx1, soloCtx);
+  assert.equal(evalRow1.actionType, 'APPROVE');
+  assert.equal(evalRow1.actionLabel, 'Periksa');
+  assert.equal(evalRow1.nextWorkflowTarget, 'DIPERIKSA');
+
+  const evalRow3 = evaluateCashRow(tx3, soloCtx);
+  assert.equal(evalRow3.actionType, 'APPROVE');
+  assert.equal(evalRow3.actionLabel, 'Sahkan');
+  assert.equal(evalRow3.nextWorkflowTarget, 'MENGETAHUI');
 });

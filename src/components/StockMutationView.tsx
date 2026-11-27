@@ -16,6 +16,7 @@ import {
 import {
   buildTerpaduReceiptIndex,
   countPendingDocumentApprovals,
+  countPendingStockApprovals,
   findLinkedCashMutationsForStockMutation,
   findRelatedStockMutationsForReceipt,
   getCashActionVariantClass,
@@ -188,29 +189,15 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     return resolveEvalContext(activeRole, rolePermissions.canIssue, tenantBranding);
   }, [activeRole, rolePermissions.canIssue, tenantBranding]);
 
-  // Antrean persetujuan mutasi yang menunggu giliran peran aktif (Foreman / Spv / Pengesah)
+  // Antrean persetujuan mutasi yang menunggu giliran peran aktif (Foreman / Spv / Pengesah / Solo Lapangan)
   const pendingWorkflowCount = useMemo(() => {
-    return stockMutations.filter((m) => {
-      if (m.is_batal || m.is_ganti || m.status_dokumen === 'BATAL' || m.status_dokumen === 'DIGANTI') {
-        return false;
-      }
-      if (activeRole === 'Foreman') return m.status_dokumen === 'DITERBITKAN';
-      if (activeRole === 'Spv.') return m.status_dokumen === 'DIPERIKSA';
-      if (
-        activeRole === 'Dept. Manager' ||
-        activeRole === 'KTT/Proj. Manager' ||
-        activeRole === 'CEO/Direktur'
-      ) {
-        return m.status_dokumen === 'DISETUJUI';
-      }
-      return false;
-    }).length;
-  }, [stockMutations, activeRole]);
+    return countPendingStockApprovals(stockMutations, activeRole, rolePermissions);
+  }, [stockMutations, activeRole, rolePermissions]);
 
   // Antrean dokumen resmi MUTASI_STOK menunggu giliran peran aktif
   const pendingStockDocCount = useMemo(
-    () => countPendingDocumentApprovals(documents || [], activeRole, 'MUTASI_STOK'),
-    [documents, activeRole]
+    () => countPendingDocumentApprovals(documents || [], activeRole, 'MUTASI_STOK', rolePermissions),
+    [documents, activeRole, rolePermissions]
   );
 
   // Penugasan jabatan sah milik pengguna di proyek aktif (Ganti Jabatan Cepat hanya tampil jika > 1)
@@ -1473,7 +1460,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
     currentStatus: StatusDokumenWorkflow,
     nextStatus: StatusDokumenWorkflow
   ) => {
-    const pendingTurn = getPendingApprovalForRole(currentStatus, activeRole);
+    const pendingTurn = getPendingApprovalForRole(currentStatus, activeRole, rolePermissions);
     if (!pendingTurn || pendingTurn.nextTarget !== nextStatus) {
       setErrorMessage(`Jabatan Anda (${activeRole}) belum/tidak berwenang memproses tahap ${nextStatus} pada dokumen ini.`);
       return;
@@ -4507,7 +4494,7 @@ export const StockMutationView: React.FC<StockMutationViewProps> = ({
                                       </div>
                                     );
                                   }
-                                  const pendingDocAction = getPendingApprovalForRole(wfStatus, activeRole);
+                                  const pendingDocAction = getPendingApprovalForRole(wfStatus, activeRole, rolePermissions);
                                   if (pendingDocAction) {
                                     const approvalVariant =
                                       pendingDocAction.action === 'PERIKSA'

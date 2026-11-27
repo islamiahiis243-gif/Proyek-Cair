@@ -463,11 +463,12 @@ export function computeProcurementNeeds(
  */
 export function countPendingPoApprovals(
   purchaseOrders: PurchaseOrder[],
-  activeRole: ImpersonateRole
+  activeRole: ImpersonateRole,
+  permissions?: { canCheck?: boolean; canApprove?: boolean; canAcknowledge?: boolean }
 ): number {
   return (purchaseOrders || []).filter((po) => {
     if (isPoRowExcluded(po)) return false;
-    return getPendingApprovalForRole(po.status_dokumen, activeRole) !== null;
+    return getPendingApprovalForRole(po.status_dokumen, activeRole, permissions) !== null;
   }).length;
 }
 
@@ -604,7 +605,11 @@ export function evaluatePurchaseOrder(
 
   // PO-1: MENUNGGU PENGESAHAN SERIAL 4 TINGKAT
   if (!isApproved) {
-    const pending = getPendingApprovalForRole(po.status_dokumen, evalCtx.activeRole);
+    const pending = getPendingApprovalForRole(po.status_dokumen, evalCtx.activeRole, {
+      canCheck: evalCtx.canCheck,
+      canApprove: evalCtx.canApprove,
+      canAcknowledge: evalCtx.canAcknowledge,
+    });
     const wfLabelMap: Record<string, string> = {
       DITERBITKAN: 'Terbit',
       DIPERIKSA: 'Diperiksa',
@@ -618,7 +623,11 @@ export function evaluatePurchaseOrder(
           ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/70'
           : 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-800/70';
 
-    if (evalCtx.authority === 'PENGAWAS_INTERNAL' && pending) {
+    const canActOnApproval =
+      evalCtx.authority === 'PENGAWAS_INTERNAL' ||
+      Boolean(evalCtx.canCheck || evalCtx.canApprove || evalCtx.canAcknowledge);
+
+    if (canActOnApproval && pending) {
       const labelByAction: Record<PendingApprovalAction, string> = {
         PERIKSA: 'Periksa',
         SETUJU: 'Setuju',
@@ -847,7 +856,8 @@ export function computeProcurementSummaryMetrics(
   stockMutations: MutasiBarang[],
   cashMutations: MutasiKas[],
   activeRole: ImpersonateRole,
-  todayLocalDate: string = getTodayLocalDate()
+  todayLocalDate: string = getTodayLocalDate(),
+  permissions?: { canCheck?: boolean; canApprove?: boolean; canAcknowledge?: boolean }
 ): ProcurementSummaryMetrics {
   const needs = computeProcurementNeeds(items, purchaseOrders, stockMutations);
   const needOrderItems = needs.filter((n) => n.sisaPerluDipesan > 0);
@@ -899,7 +909,7 @@ export function computeProcurementSummaryMetrics(
     const wf = po.status_dokumen || 'DITERBITKAN';
     if (wf !== 'MENGETAHUI') {
       pendingApprovalAllCount += 1;
-      if (getPendingApprovalForRole(po.status_dokumen, activeRole) !== null) {
+      if (getPendingApprovalForRole(po.status_dokumen, activeRole, permissions) !== null) {
         pendingMyApprovalCount += 1;
       }
       continue;

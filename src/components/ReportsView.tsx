@@ -1279,7 +1279,7 @@ export const ReportsView: React.FC = () => {
               );
               const pendingAction =
                 !isDocInactive && !isViewer
-                  ? getPendingApprovalForRole(doc.status_dokumen || 'DITERBITKAN', activeRole)
+                  ? getPendingApprovalForRole(doc.status_dokumen || 'DITERBITKAN', activeRole, rolePermissions)
                   : null;
               const statusDisplay =
                 DOC_STATUS_LABELS[doc.status_dokumen || ''] || doc.status || 'Diterbitkan';

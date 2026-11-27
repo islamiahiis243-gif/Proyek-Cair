@@ -390,8 +390,11 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
         if (isCashRowExcluded(c) || c.status_bukti !== 'BUKTI_MENYUSUL') return false;
       } else if (filterSpecial === 'PENDING_APPROVAL') {
         if (isCashRowExcluded(c)) return false;
-        if (cashEvalContext.authority === 'PENGAWAS_INTERNAL') {
-          if (!getPendingApprovalForRole(c.status_dokumen, activeRole)) return false;
+        const hasApprovalAuth =
+          cashEvalContext.authority === 'PENGAWAS_INTERNAL' ||
+          Boolean(rolePermissions.canCheck || rolePermissions.canApprove || rolePermissions.canAcknowledge);
+        if (hasApprovalAuth) {
+          if (!getPendingApprovalForRole(c.status_dokumen, activeRole, rolePermissions)) return false;
         } else {
           if (c.status_dokumen === 'MENGETAHUI') return false;
         }
@@ -2588,7 +2591,7 @@ export const CashflowView: React.FC<CashflowViewProps> = ({
                             rolePermissions.canInitiateBatalGanti || rolePermissions.canInstructBatalGanti;
                           const pendingDocAction =
                             !isDocVoid && !isDocReplaced
-                              ? getPendingApprovalForRole(wfStatus, activeRole)
+                              ? getPendingApprovalForRole(wfStatus, activeRole, rolePermissions)
                               : null;
 
                           return (

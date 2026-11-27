@@ -47,6 +47,7 @@ export const Header: React.FC = () => {
     setAppMode,
     activeRole,
     setActiveRole,
+    rolePermissions,
     activeCompany,
     setActiveCompany,
     activeProjectId,
@@ -234,7 +235,8 @@ export const Header: React.FC = () => {
   const stockApprovalTargetTab = resolveStockApprovalTargetTab(
     stockMutations,
     documents,
-    activeRole
+    activeRole,
+    rolePermissions
   );
 
   const cashApprovalTargetTab =
@@ -483,30 +485,45 @@ export const Header: React.FC = () => {
           </div>
 
           {/* Badge Jabatan Tombol Sesuai Gambar */}
-          <div
-            className={`flex items-center gap-1 rounded-full px-1.5 sm:px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase border transition-colors shrink-0 ${
-              appMode === 'IMPERSONATE'
-                ? activeRole === 'Viewer/Pengamat'
-                  ? 'border-cyan-500/70 text-cyan-300 bg-cyan-500/10'
-                  : 'border-amber-500/70 text-amber-300 bg-amber-500/10'
-                : appMode === 'CSA'
-                ? 'border-blue-500/70 text-blue-300 bg-blue-500/10'
-                : appMode === 'PSA'
-                ? 'border-purple-500/70 text-purple-300 bg-purple-500/10'
-                : 'border-slate-600 text-slate-300 bg-slate-800'
-            }`}
-          >
-            <span className="truncate max-w-[70px] sm:max-w-none">
-              {appMode === 'IMPERSONATE'
-                ? (activeRole === 'Viewer/Pengamat' ? 'PENGAMAT' : activeRole)
-                : appMode === 'CSA'
-                ? 'CSA'
-                : appMode === 'PSA'
-                ? 'PSA'
-                : 'PERSONAL'}
-            </span>
-            <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
-          </div>
+          {(() => {
+            const isSoloClerk =
+              appMode === 'IMPERSONATE' &&
+              rolePermissions.canCheck &&
+              rolePermissions.canApprove &&
+              rolePermissions.canAcknowledge;
+            return (
+              <div
+                className={`flex items-center gap-1 rounded-full px-1.5 sm:px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase border transition-colors shrink-0 ${
+                  appMode === 'IMPERSONATE'
+                    ? isSoloClerk
+                      ? 'border-emerald-500/70 text-emerald-300 bg-emerald-500/10'
+                      : activeRole === 'Viewer/Pengamat'
+                      ? 'border-cyan-500/70 text-cyan-300 bg-cyan-500/10'
+                      : 'border-amber-500/70 text-amber-300 bg-amber-500/10'
+                    : appMode === 'CSA'
+                    ? 'border-blue-500/70 text-blue-300 bg-blue-500/10'
+                    : appMode === 'PSA'
+                    ? 'border-purple-500/70 text-purple-300 bg-purple-500/10'
+                    : 'border-slate-600 text-slate-300 bg-slate-800'
+                }`}
+              >
+                <span className="truncate max-w-[80px] sm:max-w-none">
+                  {appMode === 'IMPERSONATE'
+                    ? isSoloClerk
+                      ? '⭐ Klerk Solo'
+                      : activeRole === 'Viewer/Pengamat'
+                      ? 'PENGAMAT'
+                      : activeRole
+                    : appMode === 'CSA'
+                    ? 'CSA'
+                    : appMode === 'PSA'
+                    ? 'PSA'
+                    : 'PERSONAL'}
+                </span>
+                <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
+              </div>
+            );
+          })()}
         </button>
 
         {/* Panel Dropdown Pemilih Penugasan Jabatan (Tengah Layar di Ponsel, Rapi di Desktop) */}
