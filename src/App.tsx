@@ -153,13 +153,7 @@ const MainApp: React.FC = () => {
                 )}
                 {currentView === 'reports' && <ReportsView />}
                 {currentView === 'verification' && <VerificationPortal />}
-                {/* Di Mode Impersonate tidak ada Settings; jika diarahkan ke settings, tampilkan dashboard */}
-                {currentView === 'settings' && (
-                  <DashboardView
-                    onOpenStockModal={handleOpenStockModal}
-                    onOpenCashModal={handleOpenCashModal}
-                  />
-                )}
+                {currentView === 'settings' && <SettingsView />}
               </>
             )}
           </Suspense>

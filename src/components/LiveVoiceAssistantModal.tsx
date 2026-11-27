@@ -51,6 +51,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     cashMutations,
     addStockMutation,
     addCashMutation,
+    pendingApprovalCount,
     setCurrentView
   } = useApp();
 
@@ -176,7 +177,8 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     items: items,
     totalStockAssetValue: totalStockAssetValue,
     stockMutationsCount: stockMutations.length,
-    cashMutationsCount: cashMutations.length
+    cashMutationsCount: cashMutations.length,
+    pendingApprovalCount: pendingApprovalCount
   });
 
   // Eksekusi Tindakan yang Diusulkan (Konfirmasi Aman)
@@ -482,6 +484,24 @@ export const LiveVoiceAssistantModal: React.FC = () => {
         }
       ]);
       speakResponse('Tindakan dibatalkan.');
+      return;
+    }
+
+    // Jika periksa antrean persetujuan
+    if (result.type === 'CHECK_APPROVAL_QUEUE') {
+      if (result.data.targetView) {
+        setCurrentView(result.data.targetView);
+      }
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `a-${Date.now()}`,
+          sender: 'assistant',
+          text: result.spokenResponse,
+          timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
+      speakResponse(result.spokenResponse);
       return;
     }
 

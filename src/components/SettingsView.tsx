@@ -19,7 +19,10 @@ import {
   Save,
   Check,
   Upload,
-  ArrowLeft
+  ArrowLeft,
+  QrCode,
+  KeyRound,
+  Building2
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -41,6 +44,8 @@ export const SettingsView: React.FC = () => {
     activeWorkspaceId,
     activeProject,
     activeRole,
+    rolePermissions,
+    canViewFinancials,
     appMode,
     setAppMode,
     activeCompany,
@@ -54,6 +59,25 @@ export const SettingsView: React.FC = () => {
   const [isCropperOpen, setIsCropperOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // State frasa sandi TTE/QR lapangan
+  const [ttePassphrase, setTtePassphrase] = useState(() => {
+    try {
+      return localStorage.getItem(`pc_tte_passphrase_${user.id}`) || '';
+    } catch {
+      return '';
+    }
+  });
+  const [tteSaved, setTteSaved] = useState(false);
+
+  const handleSaveTtePassphrase = (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      localStorage.setItem(`pc_tte_passphrase_${user.id}`, ttePassphrase.trim());
+      setTteSaved(true);
+      setTimeout(() => setTteSaved(false), 3000);
+    } catch {}
+  };
 
   // Preference density state
   const [tableDensity, setTableDensity] = useState<'comfortable' | 'compact'>(() => {
@@ -128,34 +152,285 @@ export const SettingsView: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  // JIKA SEDANG DALAM MODE IMPERSONATE: Pengaturan dikunci
+  // JIKA SEDANG DALAM MODE IMPERSONATE: Tampilkan Pengaturan Karyawan, Frasa Sandi TTE/QR & Kenyamanan Lapangan
   if (appMode === 'IMPERSONATE') {
+    const isSoloClerk = Boolean(
+      rolePermissions.canCheck && rolePermissions.canApprove && rolePermissions.canAcknowledge
+    );
+
     return (
-      <div className="mx-auto max-w-2xl py-12 px-4">
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-6 md:p-8 backdrop-blur-sm text-center space-y-4">
-          <div className="mx-auto w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-500 flex items-center justify-center">
-            <ShieldCheck className="w-6 h-6" />
+      <div className="mx-auto max-w-4xl space-y-6 pb-12">
+        {/* Header Utama Pengaturan Karyawan */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 shadow-xs transition-colors">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => goBack ? goBack() : setCurrentView('dashboard')}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer mr-1"
+                  title="Kembali ke Dasbor"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Dasbor</span>
+                </button>
+                <span className="text-slate-300 dark:text-slate-700">/</span>
+                <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400">
+                  Pengaturan Karyawan
+                </span>
+              </div>
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>Penugasan Karyawan Proyek ({activeRole})</span>
+                </div>
+                <h1 className="text-xl font-bold text-slate-900 dark:text-white mt-1.5">
+                  Pengaturan Data Diri & TTE Lapangan
+                </h1>
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 font-medium">
+                  Kelola data diri sebagai karyawan di {activeCompany.name}, frasa sandi verifikasi TTE/QR elektronik, dan kenyamanan visual lapangan.
+                </p>
+              </div>
+            </div>
+
+            {/* Banner Logo Rata Kanan Atas */}
+            <div className="flex items-center justify-end self-center shrink-0">
+              <img
+                src="/words_PNG2.png"
+                alt="Proyek Cair"
+                className="h-12 sm:h-14 lg:h-16 w-auto max-w-[180px] sm:max-w-[240px] lg:max-w-[280px] object-contain drop-shadow-md dark:block hidden"
+              />
+              <img
+                src="/words_light.png"
+                alt="Proyek Cair"
+                className="h-12 sm:h-14 lg:h-16 w-auto max-w-[180px] sm:max-w-[240px] lg:max-w-[280px] object-contain drop-shadow-md dark:hidden block"
+              />
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-              Pengaturan Dikunci di Mode Penugasan Proyek
-            </h1>
-            <p className="mt-2 text-xs md:text-sm text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
-              Saat ini Anda sedang bertugas sebagai <span className="font-bold text-amber-600 dark:text-amber-400">{activeRole}</span> di <span className="font-bold text-slate-800 dark:text-slate-200">{activeCompany.name}</span>.
-              <br className="hidden sm:inline" />
-              Untuk menjaga integritas dan keamanan penugasan lapangan, pengaturan akun, profil, foto, tema, dan preferensi aplikasi hanya dapat diakses melalui <span className="font-bold text-emerald-600 dark:text-emerald-400">Akun Personal</span>.
-            </p>
+        </div>
+
+        {/* Bagian 1: Identitas Karyawan & Penugasan Lapangan */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 shadow-xs transition-colors space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">
+                <User className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">Identitas Karyawan & Penugasan</h2>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                  Informasi jabatan resmi yang disematkan saat menandatangani dokumen dan transaksi lapangan.
+                </p>
+              </div>
+            </div>
+            {isSoloClerk && (
+              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                Klerk Mandiri Lapangan (Solo)
+              </span>
+            )}
           </div>
-          <div className="pt-2">
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Perusahaan Kontraktor</span>
+              <div className="font-bold text-sm text-slate-900 dark:text-white mt-0.5">{activeCompany.name}</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">NPWP: {activeCompany.npwp || 'Belum Terdaftar'}</div>
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Proyek yang Ditugaskan</span>
+              <div className="font-bold text-sm text-slate-900 dark:text-white mt-0.5">{activeProject?.name || 'Semua Proyek Perusahaan'}</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Kode: {activeProject?.project_code || '-'}</div>
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Jabatan Penugasan Saat Ini</span>
+              <div className="font-bold text-sm text-slate-900 dark:text-white mt-0.5 flex items-center gap-2">
+                <span>{activeRole}</span>
+                <span className="text-xs font-normal text-slate-500 dark:text-slate-400">({user.email})</span>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Hak Akses Finansial</span>
+              <div className="font-bold text-sm text-slate-900 dark:text-white mt-0.5">
+                {canViewFinancials ? (
+                  <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Nominal Finansial & Harga Terbuka
+                  </span>
+                ) : (
+                  <span className="text-slate-500 dark:text-slate-400">Nominal Finansial Disembunyikan (CSA)</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Form Pembaruan Nama Lengkap Penandatangan */}
+          <form onSubmit={handleSaveProfile} className="pt-2">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Nama Lengkap / Gelar Resmi Penandatangan (Tercetak di Dokumen Resmi)
+            </label>
+            <div className="mt-1.5 flex items-center gap-2">
+              <input
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Contoh: Budi Santoso, S.T."
+                className="flex-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2.5 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs disabled:opacity-50 transition-colors"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>{isSaving ? 'Menyimpan...' : 'Simpan Nama'}</span>
+              </button>
+            </div>
+            {saveSuccess && (
+              <p className="mt-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                <Check className="w-3.5 h-3.5" /> Nama penandatangan berhasil diperbarui.
+              </p>
+            )}
+          </form>
+        </section>
+
+        {/* Bagian 2: Pengaturan & Frasa Sandi TTE / Validasi QR */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 shadow-xs transition-colors space-y-4">
+          <div className="flex items-center gap-2.5 border-b border-slate-100 dark:border-slate-800 pb-4">
+            <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400">
+              <QrCode className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                Validasi TTE & Frasa Sandi Pengesahan (QR Code)
+              </h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                Setiap dokumen resmi yang disahkan (Tahap 4) akan mencetak QR Code Tanda Tangan Elektronik resmi berstempel waktu.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 items-start">
+            {/* Form Frasa Sandi TTE */}
+            <form onSubmit={handleSaveTtePassphrase} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Frasa Sandi TTE / Kata Kunci Pengesahan (Opsional)
+                </label>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Kata sandi cepat pribadi untuk memverifikasi niat sebelum menerbitkan stempel QR sah pada dokumen proyek.
+                </p>
+                <input
+                  type="password"
+                  value={ttePassphrase}
+                  onChange={(e) => setTtePassphrase(e.target.value)}
+                  placeholder="Contoh: SAHKAN-2026 atau PIN 6 angka"
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2.5 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-colors"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>Simpan Frasa Sandi TTE</span>
+              </button>
+
+              {tteSaved && (
+                <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5" /> Frasa sandi TTE tersimpan di perangkat ini.
+                </p>
+              )}
+            </form>
+
+            {/* Pratinjau Visual Stempel TTE QR */}
+            <div className="p-4 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/30 flex items-center gap-3.5">
+              <div className="p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-emerald-300 dark:border-emerald-700 shadow-xs shrink-0">
+                <QrCode className="w-12 h-12 text-emerald-700 dark:text-emerald-400" />
+              </div>
+              <div className="text-[11px] space-y-0.5">
+                <div className="font-extrabold text-emerald-950 dark:text-emerald-300 uppercase tracking-wide">
+                  Tanda Tangan Elektronik Sah (TTE)
+                </div>
+                <div className="font-bold text-slate-800 dark:text-slate-200">{fullName || user.name}</div>
+                <div className="text-slate-500 dark:text-slate-400">{activeRole} · {activeCompany.name}</div>
+                <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-mono font-medium">
+                  STATUS: TERVERIFIKASI SISTEM
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Bagian 3: Kenyamanan & Mode Tampilan Lapangan */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 shadow-xs transition-colors space-y-4">
+          <div className="flex items-center gap-2.5 border-b border-slate-100 dark:border-slate-800 pb-4">
+            <div className="p-2 rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-950/60 dark:text-purple-400">
+              <Sliders className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                Kenyamanan Tampilan Lapangan
+              </h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                Sesuaikan kontras dan pencahayaan untuk kenyamanan mata di lapangan terbuka maupun malam hari.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
             <button
               type="button"
-              onClick={() => setAppMode('PERSONAL')}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-md transition-colors cursor-pointer"
+              onClick={toggleTheme}
+              className="flex items-center justify-between p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-left"
             >
-              <span>Beralih ke Akun Personal untuk Mengatur Akun & Aplikasi</span>
-              <ArrowRight className="w-4 h-4" />
+              <div>
+                <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  {theme === 'dark' ? <Moon className="w-4 h-4 text-purple-400" /> : <Sun className="w-4 h-4 text-amber-500" />}
+                  Tema: {theme === 'dark' ? 'Mode Gelap (Dark)' : 'Mode Terang (Light)'}
+                </span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 block">
+                  Klik untuk beralih ke {theme === 'dark' ? 'Mode Terang' : 'Mode Gelap'}
+                </span>
+              </div>
+              <span className="text-xs font-bold text-blue-600 dark:text-blue-400">Ganti</span>
             </button>
+
+            <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Globe2 className="w-4 h-4 text-blue-500" />
+                  Bahasa Antarmuka
+                </span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 block">
+                  100% Bahasa Indonesia baku & istilah teknis kontraktor
+                </span>
+              </div>
+              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">Indonesia</span>
+            </div>
           </div>
+        </section>
+
+        {/* Bagian 4: Navigasi Beralih ke Akun Personal */}
+        <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <span className="text-xs font-bold text-slate-900 dark:text-white">Ingin mendaftarkan perusahaan baru atau mengelola akun pribadi?</span>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">Beralih ke Akun Personal untuk mengajukan RFIN-A atau mereset data akun pribadi.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setAppMode('PERSONAL');
+              setCurrentView('dashboard');
+            }}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-xs font-semibold text-slate-800 dark:text-slate-200 transition-colors shrink-0 cursor-pointer"
+          >
+            <User className="w-3.5 h-3.5" />
+            <span>Beralih ke Akun Personal</span>
+          </button>
         </div>
       </div>
     );

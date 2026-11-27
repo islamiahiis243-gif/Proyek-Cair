@@ -145,14 +145,12 @@ export const Sidebar: React.FC = () => {
     themeAccent = 'emerald';
     navItems = [
       { id: 'dashboard', label: 'Dasbor Personal', icon: LayoutDashboard },
-      { id: 'landing', label: 'Beranda Modul & Lisensi', icon: HomeIcon },
-      { id: 'rfin-b-input', label: 'Aktivasi RFIN-B', icon: KeyRound },
       { id: 'rfin-a-request', label: 'Pengajuan RFIN-A', icon: Building2 },
-      { id: 'reports', label: 'Studio Laporan PDF', icon: FileText },
-      { id: 'settings', label: 'Pengaturan Akun & Aplikasi', icon: Settings }
+      { id: 'rfin-b-input', label: 'Aktivasi RFIN-B', icon: KeyRound },
+      { id: 'settings', label: 'Pengaturan Akun Pribadi', icon: Settings }
     ];
   } else {
-    // Mode Impersonate (Karyawan / Anggota Proyek) - Murni Operasional, Tanpa Menu Pengaturan
+    // Mode Impersonate (Karyawan / Anggota Proyek Lapangan)
     modeTitle = activeProject?.name || activeCompany.name || 'Proyek Aktif';
     modeSubtitle = `${activeCompany.name || 'Perusahaan'} · Jabatan: ${activeRole}`;
     ModeIcon = activeRole === 'Viewer/Pengamat' ? Eye : Hexagon;
@@ -192,7 +190,6 @@ export const Sidebar: React.FC = () => {
 
     navItems = [
       { id: 'dashboard', label: 'Dasbor & Analitik', icon: LayoutDashboard },
-      { id: 'landing', label: 'Beranda Modul & Lisensi', icon: HomeIcon },
       { id: 'rfin-b-input', label: 'Aktivasi RFIN-B', icon: KeyRound },
       {
         id: 'stock-mutations',
@@ -204,22 +201,23 @@ export const Sidebar: React.FC = () => {
       ...(activeRole !== 'Viewer/Pengamat'
         ? [
             {
-              id: 'procurement' as const,
-              label: 'Pengadaan & PO',
-              icon: ShoppingBag,
-              badge: poBadge?.text || null,
-              badgeTone: poBadge?.tone,
-            },
-            {
               id: 'cashflow' as const,
               label: 'Mutasi Dana',
               icon: WalletCards,
               badge: cashBadge?.text || null,
               badgeTone: cashBadge?.tone,
             },
+            {
+              id: 'procurement' as const,
+              label: 'Pengadaan & PO',
+              icon: ShoppingBag,
+              badge: poBadge?.text || null,
+              badgeTone: poBadge?.tone,
+            },
           ]
         : []),
-      { id: 'reports', label: 'Studio Laporan PDF', icon: FileText }
+      { id: 'reports', label: 'Studio Laporan PDF', icon: FileText },
+      { id: 'settings', label: 'Pengaturan Karyawan & TTE', icon: Settings },
     ];
   }
 

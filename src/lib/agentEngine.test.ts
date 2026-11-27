@@ -176,3 +176,16 @@ test('13. parseAgentQuery correctly distinguishes payment words from material us
   assert.equal(outResult.data.quantity, 10);
 });
 
+test('14. parseAgentQuery recognizes approval queue and pending documents query', () => {
+  const ctxWithQueue = { ...MOCK_CONTEXT, pendingApprovalCount: 4 };
+  const resWithQueue = parseAgentQuery('apakah ada antrean persetujuan dokumen?', ctxWithQueue);
+  assert.equal(resWithQueue.type, 'CHECK_APPROVAL_QUEUE');
+  assert.ok(resWithQueue.spokenResponse.includes('4 transaksi'));
+  assert.equal(resWithQueue.data.targetView, 'stock-mutations');
+
+  const ctxEmpty = { ...MOCK_CONTEXT, pendingApprovalCount: 0 };
+  const resEmpty = parseAgentQuery('cek dokumen yang belum disetujui', ctxEmpty);
+  assert.equal(resEmpty.type, 'CHECK_APPROVAL_QUEUE');
+  assert.ok(resEmpty.spokenResponse.toLowerCase().includes('telah disahkan'));
+});
+

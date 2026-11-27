@@ -2,3 +2,4 @@
 2. Sederhanakan/mudahkan bagi user bukan rumitkan karena kerumitan biarlah urusan sistem app di latar belakang. baik, snmart, canggih, multi POV, multi kepentingan pihak bukan berarti rumit bagi user karena kerumitan ditangani app.
 3. Guna mengurangi bolak-baik prompt ke AI builder/anda maka setiap implementasi pastikan juga integrasinya dengan hal2 lainnya yang relevan/terimbas/terdampak/terkait/terkonsekuensi/ter-efek-domino di aplikasi ini.
 4. App harus smart-sugestion yang intuitive, itu artinya tampilannya dinamis sesuai tindakan yang di tawarkan, misalanya tombol yang tadinya beruliskan `catat masuk` berubah menjadi 'keluarkan/pakai` saat item telah terisi penuh, dsb.
+5. Selalu memastikan integrasi antara modul reasonablbe dan valid karena dampak perubahan satu sisi seyogyanya terintegrasi dengan yang lainnya secara relean

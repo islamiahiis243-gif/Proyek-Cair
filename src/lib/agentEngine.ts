@@ -14,6 +14,7 @@ export type AgentIntentType =
   | 'CHECK_CASH_BALANCE'
   | 'CHECK_STOCK'
   | 'CHECK_PROFIT_LOSS'
+  | 'CHECK_APPROVAL_QUEUE'
   | 'NAVIGATE'
   | 'CONFIRM_ACTION'
   | 'CANCEL_ACTION'
@@ -57,6 +58,7 @@ export interface AgentContextSnapshot {
   totalStockAssetValue: number;
   stockMutationsCount: number;
   cashMutationsCount: number;
+  pendingApprovalCount?: number;
 }
 
 /**
@@ -268,6 +270,35 @@ export function parseAgentQuery(rawQuery: string, context: AgentContextSnapshot)
       actionRequired: false,
       data: { targetView: 'dashboard' }
     };
+  }
+
+  // 3b. Cek Antrean Persetujuan & Dokumen Menunggu Giliran
+  if (
+    text.includes('antrean') ||
+    text.includes('persetujuan') ||
+    text.includes('periksa dokumen') ||
+    text.includes('approval') ||
+    text.includes('belum disetujui') ||
+    text.includes('belum disahkan')
+  ) {
+    const count = context.pendingApprovalCount || 0;
+    if (count > 0) {
+      return {
+        type: 'CHECK_APPROVAL_QUEUE',
+        confidence: 0.95,
+        spokenResponse: `Terdapat ${count} transaksi atau dokumen yang menunggu persetujuan Anda saat ini. Saya dapat langsung membukakan antrean mutasi untuk Anda periksa.`,
+        actionRequired: false,
+        data: { targetView: 'stock-mutations' }
+      };
+    } else {
+      return {
+        type: 'CHECK_APPROVAL_QUEUE',
+        confidence: 0.95,
+        spokenResponse: 'Seluruh transaksi dan dokumen proyek saat ini telah disahkan. Tidak ada antrean persetujuan yang menunggu tindakan Anda.',
+        actionRequired: false,
+        data: { targetView: 'dashboard' }
+      };
+    }
   }
 
   // 4. Navigasi Cepat Halaman
