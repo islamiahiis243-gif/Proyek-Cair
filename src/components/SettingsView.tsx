@@ -2,6 +2,12 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { AvatarCropperModal } from './AvatarCropperModal';
 import {
+  getGeminiApiKey,
+  setGeminiApiKey,
+  testGeminiConnection,
+  isGeminiAiAvailable
+} from '../lib/geminiService';
+import {
   User,
   ShieldCheck,
   LogOut,
@@ -83,6 +89,149 @@ export const SettingsView: React.FC = () => {
   const [tableDensity, setTableDensity] = useState<'comfortable' | 'compact'>(() => {
     return (localStorage.getItem('proyek_cair_density') as any) || 'comfortable';
   });
+
+  // State API Key Google Gemini
+  const [geminiKeyInput, setGeminiKeyInput] = useState(() => getGeminiApiKey());
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [isTestingGemini, setIsTestingGemini] = useState(false);
+  const [geminiTestResult, setGeminiTestResult] = useState<{ success: boolean; message: string; model?: string } | null>(null);
+
+  const handleSaveGeminiKey = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setGeminiApiKey(geminiKeyInput);
+    setGeminiTestResult({
+      success: true,
+      message: geminiKeyInput.trim()
+        ? 'Kunci Google Gemini AI berhasil disimpan!'
+        : 'Kunci Google Gemini dikosongkan. Sistem beroperasi dalam Mode Pintar Offline.'
+    });
+    setTimeout(() => setGeminiTestResult(null), 5000);
+  };
+
+  const handleTestGemini = async () => {
+    setIsTestingGemini(true);
+    setGeminiTestResult(null);
+    const res = await testGeminiConnection(geminiKeyInput);
+    setIsTestingGemini(false);
+    setGeminiTestResult(res);
+  };
+
+  const renderGeminiSettingsCard = () => (
+    <section className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 shadow-xs transition-colors space-y-4">
+      <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 rounded-xl bg-linear-to-br from-blue-500 to-indigo-600 text-white shadow-xs">
+            <Sparkles className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                Google Gemini Live AI & Vision OCR
+              </h2>
+              <span
+                className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                  isGeminiAiAvailable()
+                    ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                    : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                }`}
+              >
+                {isGeminiAiAvailable() ? '🟢 Terhubung AI Cloud' : '🟡 Mode Pintar Offline'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+              Aktifkan percakapan alami seperti Gemini Live dan pembacaan foto nota otomatis via kamera/unggah.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <form onSubmit={handleSaveGeminiKey} className="space-y-3">
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+            API Key Google Gemini (Gratis dari Google AI Studio)
+          </label>
+          <div className="mt-1.5 flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                type={showGeminiKey ? 'text' : 'password'}
+                value={geminiKeyInput}
+                onChange={e => setGeminiKeyInput(e.target.value)}
+                placeholder="AIzaSy..."
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-blue-500 transition-colors pr-16"
+              />
+              <button
+                type="button"
+                onClick={() => setShowGeminiKey(!showGeminiKey)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-1.5 py-0.5 rounded-md cursor-pointer"
+              >
+                {showGeminiKey ? 'Tutup' : 'Lihat'}
+              </button>
+            </div>
+            <button
+              type="submit"
+              className="py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-98 text-white font-bold text-xs shadow-xs transition-all cursor-pointer inline-flex items-center gap-1.5 shrink-0"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>Simpan</span>
+            </button>
+            <button
+              type="button"
+              disabled={isTestingGemini || !geminiKeyInput.trim()}
+              onClick={handleTestGemini}
+              className="py-2.5 px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-all cursor-pointer inline-flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+            >
+              {isTestingGemini ? (
+                <Sparkles className="w-3.5 h-3.5 animate-spin text-blue-500" />
+              ) : (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+              )}
+              <span>{isTestingGemini ? 'Menguji...' : 'Uji Koneksi'}</span>
+            </button>
+          </div>
+        </div>
+
+        {geminiTestResult && (
+          <div
+            className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
+              geminiTestResult.success
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+            }`}
+          >
+            {geminiTestResult.success ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+            )}
+            <div>
+              <p className="font-semibold">{geminiTestResult.message}</p>
+              {geminiTestResult.model && (
+                <p className="text-[10px] mt-0.5 opacity-80">Model aktif: {geminiTestResult.model}</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="pt-2 text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
+          <p>
+            💡 Kunci disimpan di peramban Anda. Anda bisa membuat API Key gratis tanpa kartu kredit di{' '}
+            <a
+              href="https://aistudio.google.com/app/apikey"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 dark:text-blue-400 font-semibold underline underline-offset-2 hover:text-blue-500"
+            >
+              Google AI Studio
+            </a>
+            .
+          </p>
+          <p>
+            ⚡ Bila kunci tidak diisi atau perangkat offline di lapangan tanpa sinyal internet, asisten suara dan mutasi tetap berjalan mulus menggunakan <strong>Mesin Pintar Heuristik Proyek Cair</strong>.
+          </p>
+        </div>
+      </form>
+    </section>
+  );
 
   const activeWorkspace = activeContext?.workspaces.find((w) => w.id === activeWorkspaceId) || null;
 
@@ -364,6 +513,9 @@ export const SettingsView: React.FC = () => {
             </div>
           </div>
         </section>
+
+        {/* Integrasi Google Gemini Live & Vision AI Lapangan */}
+        {renderGeminiSettingsCard()}
 
         {/* Bagian 3: Kenyamanan & Mode Tampilan Lapangan */}
         <section className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 shadow-xs transition-colors space-y-4">
@@ -762,6 +914,9 @@ export const SettingsView: React.FC = () => {
           </button>
         </div>
       </section>
+
+      {/* Integrasi Google Gemini Live & Vision AI */}
+      {renderGeminiSettingsCard()}
 
       {/* Bagian 5: Status Database & Kredensial Lingkungan */}
       <section className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 shadow-xs transition-colors">

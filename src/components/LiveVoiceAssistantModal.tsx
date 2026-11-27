@@ -28,6 +28,11 @@ import {
   AgentIntentResult,
   AgentContextSnapshot
 } from '../lib/agentEngine';
+import {
+  processWithGemini,
+  analyzeReceiptWithGemini,
+  isGeminiAiAvailable
+} from '../lib/geminiService';
 import { formatRupiah } from '../lib/pdfGenerator';
 import { uploadReceiptFile } from '../lib/receiptStorage';
 
@@ -63,15 +68,50 @@ export const LiveVoiceAssistantModal: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [pendingAction, setPendingAction] = useState<AgentIntentResult | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
+  const [isScanningReceipt, setIsScanningReceipt] = useState(false);
+  const [isAiThinking, setIsAiThinking] = useState(false);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [attachedPreview, setAttachedPreview] = useState<string | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileSelect = (file: File) => {
+  const handleFileSelect = async (file: File) => {
     setAttachedFile(file);
     const previewUrl = URL.createObjectURL(file);
     setAttachedPreview(previewUrl);
+
+    // Jika berkas berupa gambar/foto nota fisik, langsung picu analisis cerdas Vision AI
+    if (file.type.startsWith('image/')) {
+      setIsScanningReceipt(true);
+      const scanNotice: ChatMessage = {
+        id: `scan-${Date.now()}`,
+        sender: 'assistant',
+        text: `📸 Foto nota "${file.name}" diterima. Sedang menganalisis teks, toko & rincian belanja dengan Vision AI...`,
+        timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+      };
+      setMessages(prev => [...prev, scanNotice]);
+
+      try {
+        const context = buildContextSnapshot();
+        const visionResult = await analyzeReceiptWithGemini(file, context);
+        setIsScanningReceipt(false);
+        setPendingAction(visionResult);
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            sender: 'assistant',
+            text: visionResult.spokenResponse,
+            timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+            actionCard: visionResult.actionRequired ? visionResult : undefined
+          }
+        ]);
+        speakResponse(visionResult.spokenResponse);
+      } catch (err: any) {
+        setIsScanningReceipt(false);
+        console.warn('Vision scan error:', err);
+      }
+    }
   };
 
   const clearAttachment = () => {
@@ -182,6 +222,57 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     pendingApprovalCount: pendingApprovalCount,
     canViewFinancials: activeRole !== 'Viewer/Pengamat' && Boolean(canViewFinancials)
   });
+
+  // Rekomendasi Cerdas Dinamis sesuai Kondisi Nyata Lapangan (Aturan AGENTS.md Poin 4)
+  const dynamicChips = React.useMemo(() => {
+    const list: { label: string; query: string }[] = [];
+
+    // 1. Prioritas Smart Suggestion: Barang yang habis atau kritis di lapangan
+    const criticalItem = items.find(it => (it.stok_saat_ini ?? 0) <= 0 || it.status === 'Tidak Tersedia' || it.status === 'Stok Menipis');
+    if (criticalItem) {
+      list.push({
+        label: `Stok ${criticalItem.nama_barang} Habis: Catat Masuk`,
+        query: `Catat barang masuk ${criticalItem.nama_barang} 20 ${criticalItem.satuan} dari toko rekanan bayar kas`
+      });
+    }
+
+    // 2. Barang yang siap pakai (stok surplus)
+    const availableItem = items.find(it => (it.stok_saat_ini ?? 0) > 10 && it.id !== criticalItem?.id);
+    if (availableItem) {
+      list.push({
+        label: `Pakai ${availableItem.nama_barang} Lapangan`,
+        query: `Keluarkan 5 ${availableItem.satuan} ${availableItem.nama_barang} untuk pemakaian lapangan`
+      });
+    }
+
+    // 3. Antrean dokumen persetujuan
+    if ((pendingApprovalCount || 0) > 0) {
+      list.push({
+        label: `Periksa ${pendingApprovalCount} Antrean Dokumen`,
+        query: `Apakah ada antrean persetujuan dokumen?`
+      });
+    }
+
+    // 4. Saldo Kas & Skenario Finansial
+    if (activeRole !== 'Viewer/Pengamat' && canViewFinancials) {
+      list.push({
+        label: 'Cek Saldo Kas',
+        query: 'Berapa sisa uang kas proyek sekarang?'
+      });
+    }
+
+    // 5. Skenario Lapangan Khusus
+    list.push({
+      label: 'Transfer Kantor Pusat',
+      query: 'Beli keramik 30 dus lunas transfer kantor pusat'
+    });
+    list.push({
+      label: 'Tempo / Hutang Toko',
+      query: 'Catat pasir 1 truk dari TB Sumber Rejeki tempo toko'
+    });
+
+    return list;
+  }, [items, pendingApprovalCount, activeRole, canViewFinancials]);
 
   // Eksekusi Tindakan yang Diusulkan (Konfirmasi Aman)
   const handleExecuteAction = async (action: AgentIntentResult) => {
@@ -447,7 +538,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
   };
 
   // Proses Input Pengguna (Suara atau Teks)
-  const handleProcessInput = (query: string) => {
+  const handleProcessInput = async (query: string) => {
     if (!query || !query.trim()) return;
 
     const userMsg: ChatMessage = {
@@ -458,100 +549,106 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     };
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
+    setIsAiThinking(true);
 
-    const context = buildContextSnapshot();
-    const result = parseAgentQuery(query, context);
+    try {
+      const context = buildContextSnapshot();
+      // Menggunakan penalaran LLM Gemini asli dengan fallback ke mesin parser lokal
+      const result = await processWithGemini(query, context);
 
-    // Jika pengguna memberi perintah konfirmasi langsung ("ya, eksekusi")
-    if (result.type === 'CONFIRM_ACTION') {
-      if (pendingAction) {
-        handleExecuteAction(pendingAction);
-        return;
-      } else {
-        const reply = 'Tidak ada transaksi yang sedang menunggu konfirmasi. Apa yang ingin Anda catat?';
+      // Jika pengguna memberi perintah konfirmasi langsung ("ya, eksekusi")
+      if (result.type === 'CONFIRM_ACTION') {
+        if (pendingAction) {
+          handleExecuteAction(pendingAction);
+          return;
+        } else {
+          const reply = 'Tidak ada transaksi yang sedang menunggu konfirmasi. Apa yang ingin Anda catat?';
+          setMessages(prev => [
+            ...prev,
+            {
+              id: `a-${Date.now()}`,
+              sender: 'assistant',
+              text: reply,
+              timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+            }
+          ]);
+          speakResponse(reply);
+          return;
+        }
+      }
+
+      // Jika pengguna membatalkan ("batal")
+      if (result.type === 'CANCEL_ACTION') {
+        setPendingAction(null);
         setMessages(prev => [
           ...prev,
           {
             id: `a-${Date.now()}`,
             sender: 'assistant',
-            text: reply,
+            text: 'Tindakan dibatalkan. Tidak ada perubahan yang dilakukan.',
             timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
           }
         ]);
-        speakResponse(reply);
+        speakResponse('Tindakan dibatalkan.');
         return;
       }
-    }
 
-    // Jika pengguna membatalkan ("batal")
-    if (result.type === 'CANCEL_ACTION') {
-      setPendingAction(null);
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `a-${Date.now()}`,
-          sender: 'assistant',
-          text: 'Tindakan dibatalkan. Tidak ada perubahan yang dilakukan.',
-          timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+      // Jika periksa antrean persetujuan
+      if (result.type === 'CHECK_APPROVAL_QUEUE') {
+        if (result.data?.targetView) {
+          setCurrentView(result.data.targetView);
         }
-      ]);
-      speakResponse('Tindakan dibatalkan.');
-      return;
-    }
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            sender: 'assistant',
+            text: result.spokenResponse,
+            timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+          }
+        ]);
+        speakResponse(result.spokenResponse);
+        return;
+      }
 
-    // Jika periksa antrean persetujuan
-    if (result.type === 'CHECK_APPROVAL_QUEUE') {
-      if (result.data.targetView) {
+      // Jika navigasi halaman
+      if (result.type === 'NAVIGATE' && result.data?.targetView) {
         setCurrentView(result.data.targetView);
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            sender: 'assistant',
+            text: result.spokenResponse,
+            timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+          }
+        ]);
+        speakResponse(result.spokenResponse);
+        return;
       }
+
+      // Jika membutuhkan tindakan konfirmasi aman (mutasi barang/kas)
+      if (result.actionRequired) {
+        setPendingAction(result);
+      } else {
+        setPendingAction(null);
+      }
+
+      // Tambah pesan balasan asisten
       setMessages(prev => [
         ...prev,
         {
           id: `a-${Date.now()}`,
           sender: 'assistant',
           text: result.spokenResponse,
-          timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+          timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+          actionCard: result.actionRequired ? result : undefined
         }
       ]);
       speakResponse(result.spokenResponse);
-      return;
+    } finally {
+      setIsAiThinking(false);
     }
-
-    // Jika navigasi halaman
-    if (result.type === 'NAVIGATE' && result.data.targetView) {
-      setCurrentView(result.data.targetView);
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `a-${Date.now()}`,
-          sender: 'assistant',
-          text: result.spokenResponse,
-          timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-        }
-      ]);
-      speakResponse(result.spokenResponse);
-      return;
-    }
-
-    // Jika membutuhkan tindakan konfirmasi aman (mutasi barang/kas)
-    if (result.actionRequired) {
-      setPendingAction(result);
-    } else {
-      setPendingAction(null);
-    }
-
-    // Tambah pesan balasan asisten
-    setMessages(prev => [
-      ...prev,
-      {
-        id: `a-${Date.now()}`,
-        sender: 'assistant',
-        text: result.spokenResponse,
-        timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-        actionCard: result.actionRequired ? result : undefined
-      }
-    ]);
-    speakResponse(result.spokenResponse);
   };
 
   const handleFormSubmit = (e: React.FormEvent) => {
@@ -616,8 +713,20 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                     <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                       Live AI Proyek Cair
                     </h3>
-                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                      Aktif
+                    <span
+                      className={`text-[9px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                        isGeminiAiAvailable()
+                          ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                          : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                      }`}
+                      title={
+                        isGeminiAiAvailable()
+                          ? 'Terhubung dengan Google Gemini AI Cloud & Vision OCR'
+                          : 'Beroperasi menggunakan Mesin Pintar Heuristik Lapangan'
+                      }
+                    >
+                      <Sparkles className="w-2.5 h-2.5" />
+                      {isGeminiAiAvailable() ? 'Gemini AI Aktif' : 'Mesin Lapangan Bawaan'}
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -762,54 +871,34 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                 </div>
               )}
 
+              {/* Indikator Pemrosesan Cerdas AI / Vision Scan */}
+              {(isAiThinking || isScanningReceipt) && (
+                <div className="flex items-center gap-2 p-3 rounded-2xl bg-blue-50/80 dark:bg-blue-950/50 border border-blue-200/80 dark:border-blue-800/80 w-fit text-blue-700 dark:text-blue-300 animate-pulse shadow-xs">
+                  <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400 animate-spin" />
+                  <span className="text-xs font-semibold">
+                    {isScanningReceipt
+                      ? 'Vision AI sedang membaca nota fisik & menghitung total...'
+                      : 'Live AI sedang menganalisis niat Anda...'}
+                  </span>
+                </div>
+              )}
+
               <div ref={chatBottomRef} />
             </div>
 
-            {/* Chips Rekomendasi Cepat & Skenario Lapangan */}
+            {/* Chips Rekomendasi Cepat & Skenario Lapangan Dinamis (Aturan AGENTS.md Poin 4) */}
             <div className="px-3 py-2 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/50 flex items-center gap-1.5 overflow-x-auto text-[11px] whitespace-nowrap scrollbar-none">
               <span className="text-slate-400 dark:text-slate-500 font-semibold text-[10px]">Coba:</span>
-              <button
-                type="button"
-                onClick={() => handleProcessInput('Berapa sisa uang kas sekarang?')}
-                className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-400 transition-colors cursor-pointer"
-              >
-                Cek Saldo Kas
-              </button>
-              <button
-                type="button"
-                onClick={() => handleProcessInput('Catat semen masuk 50 sak dari TB Maju Jaya total dua juta lima ratus bayar kas')}
-                className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-400 transition-colors cursor-pointer"
-              >
-                Masuk Semen & Bayar Kas
-              </button>
-              <button
-                type="button"
-                onClick={() => handleProcessInput('Beli keramik 30 dus lunas transfer kantor pusat')}
-                className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-400 transition-colors cursor-pointer"
-              >
-                Transfer Kantor Pusat
-              </button>
-              <button
-                type="button"
-                onClick={() => handleProcessInput('Catat pasir 1 truk dari TB Sumber Rejeki tempo toko')}
-                className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-400 transition-colors cursor-pointer"
-              >
-                Tempo / Hutang Toko
-              </button>
-              <button
-                type="button"
-                onClick={() => handleProcessInput('Keluarkan 20 sak semen untuk lantai 2')}
-                className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-400 transition-colors cursor-pointer"
-              >
-                Pakai Semen
-              </button>
-              <button
-                type="button"
-                onClick={() => handleProcessInput('Gimana posisi untung rugi sekarang?')}
-                className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-400 transition-colors cursor-pointer"
-              >
-                Untung Rugi
-              </button>
+              {dynamicChips.map((chip, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleProcessInput(chip.query)}
+                  className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer shadow-2xs font-medium"
+                >
+                  {chip.label}
+                </button>
+              ))}
             </div>
 
             {/* Chip Pratinjau Foto Nota Terlampir */}
