@@ -28,7 +28,10 @@ import {
   Radio,
   Sliders,
   RotateCcw,
-  FileAudio
+  FileAudio,
+  GripVertical,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import {
@@ -117,6 +120,149 @@ export const LiveVoiceAssistantModal: React.FC = () => {
   const animFrameRef = useRef<number | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+
+  // State & Ref Widget Mengambang (Bisa Dipindah Sana Sini & Expand/Collapse)
+  const widgetRef = useRef<HTMLDivElement>(null);
+  const [widgetPosition, setWidgetPosition] = useState<{ x: number; y: number } | null>(() => {
+    try {
+      const saved = localStorage.getItem('proyek_cair_live_ai_pos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') {
+          return parsed;
+        }
+      }
+    } catch {}
+    return null; // default: posisi existing (bottom-right)
+  });
+
+  const [isWidgetCollapsed, setIsWidgetCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('proyek_cair_live_ai_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const dragInfoRef = useRef<{
+    startX: number;
+    startY: number;
+    initialLeft: number;
+    initialTop: number;
+    moved: boolean;
+  } | null>(null);
+  const wasJustDraggedRef = useRef<boolean>(false);
+
+  // Penyesuaian batas layar saat ukuran jendela peramban berubah
+  useEffect(() => {
+    const handleResize = () => {
+      setWidgetPosition(prev => {
+        if (!prev) return null;
+        const width = widgetRef.current?.offsetWidth || 180;
+        const height = widgetRef.current?.offsetHeight || 52;
+        const maxX = Math.max(0, window.innerWidth - width - 8);
+        const maxY = Math.max(0, window.innerHeight - height - 8);
+        return {
+          x: Math.min(Math.max(8, prev.x), maxX),
+          y: Math.min(Math.max(8, prev.y), maxY)
+        };
+      });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Handler interaksi seret (Drag) mouse & sentuhan layar
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return; // hanya klik kiri atau sentuhan utama
+
+    // Jika mengklik tombol kontrol di dalam widget (seperti expand/collapse atau reset)
+    if ((e.target as HTMLElement).closest('[data-drag-ignore="true"]')) {
+      return;
+    }
+
+    if (!widgetRef.current) return;
+    const rect = widgetRef.current.getBoundingClientRect();
+
+    dragInfoRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialLeft: rect.left,
+      initialTop: rect.top,
+      moved: false
+    };
+
+    const handlePointerMove = (moveEvt: PointerEvent) => {
+      if (!dragInfoRef.current) return;
+      const dx = moveEvt.clientX - dragInfoRef.current.startX;
+      const dy = moveEvt.clientY - dragInfoRef.current.startY;
+
+      if (!dragInfoRef.current.moved && Math.hypot(dx, dy) > 5) {
+        dragInfoRef.current.moved = true;
+        setIsDragging(true);
+      }
+
+      if (dragInfoRef.current.moved) {
+        const width = widgetRef.current?.offsetWidth || 180;
+        const height = widgetRef.current?.offsetHeight || 52;
+        const maxX = Math.max(0, window.innerWidth - width - 8);
+        const maxY = Math.max(0, window.innerHeight - height - 8);
+
+        const newX = Math.min(Math.max(8, dragInfoRef.current.initialLeft + dx), maxX);
+        const newY = Math.min(Math.max(8, dragInfoRef.current.initialTop + dy), maxY);
+
+        setWidgetPosition({ x: newX, y: newY });
+      }
+    };
+
+    const handlePointerUp = () => {
+      if (dragInfoRef.current?.moved) {
+        wasJustDraggedRef.current = true;
+        setTimeout(() => {
+          wasJustDraggedRef.current = false;
+        }, 150);
+
+        setWidgetPosition(current => {
+          if (current) {
+            try {
+              localStorage.setItem('proyek_cair_live_ai_pos', JSON.stringify(current));
+            } catch {}
+          }
+          return current;
+        });
+      }
+
+      setIsDragging(false);
+      dragInfoRef.current = null;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+  };
+
+  const toggleWidgetCollapse = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setIsWidgetCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('proyek_cair_live_ai_collapsed', next.toString());
+      } catch {}
+      return next;
+    });
+  };
+
+  const resetWidgetPosition = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      localStorage.removeItem('proyek_cair_live_ai_pos');
+    } catch {}
+    setWidgetPosition(null);
+  };
 
   const startAudioVisualizer = (stream: MediaStream) => {
     try {
@@ -1139,30 +1285,131 @@ export const LiveVoiceAssistantModal: React.FC = () => {
   return (
     <>
       {/* =========================================================================
-          1. WIDGET TOMBOL MENGAMBANG (FLOATING LIVE TRIGGER)
+          1. WIDGET TOMBOL MENGAMBANG (DRAGGABLE & EXPAND / COLLAPSE LIVE TRIGGER)
           ========================================================================= */}
-      <div className="fixed bottom-5 right-5 z-40 sm:bottom-6 sm:right-6 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setIsOpen(true)}
-          className="group relative flex items-center gap-2 px-4 py-3 rounded-2xl bg-linear-to-r from-blue-600 via-indigo-600 to-emerald-600 text-white font-bold text-xs shadow-xl shadow-blue-500/25 hover:shadow-2xl hover:scale-105 active:scale-95 transition-all cursor-pointer border border-white/20"
-          title="Buka Asisten Percakapan Langsung (Zero-Menu Live AI)"
-        >
-          {/* Animasi Gelombang Cahaya */}
-          <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-white dark:border-slate-900"></span>
-          </span>
+      <div
+        ref={widgetRef}
+        onPointerDown={handlePointerDown}
+        style={widgetPosition ? { left: `${widgetPosition.x}px`, top: `${widgetPosition.y}px` } : undefined}
+        className={`${
+          widgetPosition ? 'fixed' : 'fixed bottom-5 right-5 z-40 sm:bottom-6 sm:right-6'
+        } z-40 flex items-center select-none touch-none ${
+          isDragging ? 'cursor-grabbing scale-105 opacity-95 ring-2 ring-white/60 shadow-2xl' : 'cursor-grab'
+        }`}
+      >
+        {isWidgetCollapsed ? (
+          /* --- MODE RINGKAS / CIUT (COLLAPSED BUBBLE) --- */
+          <div className="group relative flex items-center gap-1 p-1 rounded-2xl bg-linear-to-r from-blue-600 via-indigo-600 to-emerald-600 text-white shadow-xl shadow-blue-500/25 border border-white/25 backdrop-blur-xs hover:shadow-2xl transition-all">
+            {/* Animasi Gelombang Indikator Aktif */}
+            <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 pointer-events-none">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-white dark:border-slate-900"></span>
+            </span>
 
-          <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center backdrop-blur-xs">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+            {/* Handle Geser (Drag Handle) */}
+            <div
+              className="pl-1 pr-0.5 py-1 text-white/50 hover:text-white transition-colors"
+              title="Tahan & geser untuk memindahkan posisi widget di layar"
+            >
+              <GripVertical className="w-3 h-3" />
+            </div>
+
+            {/* Tombol Utama Buka Modal */}
+            <button
+              type="button"
+              onClick={() => {
+                if (!wasJustDraggedRef.current) setIsOpen(true);
+              }}
+              className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center hover:bg-white/30 active:scale-95 transition-all cursor-pointer shadow-xs"
+              title="Live AI Assistant (Klik untuk Bicara atau Ketik)"
+            >
+              <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+            </button>
+
+            {/* Tombol Perluas / Expand */}
+            <button
+              type="button"
+              data-drag-ignore="true"
+              onClick={toggleWidgetCollapse}
+              className="p-1.5 rounded-xl text-white/80 hover:text-white hover:bg-white/20 transition-colors cursor-pointer"
+              title="Perluas tampilan widget (Expand)"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Tombol Reset Posisi jika telah digeser dari default */}
+            {widgetPosition !== null && (
+              <button
+                type="button"
+                data-drag-ignore="true"
+                onClick={resetWidgetPosition}
+                className="p-1 rounded-lg text-white/60 hover:text-white hover:bg-white/20 transition-colors cursor-pointer"
+                title="Kembalikan ke posisi awal (Reset posisi)"
+              >
+                <RotateCcw className="w-2.5 h-2.5" />
+              </button>
+            )}
           </div>
+        ) : (
+          /* --- MODE LENGKAP / MELEBAR (EXPANDED PILL) --- */
+          <div className="group relative flex items-center gap-1.5 p-1.5 rounded-2xl bg-linear-to-r from-blue-600 via-indigo-600 to-emerald-600 text-white shadow-xl shadow-blue-500/25 border border-white/25 backdrop-blur-xs hover:shadow-2xl transition-all">
+            {/* Animasi Gelombang Indikator Aktif */}
+            <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 pointer-events-none">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-white dark:border-slate-900"></span>
+            </span>
 
-          <span className="tracking-wide hidden sm:inline">Live AI Assistant</span>
-          <span className="text-[10px] font-medium bg-black/20 px-2 py-0.5 rounded-full border border-white/10 hidden sm:inline">
-            Bicara / Ketik
-          </span>
-        </button>
+            {/* Handle Geser (Drag Handle) */}
+            <div
+              className="pl-1.5 pr-0.5 py-1 text-white/50 hover:text-white transition-colors"
+              title="Tahan & geser untuk memindahkan posisi widget di layar"
+            >
+              <GripVertical className="w-3.5 h-3.5" />
+            </div>
+
+            {/* Tombol Utama Buka Modal */}
+            <button
+              type="button"
+              onClick={() => {
+                if (!wasJustDraggedRef.current) setIsOpen(true);
+              }}
+              className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-white/10 active:scale-95 transition-all cursor-pointer font-bold text-xs"
+              title="Buka Asisten Percakapan Langsung (Bicara / Ketik)"
+            >
+              <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center backdrop-blur-xs">
+                <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+              </div>
+              <span className="tracking-wide">Live AI Assistant</span>
+              <span className="text-[10px] font-medium bg-black/25 px-2 py-0.5 rounded-full border border-white/10">
+                Bicara / Ketik
+              </span>
+            </button>
+
+            {/* Tombol Reset Posisi jika telah digeser dari default */}
+            {widgetPosition !== null && (
+              <button
+                type="button"
+                data-drag-ignore="true"
+                onClick={resetWidgetPosition}
+                className="p-1 rounded-lg text-white/60 hover:text-white hover:bg-white/20 transition-colors cursor-pointer"
+                title="Kembalikan ke posisi awal (Reset posisi)"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+            )}
+
+            {/* Tombol Ciutkan / Collapse */}
+            <button
+              type="button"
+              data-drag-ignore="true"
+              onClick={toggleWidgetCollapse}
+              className="p-1.5 rounded-xl text-white/80 hover:text-white hover:bg-white/20 transition-colors cursor-pointer"
+              title="Ciutkan / Kecilkan widget (Collapse)"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* =========================================================================
