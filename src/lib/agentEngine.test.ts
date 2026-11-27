@@ -206,4 +206,15 @@ test('15. parseAgentQuery blocks financial and balance queries for Viewer or non
   assert.ok(staffBalRes.spokenResponse.toLowerCase().includes('dirahasiakan'));
 });
 
+test('16. parseAgentQuery rejects write mutation attempts from Viewer role', () => {
+  const viewerCtx = { ...MOCK_CONTEXT, userRole: 'Viewer/Pengamat', canViewFinancials: false };
+  const writeRes = parseAgentQuery('catat barang masuk semen 20 sak', viewerCtx);
+  assert.equal(writeRes.actionRequired, false);
+  assert.ok(writeRes.spokenResponse.toLowerCase().includes('baca-saja'));
+
+  const outRes = parseAgentQuery('pakai 5 batang besi ke lapangan', viewerCtx);
+  assert.equal(outRes.actionRequired, false);
+  assert.ok(outRes.spokenResponse.toLowerCase().includes('baca-saja'));
+});
+
 

@@ -390,6 +390,29 @@ export function parseAgentQuery(rawQuery: string, context: AgentContextSnapshot)
     }
   }
 
+  // 5b. Proteksi Akun Pengamat/Viewer dari Aksi Mutasi Tulis
+  if (context.userRole === 'Viewer/Pengamat') {
+    const isWriteIntent =
+      text.includes('catat') ||
+      text.includes('masuk') ||
+      text.includes('keluar') ||
+      text.includes('pakai') ||
+      text.includes('ambil') ||
+      text.includes('gunakan') ||
+      text.includes('bayar') ||
+      text.includes('beli') ||
+      text.includes('drop');
+    if (isWriteIntent) {
+      return {
+        type: 'NAVIGATE',
+        confidence: 0.95,
+        spokenResponse: 'Akun Pengamat atau Klien bersifat baca-saja. Anda tidak memiliki izin untuk mencatat transaksi barang atau kas.',
+        actionRequired: false,
+        data: { targetView: 'dashboard' }
+      };
+    }
+  }
+
   // 6. Pencatatan Mutasi Barang Keluar (Pakai ke Lapangan)
   const isIncomingGoods = text.includes('masuk') || text.includes('tiba') || text.includes('terima') || text.includes('datang') || text.includes('drop') || text.includes('beli');
   if (!isIncomingGoods && (text.includes('keluar') || text.includes('pakai') || text.includes('ambil') || text.includes('gunakan') || text.includes('distribusi'))) {

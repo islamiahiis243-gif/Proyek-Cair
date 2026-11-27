@@ -1187,6 +1187,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // Helper Audit Log Terpusat (Mencatat mutasi status krusial ke public.audit_logs)
+  const logAuditEvent = async (
+    action: 'BATAL' | 'GANTI' | 'APPROVE' | 'REJECT',
+    entityType: 'MUTASI_BARANG' | 'MUTASI_KAS' | 'PO_PENGADAAN' | 'DOKUMEN_SERIAL',
+    entityId: string,
+    details: Record<string, any>
+  ) => {
+    try {
+      const client = getSupabaseClient();
+      const targetProj = activeProject || activeContext?.projects[0];
+      const wsId = targetProj?.workspace_id || activeWorkspaceId;
+      const prId = targetProj?.id || activeProjectId;
+      await client.from('audit_logs').insert({
+        workspace_id: wsId || null,
+        project_id: prId || null,
+        actor_id: user.id || null,
+        action,
+        entity_type: entityType,
+        entity_id: entityId,
+        details: {
+          ...details,
+          actor_name: user.name,
+          actor_role: activeRole,
+          recorded_at: new Date().toISOString()
+        }
+      });
+    } catch (err) {
+      console.warn('[AuditLog] Pencatatan audit trail di latar belakang gagal:', err);
+    }
+  };
+
   // Batalkan Mutasi Barang (Nominal dinolkan / tidak dihitung di stok, data tetap ada)
   const batalStockMutation = async (id: string, reason: string) => {
     try {
@@ -1202,6 +1233,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }).eq('id', id);
 
       if (error) throw error;
+      await logAuditEvent('BATAL', 'MUTASI_BARANG', id, { reason: reason.trim() });
       await refreshData();
       return { success: true, message: 'Transaksi mutasi berhasil dibatalkan. Riwayat tetap tercatat dan stok disesuaikan secara otomatis.' };
     } catch (e: any) {
@@ -1270,6 +1302,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }).eq('id', id);
 
       if (updateErr) throw updateErr;
+      await logAuditEvent('GANTI', 'MUTASI_BARANG', id, { new_row_id: newRow?.id, reason: reason.trim() });
       await refreshData();
       return { success: true, message: 'Baris mutasi berhasil diganti. Data revisi baru telah tercatat dan baris lama dinolkan secara otomatis.' };
     } catch (e: any) {
@@ -1465,6 +1498,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
+      await logAuditEvent('BATAL', 'MUTASI_KAS', id, { reason: reason.trim() });
       await refreshData();
       return { success: true, message: 'Transaksi kas berhasil dibatalkan. Saldo kas disesuaikan secara otomatis.' };
     } catch (e: any) {
@@ -1566,6 +1600,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           .eq('kasbon_induk_id', id);
       }
 
+      await logAuditEvent('GANTI', 'MUTASI_KAS', id, { new_row_id: newRow?.id, reason: reason.trim() });
       await refreshData();
       return { success: true, message: 'Transaksi kas berhasil diganti dengan baris revisi baru dan nominal lama dinolkan.' };
     } catch (e: any) {
@@ -2252,6 +2287,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         .eq('id', poId);
 
       if (error) throw error;
+      await logAuditEvent('BATAL', 'PO_PENGADAAN', poId, { reason: reason.trim(), po_no: targetPo.po_no });
       await refreshData();
       return {
         success: true,
@@ -2310,6 +2346,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         .eq('id', oldPo.id);
 
       if (updErr) throw updErr;
+      await logAuditEvent('GANTI', 'PO_PENGADAAN', poId, { new_po_id: created.po.id, new_po_no: created.po.po_no, reason: reason.trim() });
       await refreshData();
       return {
         success: true,
