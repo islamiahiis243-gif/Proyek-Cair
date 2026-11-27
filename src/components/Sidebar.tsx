@@ -90,8 +90,11 @@ export const Sidebar: React.FC = () => {
     pendingStockApprovalCount,
     pendingCashApprovalCount,
     pendingPoApprovalCount,
-    user
+    user,
+    canViewFinancials,
   } = useApp();
+
+  const hasFinancialAccess = activeRole !== 'Viewer/Pengamat' && Boolean(canViewFinancials);
 
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     try {
@@ -119,7 +122,7 @@ export const Sidebar: React.FC = () => {
   let themeAccent = 'blue';
 
   if (appMode === 'PSA') {
-    modeTitle = 'Platform Super Admin';
+    modeTitle = 'Administrator Utama Platform (PSA)';
     modeSubtitle = 'Konsol Global';
     ModeIcon = ShieldCheck;
     themeAccent = 'purple';
@@ -129,7 +132,7 @@ export const Sidebar: React.FC = () => {
       { id: 'settings', label: 'Pengaturan Platform', icon: Settings }
     ];
   } else if (appMode === 'CSA') {
-    modeTitle = activeCompany.name || 'Company Super Admin';
+    modeTitle = activeCompany.name || 'Administrator Utama Perusahaan (CSA)';
     modeSubtitle = 'Konsol Perusahaan (CSA)';
     ModeIcon = ShieldAlert;
     themeAccent = 'blue';
@@ -140,11 +143,11 @@ export const Sidebar: React.FC = () => {
     ];
   } else if (appMode === 'PERSONAL') {
     modeTitle = user.name || 'Pengguna Pribadi';
-    modeSubtitle = 'Akun Personal';
+    modeSubtitle = 'Akun Pribadi';
     ModeIcon = User;
     themeAccent = 'emerald';
     navItems = [
-      { id: 'dashboard', label: 'Dasbor Personal', icon: LayoutDashboard },
+      { id: 'dashboard', label: 'Dasbor Pribadi', icon: LayoutDashboard },
       { id: 'rfin-a-request', label: 'Pengajuan RFIN-A', icon: Building2 },
       { id: 'rfin-b-input', label: 'Aktivasi RFIN-B', icon: KeyRound },
       { id: 'settings', label: 'Pengaturan Akun Pribadi', icon: Settings }
@@ -198,7 +201,7 @@ export const Sidebar: React.FC = () => {
         badge: stockBadge?.text || null,
         badgeTone: stockBadge?.tone,
       },
-      ...(activeRole !== 'Viewer/Pengamat'
+      ...(hasFinancialAccess
         ? [
             {
               id: 'cashflow' as const,
@@ -367,7 +370,7 @@ export const Sidebar: React.FC = () => {
             <div className="flex justify-between items-center">
               <span className="text-slate-600 dark:text-slate-300 font-medium">Mode:</span>
               <span className="font-bold uppercase text-slate-800 dark:text-slate-100">
-                {appMode}
+                {appMode === 'PERSONAL' ? 'PRIBADI' : appMode === 'IMPERSONATE' ? 'PENUGASAN LAPANGAN' : appMode}
               </span>
             </div>
             <button

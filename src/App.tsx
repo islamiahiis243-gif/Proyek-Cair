@@ -51,7 +51,8 @@ const ViewFallback: React.FC = () => (
 );
 
 const MainApp: React.FC = () => {
-  const { currentView, appMode, activeRole } = useApp();
+  const { currentView, appMode, activeRole, canViewFinancials } = useApp();
+  const hasFinancialAccess = activeRole !== 'Viewer/Pengamat' && Boolean(canViewFinancials);
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
   const [preselectedStockItem, setPreselectedStockItem] = useState<ItemBarang | null>(null);
   const [preselectedStockType, setPreselectedStockType] = useState<JenisMutasiBarang>('MASUK');
@@ -125,14 +126,14 @@ const MainApp: React.FC = () => {
                     preselectedType={preselectedStockType}
                   />
                 )}
-                {currentView === 'cashflow' && activeRole !== 'Viewer/Pengamat' && (
+                {currentView === 'cashflow' && hasFinancialAccess && (
                   <CashflowView
                     isModalOpen={isCashModalOpen}
                     setIsModalOpen={setIsCashModalOpen}
                     defaultType={preselectedCashType}
                   />
                 )}
-                {currentView === 'cashflow' && activeRole === 'Viewer/Pengamat' && (
+                {currentView === 'cashflow' && !hasFinancialAccess && (
                   <StockMutationView
                     isModalOpen={isStockModalOpen}
                     setIsModalOpen={setIsStockModalOpen}
@@ -140,10 +141,10 @@ const MainApp: React.FC = () => {
                     preselectedType={preselectedStockType}
                   />
                 )}
-                {currentView === 'procurement' && activeRole !== 'Viewer/Pengamat' && (
+                {currentView === 'procurement' && hasFinancialAccess && (
                   <ProcurementView />
                 )}
-                {currentView === 'procurement' && activeRole === 'Viewer/Pengamat' && (
+                {currentView === 'procurement' && !hasFinancialAccess && (
                   <StockMutationView
                     isModalOpen={isStockModalOpen}
                     setIsModalOpen={setIsStockModalOpen}
@@ -171,7 +172,7 @@ const MainApp: React.FC = () => {
             modalOnly
           />
         )}
-        {isCashModalOpen && currentView !== 'cashflow' && appMode === 'IMPERSONATE' && activeRole !== 'Viewer/Pengamat' && (
+        {isCashModalOpen && currentView !== 'cashflow' && appMode === 'IMPERSONATE' && hasFinancialAccess && (
           <CashflowView
             isModalOpen={isCashModalOpen}
             setIsModalOpen={setIsCashModalOpen}

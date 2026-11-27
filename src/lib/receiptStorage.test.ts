@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSafeReceiptFields, buildProjectReceiptAlbum } from './receiptStorage';
+import { buildSafeReceiptFields, buildProjectReceiptAlbum, getReceiptSignedUrl } from './receiptStorage';
 import { MutasiBarang, MutasiKas, ProjectReceipt } from '../types';
 
 test('buildSafeReceiptFields enforces non-null fallbacks for empty cash receipt metadata', () => {
@@ -325,4 +325,25 @@ test('buildProjectReceiptAlbum blocks substring store collision, blank-store cas
 
   assert.equal(imkSj.receiptScope, 'BELANJA_BARANG');
   assert.equal(imkSj.rawCashMutations?.length || 0, 0);
+});
+
+test('getReceiptSignedUrl handles empty, data URLs, blobs, presigned, and external URLs safely', async () => {
+  // 1. Empty string
+  assert.equal(await getReceiptSignedUrl(''), '');
+
+  // 2. Data URL
+  const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY44YAAAAASUVORK5CYII=';
+  assert.equal(await getReceiptSignedUrl(dataUrl), dataUrl);
+
+  // 3. Blob URL
+  const blobUrl = 'blob:http://localhost:5173/1234-5678-90ab';
+  assert.equal(await getReceiptSignedUrl(blobUrl), blobUrl);
+
+  // 4. Pre-signed URL
+  const presigned = 'https://supabase.co/storage/v1/object/sign/receipts/proj-1/bon.jpg?token=abc';
+  assert.equal(await getReceiptSignedUrl(presigned), presigned);
+
+  // 5. External URL
+  const external = 'https://example.com/receipt.jpg';
+  assert.equal(await getReceiptSignedUrl(external), external);
 });

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { MutasiBarang, MutasiKas, ReceiptScope } from '../types';
 import { PAYMENT_METHOD_LABELS } from '../lib/cashflowEngine';
+import { getReceiptSignedUrl } from '../lib/receiptStorage';
 
 interface ReceiptViewerModalProps {
   isOpen: boolean;
@@ -58,7 +59,28 @@ export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
   const receiptUrls = Array.from(new Set([...stockUrls, ...cashUrls].filter(Boolean)));
 
   const currentUrl = receiptUrls[activePageIndex] || '';
-  const isPdf = currentUrl.toLowerCase().includes('.pdf') || currentUrl.startsWith('data:application/pdf');
+  const [resolvedUrl, setResolvedUrl] = useState<string>(currentUrl);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!currentUrl) {
+      setResolvedUrl('');
+      return;
+    }
+    if (currentUrl.startsWith('data:') || currentUrl.startsWith('blob:')) {
+      setResolvedUrl(currentUrl);
+      return;
+    }
+    getReceiptSignedUrl(currentUrl, 3600).then((signed) => {
+      if (isMounted) setResolvedUrl(signed);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUrl]);
+
+  const effectiveDisplayUrl = resolvedUrl || currentUrl;
+  const isPdf = effectiveDisplayUrl.toLowerCase().includes('.pdf') || effectiveDisplayUrl.startsWith('data:application/pdf');
 
   const receiptNo =
     primaryMutation?.nomor_nota ||
@@ -158,9 +180,9 @@ export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {currentUrl && (
+            {effectiveDisplayUrl && (
               <a
-                href={currentUrl}
+                href={effectiveDisplayUrl}
                 target="_blank"
                 rel="noreferrer"
                 download={`Nota_${receiptNo}`}
@@ -265,13 +287,13 @@ export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
               ) : isPdf ? (
                 <div className="w-full h-full flex flex-col items-center justify-center relative p-2">
                   <iframe
-                    src={currentUrl}
+                    src={effectiveDisplayUrl}
                     className="w-full h-full rounded-xl bg-white border border-slate-700/60 shadow-2xl"
                     title={`Pratinjau Berkas PDF Nota ${receiptNo}`}
                   />
                   <div className="absolute top-4 right-4 z-20">
                     <a
-                      href={currentUrl}
+                      href={effectiveDisplayUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-white text-xs font-semibold backdrop-blur-md border border-slate-700 shadow-lg transition-colors cursor-pointer"
@@ -289,7 +311,7 @@ export const ReceiptViewerModal: React.FC<ReceiptViewerModalProps> = ({
                   }}
                 >
                   <img
-                    src={currentUrl}
+                    src={effectiveDisplayUrl}
                     alt={`Nota Toko ${receiptNo}`}
                     className="max-w-full max-h-[75vh] w-auto h-auto object-contain rounded-lg shadow-2xl pointer-events-none"
                   />

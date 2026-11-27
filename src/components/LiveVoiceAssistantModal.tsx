@@ -52,7 +52,8 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     addStockMutation,
     addCashMutation,
     pendingApprovalCount,
-    setCurrentView
+    setCurrentView,
+    canViewFinancials
   } = useApp();
 
   const [isOpen, setIsOpen] = useState(false);
@@ -178,7 +179,8 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     totalStockAssetValue: totalStockAssetValue,
     stockMutationsCount: stockMutations.length,
     cashMutationsCount: cashMutations.length,
-    pendingApprovalCount: pendingApprovalCount
+    pendingApprovalCount: pendingApprovalCount,
+    canViewFinancials: activeRole !== 'Viewer/Pengamat' && Boolean(canViewFinancials)
   });
 
   // Eksekusi Tindakan yang Diusulkan (Konfirmasi Aman)
@@ -209,15 +211,17 @@ export const LiveVoiceAssistantModal: React.FC = () => {
 
       // 1. Eksekusi Barang Masuk + Kas Keluar
       if (type === 'STOCK_IN_AND_CASH' || type === 'STOCK_IN_ONLY') {
-        const itemToMutate = items.find(it => it.id === data.matchedItemId) || items[0];
+        const itemToMutate = items.find(it => it.id === data.matchedItemId);
+
+        if (!itemToMutate) {
+          throw new Error(`Item material "${data.itemCandidate || data.matchedItemName || 'yang dimaksud'}" tidak ditemukan dalam master BOQ proyek.`);
+        }
+
         const qty = data.quantity || 1;
         const total = data.totalAmount || (itemToMutate ? itemToMutate.harga_satuan * qty : 0);
         const store = data.storeName || 'Toko Rekanan';
         const unit = data.unit || (itemToMutate ? itemToMutate.satuan : 'unit');
-
-        if (!itemToMutate) {
-          throw new Error('Item material tidak ditemukan dalam daftar inventaris.');
-        }
+        const invoiceNo = `INV-AI-${Date.now().toString().slice(-6)}`;
 
         // Tentukan status harga dan catatan sesuai skenario pembayaran (Skenario A-D)
         let statusHarga: 'TERCATAT' | 'NOTA_MENYUSUL' = 'TERCATAT';
@@ -250,7 +254,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
           harga_satuan_beli: data.pricePerUnit || (total && qty ? Math.round(total / qty) : itemToMutate.harga_satuan),
           total_nota_fisik: total,
           tanggal: new Date().toISOString().split('T')[0],
-          nomor_nota: `INV-AI-${Date.now().toString().slice(-6)}`,
+          nomor_nota: invoiceNo,
           nama_toko: store,
           nama_item_aktual: itemToMutate.nama_barang,
           status_harga: statusHarga,
@@ -273,7 +277,11 @@ export const LiveVoiceAssistantModal: React.FC = () => {
             untuk_apa: `Pelunasan belanja ${qty} ${unit} ${itemToMutate.nama_barang} dari ${store}`,
             pic: user?.name || 'Kasir Proyek',
             tanggal: new Date().toISOString().split('T')[0],
-            nomor_kuitansi: `KAS-AI-${Date.now().toString().slice(-6)}`,
+            nomor_kuitansi: invoiceNo,
+            nama_toko: store,
+            source_module: 'MUTASI_BARANG',
+            source_entity_id: stockRes.id,
+            source_entity_no: invoiceNo,
             beban_biaya: 'KONTRAKTOR',
             status_bukti: receiptUrls.length > 0 ? 'TERLAMPIR' : 'REKONSILIASI_NOTA',
             catatan: `Dibayar via Live AI: ${data.notes || ''}`,
@@ -289,7 +297,11 @@ export const LiveVoiceAssistantModal: React.FC = () => {
             untuk_apa: `Panjar pembelian ${qty} ${unit} ${itemToMutate.nama_barang} dari ${store}`,
             pic: user?.name || 'Petugas Lapangan',
             tanggal: new Date().toISOString().split('T')[0],
-            nomor_kuitansi: `PJR-AI-${Date.now().toString().slice(-6)}`,
+            nomor_kuitansi: invoiceNo,
+            nama_toko: store,
+            source_module: 'MUTASI_BARANG',
+            source_entity_id: stockRes.id,
+            source_entity_no: invoiceNo,
             beban_biaya: 'KONTRAKTOR',
             is_kasbon: true,
             status_kasbon: 'TERBUKA',
@@ -332,11 +344,11 @@ export const LiveVoiceAssistantModal: React.FC = () => {
 
       // 2. Eksekusi Barang Keluar (Pakai Lapangan)
       else if (type === 'STOCK_OUT') {
-        const itemToMutate = items.find(it => it.id === data.matchedItemId) || items[0];
+        const itemToMutate = items.find(it => it.id === data.matchedItemId);
         const qty = data.quantity || 1;
 
         if (!itemToMutate) {
-          throw new Error('Item material tidak ditemukan.');
+          throw new Error(`Item material "${data.itemCandidate || data.matchedItemName || 'yang dimaksud'}" tidak ditemukan dalam master BOQ proyek.`);
         }
 
         const stockRes = await addStockMutation({
@@ -391,7 +403,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
           tanggal: new Date().toISOString().split('T')[0],
           nomor_kuitansi: `KAS-AI-${Date.now().toString().slice(-6)}`,
           beban_biaya: 'KONTRAKTOR',
-          status_bukti: receiptUrls.length > 0 ? 'TERLAMPIR' : 'TERLAMPIR',
+          status_bukti: receiptUrls.length > 0 ? 'TERLAMPIR' : 'BUKTI_MENYUSUL',
           catatan: data.storeName ? `Penerima/Toko: ${data.storeName}` : undefined,
           lampiran_nota_urls: receiptUrls.length > 0 ? receiptUrls : undefined
         });

@@ -65,9 +65,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     tenantBranding,
     activeRole,
     rolePermissions,
+    canViewFinancials,
   } = useApp();
 
   const isViewer = activeRole === 'Viewer/Pengamat';
+  const hasFinancialAccess = !isViewer && Boolean(canViewFinancials);
 
   // State menu aksi cepat "Mau nyatat apa hari ini?"
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
@@ -444,10 +446,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const otherCount = varianceRows.filter((r) => r.status !== 'HEMAT' && r.status !== 'OVER_BUDGET').length;
     const netEfisiensiBelanjaRp = totalPenghematanRp - totalPembengkakanRp;
 
-    // 4. Kalkulasi P&L Proyek Terpadu
+    // 4. Kalkulasi P&L Proyek Terpadu (Anti Double-Count: kurangkan belanja material kas dari kas keluar aktif)
     const nilaiKontrakBoq = contractStats.total || 0;
     const totalRealisasiMaterial = materialFinancialStats.totalInValue || 0;
-    const totalRealisasiKasLainnya = Math.max(0, cashSummaryMetrics.totalKeluarAktif);
+    const totalRealisasiKasLainnya = Math.max(
+      0,
+      (cashSummaryMetrics.totalKeluarAktif || 0) - (cashSummaryMetrics.totalKeluarMaterial || 0)
+    );
     const totalBiayaRiilProyek = totalRealisasiMaterial + totalRealisasiKasLainnya;
     const proyeksiLabaBersih = nilaiKontrakBoq - totalBiayaRiilProyek;
     const marginLabaPersen = nilaiKontrakBoq > 0 ? (proyeksiLabaBersih / nilaiKontrakBoq) * 100 : 0;
@@ -475,6 +480,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     contractStats.total,
     materialFinancialStats.totalInValue,
     cashSummaryMetrics.totalKeluarAktif,
+    cashSummaryMetrics.totalKeluarMaterial,
   ]);
 
   const displayedVarianceRows = useMemo(() => {
@@ -540,7 +546,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           {/* 1 Tombol Titik Tiga di Paling Kanan */}
-          {(stockWriteAccess || cashWriteAccess) && (
+          {(stockWriteAccess || (hasFinancialAccess && cashWriteAccess)) && (
             <div className="relative" ref={actionMenuRef}>
               <button
                 type="button"
@@ -644,7 +650,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     )}
 
                     {/* 3. Catat Kas Masuk */}
-                    {cashWriteAccess && (
+                    {hasFinancialAccess && cashWriteAccess && (
                       <button
                         type="button"
                         onClick={() => {
@@ -680,7 +686,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     )}
 
                     {/* 4. Catat Kas Keluar */}
-                    {cashWriteAccess && (
+                    {hasFinancialAccess && cashWriteAccess && (
                       <button
                         type="button"
                         onClick={() => {
@@ -709,7 +715,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     )}
 
                     {/* 5. Buat Surat Pesanan (PO Toko) — Khusus Clerk / Kontraktor */}
-                    {rolePermissions.canIssue && !isViewer && (
+                    {rolePermissions.canIssue && hasFinancialAccess && (
                       <button
                         type="button"
                         onClick={() => {
@@ -745,8 +751,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Ringkasan Komitmen Pengadaan & PO Toko (Khusus Kontraktor / Non-Pengamat) */}
-      {!isViewer && (procurementSummary.activePoCount > 0 || procurementSummary.needOrderItemsCount > 0) && (
+      {/* Ringkasan Komitmen Pengadaan & PO Toko (Khusus Kontraktor / Non-Pengamat dengan Akses Finansial) */}
+      {hasFinancialAccess && (procurementSummary.activePoCount > 0 || procurementSummary.needOrderItemsCount > 0) && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
           <div className="flex items-start gap-3">
             <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border border-purple-200/70 dark:border-purple-800/60 flex items-center justify-center shrink-0">
@@ -827,7 +833,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       )}
 
       {/* Banner Kritis Saldo Kas Habis — HANYA muncul pada K-4 (bebas alarm palsu pada K-1!) */}
-      {!isViewer && cashSummaryMetrics.isCashCritical && (
+      {hasFinancialAccess && cashSummaryMetrics.isCashCritical && (
         <div className="bg-rose-50 dark:bg-rose-950/35 border border-rose-300 dark:border-rose-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3 transition-colors">
           <div className="flex items-start gap-3 flex-1 text-xs">
             <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
@@ -865,9 +871,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       )}
 
       {/* KPI Cards Grid */}
-      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isViewer ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-4`}>
-        {/* Card 1: Saldo Kas Interaktif (Disembunyikan sepenuhnya untuk Viewer/Pengamat) */}
-        {!isViewer && (
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${!hasFinancialAccess ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-4`}>
+        {/* Card 1: Saldo Kas Interaktif (Disembunyikan sepenuhnya untuk Viewer/Pengamat / Non-Finansial) */}
+        {hasFinancialAccess && (
           <div
             onClick={() => {
               setCashTargetTab('SUMMARY');
@@ -914,7 +920,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         )}
 
         {/* Card 2: Ruang Lingkup BOQ (Fisik untuk Viewer, Finansial Kontrak untuk Non-Viewer) */}
-        {isViewer ? (
+        {!hasFinancialAccess ? (
           <div
             onClick={() => setCurrentView('stock-mutations')}
             className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:border-cyan-400 dark:hover:border-cyan-600 cursor-pointer group"
@@ -1007,17 +1013,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
           <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
-            {isViewer ? stockMutations.length : stockMutations.length + cashMutations.length}
+            {!hasFinancialAccess ? stockMutations.length : stockMutations.length + cashMutations.length}
           </div>
           <div className="mt-2 flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300 font-medium border-t border-slate-100 dark:border-slate-800 pt-2">
             <span>Stok: {stockMutations.length} trx</span>
-            {!isViewer && <span>Kas: {cashMutations.length} trx</span>}
+            {hasFinancialAccess && <span>Kas: {cashMutations.length} trx</span>}
           </div>
         </div>
       </div>
 
       {/* Bilah Khusus Finansial Pengadaan Material (Opsi B) */}
-      {!isViewer && (
+      {hasFinancialAccess && (
         <div className="bg-slate-50/90 dark:bg-slate-900/60 p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 space-y-4 transition-colors shadow-2xs">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
             <div className="flex items-center gap-2.5">
@@ -1177,8 +1183,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
 
-      {/* Analisis Laba – Rugi & Deviasi Harga Satuan BOQ (Hanya untuk Internal / Non-Viewer) */}
-      {!isViewer && (
+      {/* Analisis Laba – Rugi & Deviasi Harga Satuan BOQ (Hanya untuk Internal / Berhak Finansial) */}
+      {hasFinancialAccess && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
           {/* Header Bagian */}
           <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -1530,7 +1536,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       )}
 
       {/* Two-Column Analytics: Recent Stock vs Recent Cash Mutations */}
-      <div className={`grid grid-cols-1 ${isViewer ? 'lg:grid-cols-1' : 'lg:grid-cols-2'} gap-6`}>
+      <div className={`grid grid-cols-1 ${!hasFinancialAccess ? 'lg:grid-cols-1' : 'lg:grid-cols-2'} gap-6`}>
         {/* Left: Recent Stock Mutations */}
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col transition-colors">
           <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
@@ -1599,8 +1605,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Right: Recent Cash Mutations (Kas Masuk/Keluar/Untuk Apa/Saldo) - Disembunyikan untuk Viewer */}
-        {!isViewer && (
+        {/* Right: Recent Cash Mutations (Kas Masuk/Keluar/Untuk Apa/Saldo) - Disembunyikan bila tanpa akses finansial */}
+        {hasFinancialAccess && (
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col transition-colors">
             <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">

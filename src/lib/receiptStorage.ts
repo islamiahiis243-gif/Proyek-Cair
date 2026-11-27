@@ -148,6 +148,15 @@ export async function uploadReceiptFile(
         });
 
       if (!error && data) {
+        // Coba buat signed URL (1 jam) terlebih dahulu karena bucket receipts adalah privat
+        const { data: signedData } = await client.storage
+          .from('receipts')
+          .createSignedUrl(filePath, 3600);
+
+        if (signedData?.signedUrl) {
+          return signedData.signedUrl;
+        }
+
         const { data: pubData } = client.storage
           .from('receipts')
           .getPublicUrl(filePath);
@@ -164,6 +173,63 @@ export async function uploadReceiptFile(
   // Fallback ke Base64 lokal terkompresi
   const compressedFallback = isPdf ? file : await compressReceiptImage(file, 1200, 0.7);
   return await fileToBase64(compressedFallback);
+}
+
+/**
+ * Dapatkan Signed URL bertempo (default 1 jam / 3600 detik) untuk berkas bukti nota pada bucket privat 'receipts'
+ */
+export async function getReceiptSignedUrl(rawUrlOrPath: string, expiresInSeconds = 3600): Promise<string> {
+  if (!rawUrlOrPath) return '';
+  // Data URL / blob URL lokal tidak memerlukan signed URL
+  if (rawUrlOrPath.startsWith('data:') || rawUrlOrPath.startsWith('blob:')) {
+    return rawUrlOrPath;
+  }
+  // Jika sudah merupakan signed URL yang masih valid
+  if (rawUrlOrPath.includes('/object/sign/receipts/')) {
+    return rawUrlOrPath;
+  }
+  // URL eksternal di luar Supabase receipts
+  if ((rawUrlOrPath.startsWith('http://') || rawUrlOrPath.startsWith('https://')) && !rawUrlOrPath.includes('/receipts/')) {
+    return rawUrlOrPath;
+  }
+
+  try {
+    const client = getSupabaseClient();
+    if (!client) return rawUrlOrPath;
+
+    // Ekstrak path berkas di dalam bucket 'receipts'
+    let storagePath = rawUrlOrPath;
+    const publicMarker = '/storage/v1/object/public/receipts/';
+    const signMarker = '/storage/v1/object/sign/receipts/';
+    const authMarker = '/storage/v1/object/authenticated/receipts/';
+
+    if (storagePath.includes(publicMarker)) {
+      storagePath = storagePath.split(publicMarker)[1]?.split('?')[0] || '';
+    } else if (storagePath.includes(signMarker)) {
+      storagePath = storagePath.split(signMarker)[1]?.split('?')[0] || '';
+    } else if (storagePath.includes(authMarker)) {
+      storagePath = storagePath.split(authMarker)[1]?.split('?')[0] || '';
+    } else if (storagePath.startsWith('receipts/')) {
+      storagePath = storagePath.replace(/^receipts\//, '').split('?')[0] || '';
+    } else {
+      storagePath = storagePath.split('?')[0] || '';
+    }
+
+    if (!storagePath) return rawUrlOrPath;
+    storagePath = decodeURIComponent(storagePath);
+
+    const { data, error } = await client.storage
+      .from('receipts')
+      .createSignedUrl(storagePath, expiresInSeconds);
+
+    if (!error && data?.signedUrl) {
+      return data.signedUrl;
+    }
+  } catch (err) {
+    console.warn('Gagal membuat signed URL bukti nota:', err);
+  }
+
+  return rawUrlOrPath;
 }
 
 /**

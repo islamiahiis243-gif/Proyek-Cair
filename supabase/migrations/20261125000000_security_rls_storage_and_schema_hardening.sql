@@ -625,8 +625,8 @@ DROP POLICY IF EXISTS supplier_stores_scoped_access ON public.supplier_stores;
 DROP POLICY IF EXISTS supplier_stores_financial_access ON public.supplier_stores;
 CREATE POLICY supplier_stores_financial_access ON public.supplier_stores
   FOR ALL TO authenticated
-  USING (project_id IS NOT NULL AND (SELECT private.check_user_project_financial_access(project_id)))
-  WITH CHECK (project_id IS NOT NULL AND (SELECT private.check_user_project_financial_access(project_id)));
+  USING (project_id IS NULL OR (SELECT private.check_user_project_financial_access(project_id)))
+  WITH CHECK (project_id IS NULL OR (SELECT private.check_user_project_financial_access(project_id)));
 
 DROP POLICY IF EXISTS project_receipts_select_pov_scoped ON public.project_receipts;
 DROP POLICY IF EXISTS project_receipts_select_financial ON public.project_receipts;

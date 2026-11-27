@@ -58,8 +58,11 @@ export const Header: React.FC = () => {
     activeContext,
     supabaseConfig,
     setCurrentView,
-    refreshActiveContext
+    refreshActiveContext,
+    canViewFinancials
   } = useApp();
+
+  const hasFinancialAccess = activeRole !== 'Viewer/Pengamat' && Boolean(canViewFinancials);
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -405,10 +408,10 @@ export const Header: React.FC = () => {
           <button
             onClick={handleSelectPersonal}
             className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-medium transition-colors cursor-pointer"
-            title="Beralih kembali ke Ruang Akun Personal (Filosofi Coretax)"
+            title="Beralih kembali ke Ruang Akun Pribadi (Filosofi Coretax)"
           >
             <User className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Ke Akun Personal</span>
+            <span>Ke Akun Pribadi</span>
           </button>
         )}
       </div>
@@ -470,7 +473,7 @@ export const Header: React.FC = () => {
                 : appMode === 'CSA'
                 ? (activeCompany.npwp || 'KONSOL PERUSAHAAN')
                 : appMode === 'PSA'
-                ? 'GLOBAL PLATFORM'
+                ? 'PLATFORM GLOBAL'
                 : 'PENGGUNA PRIBADI'}
             </div>
             <div className="text-xs font-bold text-white tracking-wide leading-tight truncate max-w-[85px] sm:max-w-[200px] mt-0.5">
@@ -479,8 +482,8 @@ export const Header: React.FC = () => {
                 : appMode === 'CSA'
                 ? activeCompany.name
                 : appMode === 'PSA'
-                ? 'PLATFORM ADMIN'
-                : user.name || 'Personal User'}
+                ? 'ADMIN PLATFORM'
+                : user.name || 'Pengguna Pribadi'}
             </div>
           </div>
 
@@ -518,7 +521,7 @@ export const Header: React.FC = () => {
                     ? 'CSA'
                     : appMode === 'PSA'
                     ? 'PSA'
-                    : 'PERSONAL'}
+                    : 'PRIBADI'}
                 </span>
                 <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
               </div>
@@ -529,7 +532,7 @@ export const Header: React.FC = () => {
         {/* Panel Dropdown Pemilih Penugasan Jabatan (Tengah Layar di Ponsel, Rapi di Desktop) */}
         {dropdownOpen && (
           <div className="absolute left-1/2 -translate-x-1/2 sm:left-0 sm:translate-x-0 mt-2 w-[calc(100vw-24px)] max-w-sm sm:w-96 rounded-2xl border border-slate-800 bg-slate-900/95 p-3.5 shadow-2xl backdrop-blur-xl z-50 text-slate-200 divide-y divide-slate-800/80 animate-in fade-in slide-in-from-top-2 duration-150 max-h-[82vh] overflow-y-auto">
-            {/* 1. Akun Personal */}
+            {/* 1. Akun Pribadi */}
             <div className="pb-3">
               <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2 px-2 flex items-center gap-1.5">
                 <User className="w-3 h-3 text-emerald-400" /> Akun Pribadi
@@ -547,7 +550,7 @@ export const Header: React.FC = () => {
                   {user.avatar_url ? (
                     <img
                       src={user.avatar_url}
-                      alt={user.name || 'Personal'}
+                      alt={user.name || 'Pribadi'}
                       className="w-7 h-7 rounded-full object-cover border border-emerald-500/40 shrink-0"
                     />
                   ) : (
@@ -557,7 +560,7 @@ export const Header: React.FC = () => {
                   )}
                   <div className="min-w-0">
                     <div className="text-xs font-bold truncate">{user.name || 'Pengguna Pribadi'}</div>
-                    <div className="text-[10px] text-slate-400 truncate">{user.email} · Mode Personal</div>
+                    <div className="text-[10px] text-slate-400 truncate">{user.email} · Mode Pribadi</div>
                   </div>
                 </div>
                 {appMode === 'PERSONAL' && (
@@ -648,7 +651,7 @@ export const Header: React.FC = () => {
                     <div>
                       <div className="text-xs font-semibold flex items-center gap-1.5">
                         <ShieldAlert className="w-3.5 h-3.5 text-blue-400" />
-                        <span>Company Super Admin (CSA)</span>
+                        <span>Administrator Utama Perusahaan (CSA)</span>
                       </div>
                       <div className="text-[10px] text-slate-400">Pengaturan Proyek & Terbitkan RFIN-B</div>
                     </div>
@@ -670,7 +673,7 @@ export const Header: React.FC = () => {
                     <div>
                       <div className="text-xs font-semibold flex items-center gap-1.5">
                         <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
-                        <span>Platform Super Admin (PSA)</span>
+                        <span>Administrator Utama Platform (PSA)</span>
                       </div>
                       <div className="text-[10px] text-slate-400">Persetujuan RFIN-A & Kontrol Platform</div>
                     </div>
@@ -685,8 +688,8 @@ export const Header: React.FC = () => {
 
       {/* Bagian Kanan: Saldo Kas, Tema & Akun */}
       <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-        {/* Saldo Kas Interaktif (Hanya relevan di mode operasional dan bukan untuk jabatan Pengamat) */}
-        {appMode === 'IMPERSONATE' && activeRole !== 'Viewer/Pengamat' && (
+        {/* Saldo Kas Interaktif (Hanya relevan di mode operasional dan bila memiliki akses finansial) */}
+        {appMode === 'IMPERSONATE' && hasFinancialAccess && (
           <button
             type="button"
             onClick={() => {
@@ -713,7 +716,7 @@ export const Header: React.FC = () => {
         {/* Status Database */}
         <div className="hidden md:flex items-center gap-1.5 text-[11px] text-slate-300 min-w-[90px]" title="Koneksi Supabase">
           <Database className={`w-3.5 h-3.5 shrink-0 ${supabaseConfig.isConnected ? 'text-emerald-400' : 'text-slate-400'}`} />
-          <span className="hidden xl:inline">{supabaseConfig.isConnected ? 'Terkoneksi' : 'Offline'}</span>
+          <span className="hidden xl:inline">{supabaseConfig.isConnected ? 'Terkoneksi' : 'Terputus'}</span>
         </div>
 
         {/* IKON NOTIFIKASI APP (RFIN + ANTREAN PERSETUJUAN BARANG & KAS) */}

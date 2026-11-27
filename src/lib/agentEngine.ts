@@ -59,6 +59,7 @@ export interface AgentContextSnapshot {
   stockMutationsCount: number;
   cashMutationsCount: number;
   pendingApprovalCount?: number;
+  canViewFinancials?: boolean;
 }
 
 /**
@@ -249,6 +250,15 @@ export function parseAgentQuery(rawQuery: string, context: AgentContextSnapshot)
 
   // 2. Cek Saldo Kas Proyek
   if (text.includes('saldo') || text.includes('uang kas') || text.includes('sisa uang') || text.includes('kas kita')) {
+    if (context.userRole === 'Viewer/Pengamat' || context.canViewFinancials === false) {
+      return {
+        type: 'CHECK_CASH_BALANCE',
+        confidence: 0.95,
+        spokenResponse: 'Informasi saldo kas dan finansial proyek dirahasiakan dan tidak dapat diakses untuk peran Anda.',
+        actionRequired: false,
+        data: {}
+      };
+    }
     const formatted = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(context.currentCashBalance);
     return {
       type: 'CHECK_CASH_BALANCE',
@@ -261,6 +271,15 @@ export function parseAgentQuery(rawQuery: string, context: AgentContextSnapshot)
 
   // 3. Cek Posisi Untung Rugi & Performa Proyek
   if (text.includes('untung rugi') || text.includes('laba') || text.includes('margin') || text.includes('performa') || text.includes('evaluasi proyek')) {
+    if (context.userRole === 'Viewer/Pengamat' || context.canViewFinancials === false) {
+      return {
+        type: 'CHECK_PROFIT_LOSS',
+        confidence: 0.92,
+        spokenResponse: 'Informasi evaluasi laba-rugi dan performa finansial proyek dirahasiakan untuk peran Anda.',
+        actionRequired: false,
+        data: { targetView: 'dashboard' }
+      };
+    }
     const assetFormatted = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(context.totalStockAssetValue);
     const cashFormatted = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(context.currentCashBalance);
     return {

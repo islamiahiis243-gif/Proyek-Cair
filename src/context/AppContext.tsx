@@ -200,7 +200,7 @@ interface AppContextType {
   previousView: string | null;
   verifyingDocId: string | null;
   setVerifyingDocId: (id: string | null) => void;
-  addStockMutation: (mutation: Omit<MutasiBarang, 'id' | 'stok_sebelum' | 'stok_sesudah'>) => Promise<{ success: boolean; message: string }>;
+  addStockMutation: (mutation: Omit<MutasiBarang, 'id' | 'stok_sebelum' | 'stok_sesudah'>) => Promise<{ success: boolean; message: string; id?: string }>;
   reverseStockMutation: (id: string, reason: string) => Promise<{ success: boolean; message: string }>;
   batalStockMutation: (id: string, reason: string) => Promise<{ success: boolean; message: string }>;
   gantiStockMutation: (id: string, newMutation: Omit<MutasiBarang, 'id' | 'stok_sebelum' | 'stok_sesudah'>, reason: string) => Promise<{ success: boolean; message: string }>;
@@ -354,7 +354,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [procurementTargetTab, setProcurementTargetTab] = useState<ProcurementTabKey | null>(null);
   const [dataReady, setDataReady] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
-  const [cashAccess, setCashAccess] = useState(false);
 
   // App Mode & Impersonate State (Default aman selalu PERSONAL ala filosofi Coretax)
   const [appMode, setAppModeState] = useState<AppMode>(() => {
@@ -1103,7 +1102,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setBoqSections(sectionRows);
     setStockMutations(stockRows.reverse());
     setCashMutations(cashRows.reverse());
-    setCashAccess(true);
     setDocuments(docRows);
     setDataError(null);
     setDataReady(true);
@@ -1147,7 +1145,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const wsId = targetProj?.workspace_id || activeWorkspaceId || (activeContext?.workspaces.find(w => w.type === 'COMPANY')?.id as string);
       const prId = targetProj?.id || activeProjectId;
 
-      const { error } = await client.from('inventory_transactions').insert({
+      const { data: insertedRow, error } = await client.from('inventory_transactions').insert({
         idempotency_key: crypto.randomUUID(),
         workspace_id: wsId,
         project_id: prId,
@@ -1157,14 +1155,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         quantity: data.jumlah,
         uom: data.satuan,
         occurred_at: data.tanggal,
-        reference_no: data.nomor_surat_jalan || null,
+        reference_no: data.nomor_surat_jalan || data.nomor_nota || null,
         counterparty: data.pic_penerima_penyerah,
         notes: data.catatan || null,
         purpose: data.purpose || data.tujuan_keperluan,
         beban_biaya: data.beban_biaya || 'KONTRAKTOR',
         is_custom_item: Boolean(data.is_custom_item),
         destination_name: data.destination_name || null,
-        source_name: data.source_name || null,
+        source_name: data.source_name || data.nama_toko || null,
         recipient_name: data.recipient_name || data.pic_penerima_penyerah,
         owner_type: data.owner_type || 'KONTRAKTOR',
         status_dokumen: 'DITERBITKAN',
@@ -1173,12 +1171,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         status_harga: data.status_harga || null,
         nama_item_aktual: data.nama_item_aktual || null,
         po_id: data.po_id || null,
-        po_item_id: data.po_item_id || null
-      });
+        po_item_id: data.po_item_id || null,
+        nama_toko: data.nama_toko || data.source_name || null,
+        tanggal_nota: data.tanggal_nota || null,
+        total_nota_fisik: data.total_nota_fisik != null ? data.total_nota_fisik : null,
+        lampiran_nota_urls: Array.isArray(data.lampiran_nota_urls) ? data.lampiran_nota_urls : [],
+        receipt_id: data.receipt_id || null,
+      }).select().single();
 
       if (error) throw error;
       await refreshData();
-      return { success: true, message: 'Catatan mutasi barang berhasil disimpan.' };
+      return { success: true, message: 'Catatan mutasi barang berhasil disimpan.', id: insertedRow?.id };
     } catch (e: any) {
       return { success: false, message: e.message || 'Penerbitan mutasi inventaris gagal.' };
     }
@@ -1218,7 +1221,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const wsId = targetProj?.workspace_id || activeWorkspaceId || (activeContext?.workspaces.find(w => w.type === 'COMPANY')?.id as string);
       const prId = targetProj?.id || activeProjectId;
 
-      // 1. Masukkan mutasi baru
+      const oldRow = stockMutations.find(m => m.id === id);
+
+      // 1. Masukkan mutasi baru dengan menyalin seluruh metadata PO dan nota lama jika tidak diisi
       const { data: newRow, error: insertErr } = await client.from('inventory_transactions').insert({
         idempotency_key: crypto.randomUUID(),
         workspace_id: wsId,
@@ -1229,30 +1234,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         quantity: newMutation.jumlah,
         uom: newMutation.satuan,
         occurred_at: newMutation.tanggal,
-        reference_no: newMutation.nomor_surat_jalan || null,
+        reference_no: newMutation.nomor_surat_jalan || newMutation.nomor_nota || oldRow?.nomor_surat_jalan || oldRow?.nomor_nota || null,
         counterparty: newMutation.pic_penerima_penyerah,
         notes: newMutation.catatan || null,
         purpose: newMutation.purpose || newMutation.tujuan_keperluan,
-        beban_biaya: newMutation.beban_biaya || 'KONTRAKTOR',
+        beban_biaya: newMutation.beban_biaya || oldRow?.beban_biaya || 'KONTRAKTOR',
         is_custom_item: Boolean(newMutation.is_custom_item),
         destination_name: newMutation.destination_name || null,
-        source_name: newMutation.source_name || null,
+        source_name: newMutation.source_name || newMutation.nama_toko || oldRow?.source_name || oldRow?.nama_toko || null,
         recipient_name: newMutation.recipient_name || newMutation.pic_penerima_penyerah,
-        owner_type: newMutation.owner_type || 'KONTRAKTOR',
+        owner_type: newMutation.owner_type || oldRow?.owner_type || 'KONTRAKTOR',
         status_dokumen: 'DITERBITKAN',
         referensi_ganti_id: id,
-        harga_satuan_beli: newMutation.harga_satuan_beli != null ? newMutation.harga_satuan_beli : null,
-        status_harga: newMutation.status_harga || null,
-        nama_item_aktual: newMutation.nama_item_aktual || null,
-        created_by_name: `${user.name} (${activeRole})`
+        harga_satuan_beli: newMutation.harga_satuan_beli != null ? newMutation.harga_satuan_beli : (oldRow?.harga_satuan_beli ?? null),
+        status_harga: newMutation.status_harga || oldRow?.status_harga || null,
+        nama_item_aktual: newMutation.nama_item_aktual || oldRow?.nama_item_aktual || null,
+        created_by_name: `${user.name} (${activeRole})`,
+        po_id: newMutation.po_id || oldRow?.po_id || null,
+        po_item_id: newMutation.po_item_id || oldRow?.po_item_id || null,
+        receipt_id: newMutation.receipt_id || oldRow?.receipt_id || null,
+        nama_toko: newMutation.nama_toko || oldRow?.nama_toko || null,
+        tanggal_nota: newMutation.tanggal_nota || oldRow?.tanggal_nota || null,
+        total_nota_fisik: newMutation.total_nota_fisik != null ? newMutation.total_nota_fisik : (oldRow?.total_nota_fisik ?? null),
+        lampiran_nota_urls: newMutation.lampiran_nota_urls?.length ? newMutation.lampiran_nota_urls : (oldRow?.lampiran_nota_urls || [])
       }).select().single();
 
       if (insertErr) throw insertErr;
 
-      // 2. Tandai mutasi lama sebagai DIGANTI
+      // 2. Tandai mutasi lama sebagai DIGANTI dan tautkan referensi_ganti_id ke baris baru
       const { error: updateErr } = await client.from('inventory_transactions').update({
         is_ganti: true,
         status_dokumen: 'DIGANTI',
+        referensi_ganti_id: newRow?.id || null,
         alasan_batal_ganti: `Digantikan oleh baris #${newRow?.id?.slice(0, 8)} oleh ${user.name} (${activeRole}). Alasan: ${reason.trim()}`
       }).eq('id', id);
 
@@ -2708,7 +2721,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
     if (activeRole === 'CEO/Direktur') return true;
-    const isCsa = activeContext?.workspaces?.some(w => w.type === 'COMPANY' && w.is_company_super_admin);
+    const currentWsId = activeProject?.workspace_id || activeWorkspaceId;
+    const isCsa = activeContext?.workspaces?.some(
+      w => w.id === currentWsId && w.type === 'COMPANY' && w.is_company_super_admin
+    );
     if (isCsa) return true;
 
     const currentProj = activeProject || activeContext?.projects.find(p => p.id === activeProjectId);
@@ -2720,7 +2736,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     return true;
-  }, [activeRole, activeContext, activeProjectId, activeProject]);
+  }, [activeRole, activeContext, activeProjectId, activeProject, activeWorkspaceId]);
+
+  const cashAccess = Boolean(canViewFinancials);
 
   const cashEvalContext = useMemo(
     () =>

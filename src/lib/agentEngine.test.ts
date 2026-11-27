@@ -189,3 +189,21 @@ test('14. parseAgentQuery recognizes approval queue and pending documents query'
   assert.ok(resEmpty.spokenResponse.toLowerCase().includes('telah disahkan'));
 });
 
+test('15. parseAgentQuery blocks financial and balance queries for Viewer or non-financial roles', () => {
+  const viewerCtx = { ...MOCK_CONTEXT, userRole: 'Viewer/Pengamat', canViewFinancials: false };
+  const balanceRes = parseAgentQuery('berapa saldo kas proyek kita sekarang?', viewerCtx);
+  assert.equal(balanceRes.type, 'CHECK_CASH_BALANCE');
+  assert.ok(balanceRes.spokenResponse.toLowerCase().includes('dirahasiakan'));
+  assert.equal(balanceRes.data.totalAmount, undefined);
+
+  const profitRes = parseAgentQuery('bagaimana posisi untung rugi proyek?', viewerCtx);
+  assert.equal(profitRes.type, 'CHECK_PROFIT_LOSS');
+  assert.ok(profitRes.spokenResponse.toLowerCase().includes('dirahasiakan'));
+
+  const staffWithoutFinCtx = { ...MOCK_CONTEXT, userRole: 'Foreman', canViewFinancials: false };
+  const staffBalRes = parseAgentQuery('cek uang kas proyek', staffWithoutFinCtx);
+  assert.equal(staffBalRes.type, 'CHECK_CASH_BALANCE');
+  assert.ok(staffBalRes.spokenResponse.toLowerCase().includes('dirahasiakan'));
+});
+
+

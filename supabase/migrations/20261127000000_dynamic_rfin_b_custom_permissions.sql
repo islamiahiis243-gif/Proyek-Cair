@@ -140,8 +140,9 @@ begin
   for v_pid in select (jsonb_array_elements_text(v_t.snapshot->'project_ids'))::uuid loop
     insert into public.project_memberships (workspace_id, project_id, company_membership_id, user_id, membership_status, role_code, can_view_financials, custom_permissions)
       values (v_ws, v_pid, v_cm, v_uid, 'ACTIVE', v_role, v_can_fin, v_custom_perms)
-      on conflict (project_id, user_id, role_code) do update
-        set membership_status = 'ACTIVE', 
+      on conflict (project_id, user_id) do update
+        set role_code = excluded.role_code,
+            membership_status = 'ACTIVE', 
             company_membership_id = excluded.company_membership_id,
             can_view_financials = excluded.can_view_financials,
             custom_permissions = excluded.custom_permissions
@@ -162,9 +163,9 @@ begin
   return jsonb_build_object('ok', true, 'token_class', 'RFIN_B', 'workspace_id', v_ws, 'role_code', v_role);
 end $$;
 
--- Perbarui resolve_my_active_context untuk menyertakan custom_permissions
+-- Perbarui resolve_my_active_context untuk menyertakan custom_permissions (VOLATILE karena menginisialisasi personal workspace & update profile)
 CREATE OR REPLACE FUNCTION public.resolve_my_active_context()
-RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public AS $$
 declare
   v_uid uuid := auth.uid(); v_ws uuid; v_workspaces jsonb; v_projects jsonb; v_psa boolean;
 begin
