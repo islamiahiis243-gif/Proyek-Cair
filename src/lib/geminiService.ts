@@ -128,17 +128,27 @@ export async function testGeminiConnection(customKey?: string): Promise<{
 /**
  * Mengonversi File atau Blob menjadi base64 string
  */
-export function fileToBase64(file: File | Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => {
-      const result = reader.result as string;
-      const base64Data = result.split(',')[1] || result;
-      resolve(base64Data);
-    };
-    reader.onerror = error => reject(error);
-  });
+export async function fileToBase64(file: File | Blob): Promise<string> {
+  if (typeof FileReader !== 'undefined') {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64Data = result.split(',')[1] || result;
+        resolve(base64Data);
+      };
+      reader.onerror = error => reject(error);
+    });
+  }
+
+  // Node.js test environment fallback
+  if (typeof (file as any).arrayBuffer === 'function') {
+    const arrayBuffer = await (file as any).arrayBuffer();
+    return Buffer.from(arrayBuffer).toString('base64');
+  }
+
+  return '';
 }
 
 /**
@@ -238,14 +248,34 @@ Hasilkan output HANYA JSON valid tanpa teks atau markdown:
       const text = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!text) continue;
 
-      const parsed: AgentIntentResult = JSON.parse(text);
+      const cleanText = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+      const parsed: AgentIntentResult = JSON.parse(cleanText);
+
+      // Pre-guard keamanan: akun Viewer/Pengamat tidak boleh mengeksekusi mutasi atau melihat finansial
+      if (parsed && context.userRole === 'Viewer/Pengamat') {
+        parsed.actionRequired = false;
+        if (['STOCK_IN_AND_CASH', 'STOCK_IN_ONLY', 'STOCK_OUT', 'CASH_EXPENSE'].includes(parsed.type)) {
+          parsed.spokenResponse = 'Peran Anda adalah Pengamat (Viewer). Anda memiliki akses pantau dan tidak dapat mengajukan mutasi fisik atau kas.';
+          parsed.proposedActionTitle = 'Akses Terbatas: Hanya Pantau';
+          parsed.proposedActionSubtitle = 'Akun Viewer tidak memiliki hak mengubah data proyek.';
+        }
+      }
+
       return parsed;
     } catch {
       continue;
     }
   }
 
-  throw new Error('Gagal menganalisis suara melalui Gemini AI.');
+  return {
+    type: 'GENERAL_QUERY',
+    confidence: 0.5,
+    spokenResponse: 'Rekaman suara telah diterima, namun analisis cloud Gemini sedang mengalami kendala jaringan. Anda dapat mencoba kembali atau mengetik instruksi.',
+    actionRequired: false,
+    proposedActionTitle: 'Rekaman Suara Lapangan',
+    proposedActionSubtitle: 'Audio berhasil ditangkap',
+    data: {}
+  };
 }
 
 /**

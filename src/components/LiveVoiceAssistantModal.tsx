@@ -21,7 +21,11 @@ import {
   Clock,
   ShieldCheck,
   Receipt,
-  RefreshCw
+  RefreshCw,
+  Activity,
+  Check,
+  HelpCircle,
+  Radio
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import {
@@ -84,9 +88,23 @@ export const LiveVoiceAssistantModal: React.FC = () => {
   const cameraStreamRef = useRef<MediaStream | null>(null);
 
   // State & Ref Suara & Speech Recognition
+  // Mode Suara: AUTO (Hybrid: Web Speech API + Gemini Multimodal), GEMINI (Audio Murni ke Gemini Flash), WEB_SPEECH (Peramban Lokal)
+  const [audioMode, setAudioMode] = useState<'AUTO' | 'GEMINI' | 'WEB_SPEECH'>('AUTO');
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [liveInterimText, setLiveInterimText] = useState<string>('');
   const [audioVolume, setAudioVolume] = useState<number>(0); // 0 - 100
+  const [showDiagnostic, setShowDiagnostic] = useState<boolean>(false);
+  const [isTestingMic, setIsTestingMic] = useState<boolean>(false);
+  const [diagnosticResult, setDiagnosticResult] = useState<{
+    permissionState: string;
+    hasDevices: boolean;
+    deviceCount: number;
+    hasMediaRecorder: boolean;
+    hasSpeechRecognition: boolean;
+    testStatus: 'idle' | 'running' | 'success' | 'failed';
+    testMessage?: string;
+  } | null>(null);
+
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
@@ -94,51 +112,16 @@ export const LiveVoiceAssistantModal: React.FC = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
-  // Helper cerdas membuka stream mikrofon dengan multi-fallback perangkat
-  const getMicrophoneStream = async (): Promise<MediaStream> => {
-    // 1. Coba izin standar
-    try {
-      return await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (err: any) {
-      console.warn('Percobaan getUserMedia({ audio: true }) pertama:', err.name, err.message);
-    }
-
-    // 2. Coba tanpa constraint echo/gain khusus (sering crash di beberapa driver sound Windows)
-    try {
-      return await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false
-        }
-      });
-    } catch (err: any) {
-      console.warn('Percobaan getUserMedia unconstrained kedua:', err.name);
-    }
-
-    // 3. Scan perangkat audioinput fisik yang tersedia di sistem Windows (lewati bluetooth mati)
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const audioInputs = devices.filter(d => d.kind === 'audioinput' && d.deviceId);
-      for (const dev of audioInputs) {
-        try {
-          return await navigator.mediaDevices.getUserMedia({
-            audio: { deviceId: { exact: dev.deviceId } }
-          });
-        } catch {}
-      }
-    } catch {}
-
-    throw new Error('Tidak ada mikrofon aktif yang dapat diakses di perangkat Anda.');
-  };
-
   const startAudioVisualizer = (stream: MediaStream) => {
     try {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContextClass) return;
 
-      const audioCtx = new AudioContextClass();
-      audioContextRef.current = audioCtx;
+      let audioCtx = audioContextRef.current;
+      if (!audioCtx || audioCtx.state === 'closed') {
+        audioCtx = new AudioContextClass();
+        audioContextRef.current = audioCtx;
+      }
 
       if (audioCtx.state === 'suspended') {
         audioCtx.resume().catch(() => {});
@@ -147,7 +130,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 64;
-      analyser.smoothingTimeConstant = 0.4;
+      analyser.smoothingTimeConstant = 0.35;
       source.connect(analyser);
       analyserRef.current = analyser;
 
@@ -163,7 +146,8 @@ export const LiveVoiceAssistantModal: React.FC = () => {
           sum += dataArray[i];
         }
         const avg = sum / bufferLength;
-        const level = Math.min(100, Math.round((avg / 75) * 100));
+        // Kurva sensitivitas suara manusia: responsif mulai level desibel normal
+        const level = Math.min(100, Math.round((avg / 35) * 100));
         setAudioVolume(level);
 
         animFrameRef.current = requestAnimationFrame(renderFrame);
@@ -387,11 +371,72 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     } catch {}
   }, [ttsEnabled]);
 
-  const startListening = async () => {
+  // Diagnostik interaktif mikrofon langkah demi langkah
+  const runMicrophoneDiagnostic = async () => {
+    setIsTestingMic(true);
+    let perm = 'unknown';
+    try {
+      if (typeof navigator !== 'undefined' && (navigator as any).permissions?.query) {
+        const p = await (navigator as any).permissions.query({ name: 'microphone' });
+        perm = p.state; // 'granted' | 'denied' | 'prompt'
+      }
+    } catch {}
+
+    let devCount = 0;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.enumerateDevices) {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        devCount = devs.filter(d => d.kind === 'audioinput').length;
+      }
+    } catch {}
+
+    const hasMR = typeof window !== 'undefined' && 'MediaRecorder' in window;
+    const hasSR = typeof window !== 'undefined' && Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+
+    // Uji sambung mikrofon nyata 2 detik
+    let testSuccess = false;
+    let testMsg = '';
+    try {
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+        const testStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        testSuccess = true;
+        testMsg = 'Mikrofon terhubung dan berfungsi dengan normal! Sistem siap menangkap suara.';
+        testStream.getTracks().forEach(t => t.stop());
+      } else {
+        testMsg = 'API getUserMedia tidak didukung pada peramban ini.';
+      }
+    } catch (testErr: any) {
+      testSuccess = false;
+      if (testErr.name === 'NotAllowedError' || testErr.name === 'PermissionDeniedError') {
+        testMsg = 'Izin mikrofon diblokir. Buka ikon gembok di sebelah URL Chrome dan izinkan Microphone, serta pastikan "Let desktop apps access your microphone" di Windows aktif.';
+      } else if (testErr.name === 'NotFoundError') {
+        testMsg = 'Tidak ada perangkat mikrofon fisik yang terdeteksi di laptop/PC Anda.';
+      } else {
+        testMsg = `Kendala perangkat: ${testErr.name || testErr.message}`;
+      }
+    }
+
+    setDiagnosticResult({
+      permissionState: perm,
+      hasDevices: devCount > 0,
+      deviceCount: devCount,
+      hasMediaRecorder: hasMR,
+      hasSpeechRecognition: hasSR,
+      testStatus: testSuccess ? 'success' : 'failed',
+      testMessage: testMsg
+    });
+    setIsTestingMic(false);
+  };
+
+  /**
+   * Memulai mikrofon secara SINKRON dalam siklus event klik pengguna (Synchronous User Gesture).
+   * Menjamin Google Chrome wajib menampilkan dialog izin (pop-up) tanpa kehilangan aktivasi pengguna.
+   */
+  const startListeningSync = () => {
     setSpeechError(null);
     setLiveInterimText('');
 
-    // Hentikan suara TTS asisten agar tidak terjadi feedback
+    // Hentikan suara TTS asisten agar tidak terjadi loop feedback suara
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       try {
         window.speechSynthesis.cancel();
@@ -399,91 +444,125 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     }
     setIsSpeaking(false);
 
-    // Dapatkan media stream mikrofon dengan pemulihan multi-device otomatis
-    let stream: MediaStream | null = null;
+    // 1. Inisiasi AudioContext secara SINKRON di dalam event klik (mencegah AudioContext suspended oleh peramban)
     try {
-      stream = await getMicrophoneStream();
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+          audioContextRef.current = new AudioContextClass();
+        }
+        if (audioContextRef.current.state === 'suspended') {
+          audioContextRef.current.resume().catch(() => {});
+        }
+      }
+    } catch (e) {
+      console.warn('AudioContext sync init error:', e);
+    }
+
+    // 2. Jalankan Web Speech API secara SINKRON saat klik pengguna jika mode AUTO atau WEB_SPEECH
+    if (audioMode === 'AUTO' || audioMode === 'WEB_SPEECH') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        if (recognitionRef.current) {
+          try { recognitionRef.current.abort(); } catch {}
+          recognitionRef.current = null;
+        }
+
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.lang = 'id-ID';
+          recognition.continuous = false;
+          recognition.interimResults = true;
+
+          recognition.onresult = (event: any) => {
+            let interim = '';
+            let finalTranscript = '';
+
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+              if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript;
+              } else {
+                interim += event.results[i][0].transcript;
+              }
+            }
+
+            if (interim) {
+              setLiveInterimText(interim);
+              setInputText(interim);
+            }
+
+            if (finalTranscript && finalTranscript.trim()) {
+              stopListening(finalTranscript.trim());
+            }
+          };
+
+          recognition.onerror = (event: any) => {
+            console.warn('SpeechRecognition info/fallback:', event.error);
+            // Jika Web Speech API peramban gagal/dibatasi, MediaRecorder + Gemini tetap bekerja 100%!
+          };
+
+          recognitionRef.current = recognition;
+          recognition.start();
+        } catch (srErr) {
+          console.warn('SpeechRecognition direct sync start error:', srErr);
+        }
+      }
+    }
+
+    // 3. Panggil getUserMedia secara SINKRON di siklus klik ini (User Activation Token Terjaga)
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setSpeechError('Peramban Anda tidak mendukung antarmuka penangkapan audio (getUserMedia).');
+      return;
+    }
+
+    // Inisiasi stream mikrofon langsung pada stack event handler klik
+    const streamPromise = navigator.mediaDevices.getUserMedia({ audio: true })
+      .catch(async () => {
+        // Fallback constraint rileks tanpa echo/noise filter (mengatasi konflik driver sound Realtek Windows)
+        return navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        });
+      });
+
+    streamPromise.then((stream) => {
       audioStreamRef.current = stream;
-    } catch (err: any) {
+
+      // Hubungkan visualizer gelombang suara hijau zamrud
+      startAudioVisualizer(stream);
+
+      // Aktifkan MediaRecorder untuk menangkap rekaman suara murni ke Gemini
+      audioChunksRef.current = [];
+      try {
+        const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+        const recorder = new MediaRecorder(stream, { mimeType: mime });
+        recorder.ondataavailable = e => {
+          if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+        };
+        recorder.start(250);
+        mediaRecorderRef.current = recorder;
+      } catch (recErr) {
+        console.warn('MediaRecorder init warning:', recErr);
+      }
+
+      setIsListening(true);
+    }).catch((err) => {
       console.warn('Gagal memperoleh stream mikrofon:', err);
       let detail = 'Peramban tidak dapat mengakses mikrofon.';
       if (err.name === 'NotFoundError' || err.message?.includes('tidak ada mikrofon')) {
         detail = 'Tidak ada perangkat mikrofon fisik yang terdeteksi aktif di sistem laptop/PC Anda.';
       } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        detail = 'Izin akses mikrofon terhalang peramban atau setelan privasi Windows. Pastikan izin "Allow" aktif di peramban dan "Settings > Privacy > Microphone" di Windows diaktifkan.';
+        detail = 'Izin akses mikrofon terhalang oleh Google Chrome atau setelan privasi Windows. Klik "Diagnostik & Bantuan Mikrofon" untuk panduan cepat membuka izin.';
       } else if (err.name === 'NotReadableError') {
-        detail = 'Mikrofon sedang dipakai aplikasi lain atau mengalami kendala driver audio Windows.';
+        detail = 'Mikrofon sedang dipakai aplikasi lain (seperti Zoom/Teams) atau driver audio Windows sedang sibuk.';
       }
       setSpeechError(detail);
-      return;
-    }
-
-    // Aktifkan visualisasi amplitudo suara live dengan stream tunggal
-    startAudioVisualizer(stream);
-
-    // Aktifkan MediaRecorder untuk menangkap rekaman suara langsung ke Gemini
-    audioChunksRef.current = [];
-    try {
-      const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-      const recorder = new MediaRecorder(stream, { mimeType: mime });
-      recorder.ondataavailable = e => {
-        if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
-      recorder.start(250);
-      mediaRecorderRef.current = recorder;
-    } catch (recErr) {
-      console.warn('MediaRecorder error:', recErr);
-    }
-
-    setIsListening(true);
-
-    // Jalankan juga SpeechRecognition untuk umpan balik transkripsi teks berjalan jika peramban mendukung
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.abort(); } catch {}
-        recognitionRef.current = null;
-      }
-
-      try {
-        const recognition = new SpeechRecognition();
-        recognition.lang = 'id-ID';
-        recognition.continuous = false;
-        recognition.interimResults = true;
-
-        recognition.onresult = (event: any) => {
-          let interim = '';
-          let finalTranscript = '';
-
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              finalTranscript += event.results[i][0].transcript;
-            } else {
-              interim += event.results[i][0].transcript;
-            }
-          }
-
-          if (interim) {
-            setLiveInterimText(interim);
-            setInputText(interim);
-          }
-
-          if (finalTranscript && finalTranscript.trim()) {
-            stopListening(finalTranscript.trim());
-          }
-        };
-
-        recognition.onerror = (event: any) => {
-          console.warn('Speech recognition warning:', event.error);
-          // Jika SpeechRecognition gagal di peramban, MediaRecorder tetap merekam audio untuk diproses Gemini saat berhenti!
-        };
-
-        recognitionRef.current = recognition;
-        recognition.start();
-      } catch (e) {
-        console.warn('SpeechRecognition start error:', e);
-      }
-    }
+      setIsListening(false);
+      stopAudioVisualizer();
+    });
   };
 
   const stopListening = async (preTranscribedText?: string) => {
@@ -498,14 +577,15 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     setIsListening(false);
     setLiveInterimText('');
 
-    // Skenario A: Ada teks transkripsi dari Web Speech API
-    if (preTranscribedText && preTranscribedText.trim()) {
+    // Skenario A: Ada teks transkripsi dari Web Speech API (dan bukan mode paksa Gemini murni)
+    if (preTranscribedText && preTranscribedText.trim() && audioMode !== 'GEMINI') {
       handleProcessInput(preTranscribedText.trim());
       return;
     }
 
-    // Skenario B: Web Speech API kosong/gagal, namun ada audio chunk yang berhasil direkam oleh MediaRecorder
-    if (recordedChunks.length > 0 && !inputText.trim()) {
+    // Skenario B: Mode Gemini Flash Multimodal Audio (atau Web Speech API kosong/gagal)
+    // Audio chunk murni dianalisis langsung oleh Google Gemini Flash AI
+    if (recordedChunks.length > 0 && (!inputText.trim() || audioMode === 'GEMINI')) {
       setIsAiThinking(true);
       try {
         const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
@@ -536,7 +616,8 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     if (isListening) {
       stopListening();
     } else {
-      startListening();
+      // Inisiasi sinkron saat event klik pengguna (Synchronous User Gesture)
+      startListeningSync();
     }
   };
 
@@ -1151,6 +1232,54 @@ export const LiveVoiceAssistantModal: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-1.5">
+                {/* Mode Selector Suara Tangguh */}
+                <div className="hidden sm:flex items-center bg-slate-200/70 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-300/60 dark:border-slate-700 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setAudioMode('AUTO')}
+                    className={`px-2 py-0.5 rounded-lg font-bold transition-all cursor-pointer ${
+                      audioMode === 'AUTO'
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                    title="Mode Otomatis: Web Speech transkrip instan + Gemini Audio Fallback"
+                  >
+                    ⚡ Otomatis
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAudioMode('GEMINI')}
+                    className={`px-2 py-0.5 rounded-lg font-bold transition-all cursor-pointer ${
+                      audioMode === 'GEMINI'
+                        ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                    title="Mode Gemini Flash Audio: Rekam murni ke Gemini (Paling Tahan Banting)"
+                  >
+                    💎 Gemini Audio
+                  </button>
+                </div>
+
+                {/* Tombol Diagnostik & Solusi Mikrofon */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !showDiagnostic;
+                    setShowDiagnostic(next);
+                    if (next && !diagnosticResult) {
+                      runMicrophoneDiagnostic();
+                    }
+                  }}
+                  className={`p-2 rounded-xl border text-xs transition-colors cursor-pointer ${
+                    showDiagnostic
+                      ? 'border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400'
+                      : 'border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                  title="Diagnostik & Bantuan Izin Mikrofon"
+                >
+                  <Activity className="w-4 h-4" />
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setTtsEnabled(!ttsEnabled)}
@@ -1179,6 +1308,90 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {/* PANEL DIAGNOSTIK MIKROFON & PANDUAN IZIN WINDOWS/CHROME */}
+            {showDiagnostic && (
+              <div className="p-3.5 bg-indigo-50/95 dark:bg-slate-950/95 border-b border-indigo-200 dark:border-indigo-900/60 text-slate-800 dark:text-slate-200 text-xs space-y-3 animate-in slide-in-from-top-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <h4 className="font-bold text-xs text-indigo-950 dark:text-indigo-200">
+                      Diagnostik Perangkat & Izin Mikrofon Lapangan
+                    </h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDiagnostic(false)}
+                    className="p-1 rounded-lg hover:bg-indigo-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Status Grid 4 Pilar */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                  <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-950 shadow-2xs">
+                    <span className="text-[10px] text-slate-400 block">Izin Peramban</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      {diagnosticResult?.permissionState === 'granted'
+                        ? '✅ Diizinkan'
+                        : diagnosticResult?.permissionState === 'denied'
+                        ? '❌ Diblokir'
+                        : diagnosticResult?.permissionState === 'prompt'
+                        ? '⚠️ Ditanyakan'
+                        : 'Mengecek...'}
+                    </span>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-950 shadow-2xs">
+                    <span className="text-[10px] text-slate-400 block">Mikrofon Fisik</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      {diagnosticResult ? `${diagnosticResult.deviceCount} Terdeteksi` : 'Mengecek...'}
+                    </span>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-950 shadow-2xs">
+                    <span className="text-[10px] text-slate-400 block">MediaRecorder AI</span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                      {diagnosticResult?.hasMediaRecorder ? '✅ Siap (Gemini)' : 'Tidak Didukung'}
+                    </span>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-950 shadow-2xs">
+                    <span className="text-[10px] text-slate-400 block">Web Speech API</span>
+                    <span className="font-bold text-slate-700 dark:text-slate-300">
+                      {diagnosticResult?.hasSpeechRecognition ? '✅ Tersedia' : '❌ Non-Aktif'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Pesan Hasil Uji Coba */}
+                {diagnosticResult?.testMessage && (
+                  <div className={`p-2.5 rounded-xl border text-[11px] leading-relaxed ${
+                    diagnosticResult.testStatus === 'success'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                  }`}>
+                    <p className="font-semibold">{diagnosticResult.testMessage}</p>
+                  </div>
+                )}
+
+                {/* Tombol Uji & Panduan Langkah Cepat */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-1 border-t border-indigo-100 dark:border-indigo-900/40">
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                    💡 <strong>Tips Cepat Chrome & Windows:</strong> Klik ikon gembok di sebelah URL &gt; izinkan mikrofon, dan cek switch privasi mikrofon di Windows Settings.
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isTestingMic}
+                    onClick={runMicrophoneDiagnostic}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] transition-all cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
+                  >
+                    {isTestingMic ? 'Sedang Menguji...' : 'Uji Koneksi Mikrofon Sekarang'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Area Pesan Chat & Tindakan Konfirmasi */}
             <div className="flex-1 p-4 overflow-y-auto space-y-3.5 text-xs">
@@ -1362,12 +1575,12 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                     <p className="text-[11px] leading-relaxed text-rose-700 dark:text-rose-300">
                       {speechError}
                     </p>
-                    <div className="pt-1 flex items-center gap-2">
+                    <div className="pt-1 flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => {
                           setSpeechError(null);
-                          startListening();
+                          startListeningSync();
                         }}
                         className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] cursor-pointer shadow-xs transition-colors"
                       >
@@ -1375,8 +1588,18 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                       </button>
                       <button
                         type="button"
+                        onClick={() => {
+                          setShowDiagnostic(true);
+                          runMicrophoneDiagnostic();
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] cursor-pointer shadow-xs transition-colors"
+                      >
+                        Buka Diagnostik & Solusi Izin
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setSpeechError(null)}
-                        className="px-2.5 py-1 rounded-lg border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-[10px] font-semibold hover:bg-rose-100 dark:hover:bg-rose-900/50 cursor-pointer transition-colors"
+                        className="px-2.5 py-1.5 rounded-lg border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-[10px] font-semibold hover:bg-rose-100 dark:hover:bg-rose-900/50 cursor-pointer transition-colors"
                       >
                         Tutup
                       </button>
@@ -1386,23 +1609,23 @@ export const LiveVoiceAssistantModal: React.FC = () => {
               </div>
             )}
 
-            {/* Banner Transkrip Suara Langsung & Visualizer Indikator Suara Masuk */}
+            {/* Banner Transkrip Suara Langsung & Visualizer Indikator Suara Masuk (Hijau Zamrud Bergerak) */}
             {isListening && (
-              <div className="mx-3 my-2 p-3 rounded-2xl bg-blue-50/95 dark:bg-blue-950/75 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-100 text-[11px] space-y-2 shadow-sm animate-in slide-in-from-bottom-1">
+              <div className="mx-3 my-2 p-3 rounded-2xl bg-slate-900/90 dark:bg-slate-950/90 border border-emerald-500/40 text-white text-[11px] space-y-2.5 shadow-lg shadow-emerald-500/10 animate-in slide-in-from-bottom-1">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    {/* Visualizer Gelombang Suara (Volume Bar Level Dinamis) */}
-                    <div className="flex items-center gap-1 h-5 px-2 py-0.5 bg-white/80 dark:bg-slate-900/80 rounded-lg border border-blue-200 dark:border-blue-800/80 shadow-2xs">
-                      {[0.5, 0.9, 1.3, 1.0, 0.8, 1.2].map((mult, idx) => {
-                        const h = Math.max(4, Math.min(18, Math.round((audioVolume * mult * 0.18) + 4)));
-                        const isVocal = audioVolume > 12;
+                    {/* Visualizer Gelombang Suara (Emerald Green Dynamic Glow Waveform) */}
+                    <div className="flex items-center gap-1 h-6 px-2.5 py-1 bg-black/60 rounded-xl border border-emerald-500/30 shadow-inner">
+                      {[0.4, 0.8, 1.2, 1.6, 1.1, 0.7, 1.4, 0.9, 0.5].map((mult, idx) => {
+                        const h = Math.max(4, Math.min(22, Math.round((audioVolume * mult * 0.22) + 4)));
+                        const isVocal = audioVolume > 8;
                         return (
                           <span
                             key={idx}
                             className={`w-1 rounded-full transition-all duration-75 ${
                               isVocal
-                                ? 'bg-emerald-500 dark:bg-emerald-400 shadow-xs shadow-emerald-500/50'
-                                : 'bg-blue-400/50 dark:bg-blue-500/40'
+                                ? 'bg-linear-to-t from-emerald-500 to-emerald-300 shadow-xs shadow-emerald-400'
+                                : 'bg-emerald-900/50'
                             }`}
                             style={{ height: `${h}px` }}
                           />
@@ -1411,36 +1634,43 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                     </div>
 
                     {/* Status Deteksi Suara Masuk */}
-                    {audioVolume > 12 ? (
-                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 shrink-0 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                    {audioVolume > 8 ? (
+                      <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1.5 shrink-0 bg-emerald-950/80 px-2.5 py-1 rounded-full border border-emerald-500/40 shadow-xs">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                         Suara Masuk: {audioVolume}%
                       </span>
                     ) : (
-                      <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] font-medium text-slate-400 flex items-center gap-1.5 shrink-0 bg-slate-800/60 px-2.5 py-1 rounded-full">
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                        Menunggu suara Anda...
+                        Mendengarkan... Bicaralah
                       </span>
                     )}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => stopListening()}
-                    className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold cursor-pointer shrink-0 shadow-xs active:scale-95 transition-all"
-                  >
-                    Selesai Bicara
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-semibold text-slate-400 hidden sm:inline">
+                      {audioMode === 'GEMINI' ? '💎 Gemini Audio' : '⚡ Hybrid Live'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => stopListening()}
+                      className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold cursor-pointer shrink-0 shadow-xs active:scale-95 transition-all"
+                    >
+                      Selesai Bicara
+                    </button>
+                  </div>
                 </div>
 
                 {/* Teks Ucapan yang Terbaca Secara Real-Time */}
-                <div className="px-2.5 py-1.5 rounded-xl bg-white/70 dark:bg-slate-900/60 border border-blue-100 dark:border-blue-900/40 min-w-0">
-                  <p className="text-[11px] leading-relaxed italic text-slate-800 dark:text-slate-200 break-words">
+                <div className="px-2.5 py-1.5 rounded-xl bg-black/40 border border-slate-800 min-w-0">
+                  <p className="text-[11px] leading-relaxed italic text-slate-200 break-words">
                     {liveInterimText ? (
                       <span>&ldquo;{liveInterimText}&rdquo;</span>
                     ) : (
-                      <span className="text-slate-400 dark:text-slate-500">
-                        Bicaralah sekarang dalam bahasa Indonesia, misalnya: &ldquo;Catat semen masuk 20 sak...&rdquo;
+                      <span className="text-slate-400">
+                        {audioMode === 'GEMINI'
+                          ? 'Merekam suara Anda langsung... Klik "Selesai Bicara" untuk analisis cerdas Gemini Flash Audio.'
+                          : 'Bicaralah sekarang dalam bahasa Indonesia, misalnya: "Catat semen masuk 20 sak..."'}
                       </span>
                     )}
                   </p>
@@ -1499,22 +1729,28 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                 <Paperclip className="w-4 h-4" />
               </button>
 
-              {/* Tombol Mic Suara Indonesia Real-Time dengan Dynamic Audio Level Glow */}
+              {/* Tombol Mic Suara Indonesia Real-Time dengan Dynamic Emerald Glow */}
               <button
                 type="button"
                 onClick={toggleListening}
                 className={`relative w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-all cursor-pointer shadow-md ${
                   isListening
-                    ? audioVolume > 12
-                      ? 'bg-emerald-600 text-white ring-4 ring-emerald-500/40 shadow-emerald-600/40 scale-105'
+                    ? audioVolume > 8
+                      ? 'bg-emerald-600 text-white ring-4 ring-emerald-500/50 shadow-emerald-600/50 scale-105'
                       : 'bg-rose-600 text-white ring-4 ring-rose-500/30 shadow-rose-600/30'
                     : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/25 active:scale-95'
                 }`}
-                style={isListening && audioVolume > 10 ? { transform: `scale(${1 + Math.min(0.18, audioVolume / 450)})` } : undefined}
-                title={isListening ? 'Klik untuk berhenti mendengarkan' : 'Klik untuk bicara bahasa Indonesia'}
+                style={isListening && audioVolume > 8 ? { transform: `scale(${1 + Math.min(0.18, audioVolume / 400)})` } : undefined}
+                title={
+                  isListening
+                    ? 'Klik untuk selesai bicara & analisis'
+                    : audioMode === 'GEMINI'
+                    ? 'Klik untuk bicara (Dianalisis Gemini Flash Audio)'
+                    : 'Klik untuk bicara bahasa Indonesia'
+                }
               >
                 {/* Gelombang Ripple Lingkaran saat Suara Terdeteksi Masuk */}
-                {isListening && audioVolume > 15 && (
+                {isListening && audioVolume > 10 && (
                   <span className="absolute inset-0 rounded-2xl bg-emerald-400 opacity-40 animate-ping pointer-events-none" />
                 )}
                 {isListening ? <MicOff className="w-4.5 h-4.5" /> : <Mic className="w-4.5 h-4.5" />}

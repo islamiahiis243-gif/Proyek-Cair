@@ -5,7 +5,9 @@ import {
   setGeminiApiKey,
   isGeminiAiAvailable,
   testGeminiConnection,
-  processWithGemini
+  processWithGemini,
+  processAudioWithGemini,
+  fileToBase64
 } from './geminiService';
 import { AgentContextSnapshot } from './agentEngine';
 
@@ -100,4 +102,20 @@ test('4. processWithGemini protects Viewer from write intent even under Gemini p
   const res = await processWithGemini('catat barang masuk semen 20 sak', viewerCtx);
   assert.equal(res.actionRequired, false);
   assert.ok(res.spokenResponse.toLowerCase().includes('baca-saja'));
+});
+
+test('5. fileToBase64 converts Blob data correctly to base64', async () => {
+  const mockBlob = new Blob(['proyek-cair-audio-test-data'], { type: 'audio/webm' });
+  const b64 = await fileToBase64(mockBlob);
+  assert.ok(b64.length > 0);
+  assert.equal(Buffer.from(b64, 'base64').toString('utf-8'), 'proyek-cair-audio-test-data');
+});
+
+test('6. processAudioWithGemini returns friendly Indonesian guidance when API key is missing', async () => {
+  setGeminiApiKey('');
+  const mockAudioBlob = new Blob(['dummy-audio-bytes'], { type: 'audio/webm' });
+  const res = await processAudioWithGemini(mockAudioBlob, MOCK_CONTEXT);
+  assert.equal(res.type, 'GENERAL_QUERY');
+  assert.equal(res.actionRequired, false);
+  assert.ok(res.spokenResponse.includes('Google Gemini API Key belum aktif') || res.spokenResponse.includes('Pengaturan'));
 });
