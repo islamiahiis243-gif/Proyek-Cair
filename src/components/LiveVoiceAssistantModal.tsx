@@ -85,6 +85,77 @@ export const LiveVoiceAssistantModal: React.FC = () => {
   // State & Ref Suara & Speech Recognition
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [liveInterimText, setLiveInterimText] = useState<string>('');
+  const [audioVolume, setAudioVolume] = useState<number>(0); // 0 - 100
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+
+  const startAudioVisualizer = async () => {
+    try {
+      if (!navigator?.mediaDevices?.getUserMedia) return;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
+
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+
+      const audioCtx = new AudioContextClass();
+      audioContextRef.current = audioCtx;
+
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
+
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 64;
+      analyser.smoothingTimeConstant = 0.4;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const renderFrame = () => {
+        if (!analyserRef.current) return;
+        analyserRef.current.getByteFrequencyData(dataArray);
+
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        const avg = sum / bufferLength;
+        const level = Math.min(100, Math.round((avg / 75) * 100));
+        setAudioVolume(level);
+
+        animFrameRef.current = requestAnimationFrame(renderFrame);
+      };
+
+      renderFrame();
+    } catch (e) {
+      console.warn('Audio stream visualizer tidak dapat diakses:', e);
+    }
+  };
+
+  const stopAudioVisualizer = useCallback(() => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach(t => t.stop());
+      audioStreamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      try {
+        audioContextRef.current.close();
+      } catch {}
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+    setAudioVolume(0);
+  }, []);
 
   const stopCameraStream = useCallback(() => {
     if (cameraStreamRef.current) {
@@ -251,8 +322,9 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     return () => {
       stopCameraStream();
       stopListening();
+      stopAudioVisualizer();
     };
-  }, [stopCameraStream]);
+  }, [stopCameraStream, stopAudioVisualizer]);
 
   // Fungsi Text-to-Speech (TTS) Suara Asisten Bahasa Indonesia
   const speakResponse = useCallback((text: string) => {
@@ -289,19 +361,6 @@ export const LiveVoiceAssistantModal: React.FC = () => {
       return;
     }
 
-    // Minta izin mikrofon jika belum
-    try {
-      if (navigator?.mediaDevices?.getUserMedia) {
-        const testAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        testAudioStream.getTracks().forEach(t => t.stop());
-      }
-    } catch (micErr: any) {
-      if (micErr.name === 'NotAllowedError' || micErr.name === 'PermissionDeniedError') {
-        setSpeechError('Izin akses mikrofon belum diizinkan. Silakan klik ikon gembok di sebelah alamat URL peramban untuk mengizinkan mikrofon.');
-        return;
-      }
-    }
-
     // Bersihkan instance lama jika ada
     if (recognitionRef.current) {
       try {
@@ -309,6 +368,9 @@ export const LiveVoiceAssistantModal: React.FC = () => {
       } catch {}
       recognitionRef.current = null;
     }
+
+    // Aktifkan visualisasi amplitudo suara live
+    startAudioVisualizer().catch(() => {});
 
     try {
       const recognition = new SpeechRecognition();
@@ -340,6 +402,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
 
         if (finalTranscript && finalTranscript.trim()) {
           setIsListening(false);
+          stopAudioVisualizer();
           setLiveInterimText('');
           setInputText('');
           handleProcessInput(finalTranscript.trim());
@@ -349,21 +412,23 @@ export const LiveVoiceAssistantModal: React.FC = () => {
       recognition.onerror = (event: any) => {
         console.warn('Speech recognition error event:', event.error);
         setIsListening(false);
+        stopAudioVisualizer();
         setLiveInterimText('');
 
         if (event.error === 'not-allowed') {
-          setSpeechError('Izin mikrofon tidak diizinkan. Mohon izinkan mikrofon di pengaturan peramban.');
+          setSpeechError('Izin akses mikrofon belum diizinkan oleh peramban. Silakan klik ikon gembok di sebelah alamat URL (atau tombol "Minta Izin Ulang" di bawah) untuk mengizinkan mikrofon.');
         } else if (event.error === 'no-speech') {
           // Hening, tidak perlu error keras
         } else if (event.error === 'network') {
-          setSpeechError('Koneksi suara terganggu. Periksa koneksi internet Anda atau ketik langsung.');
+          setSpeechError('Koneksi suara terganggu. Periksa koneksi internet Anda atau ketik langsung di kotak pesan.');
         } else if (event.error !== 'aborted') {
-          setSpeechError(`Perekaman suara terhenti (${event.error}). Klik mic untuk mencoba kembali.`);
+          setSpeechError(`Perekaman suara terhenti (${event.error}). Klik tombol mic untuk mencoba kembali.`);
         }
       };
 
       recognition.onend = () => {
         setIsListening(false);
+        stopAudioVisualizer();
         setLiveInterimText('');
       };
 
@@ -372,7 +437,8 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     } catch (err: any) {
       console.error('Gagal mengaktifkan SpeechRecognition:', err);
       setIsListening(false);
-      setSpeechError('Gagal mengaktifkan mikrofon. Silakan coba kembali atau ketik pesan.');
+      stopAudioVisualizer();
+      setSpeechError('Gagal mengaktifkan mikrofon. Pastikan perangkat mikrofon terpasang dan izin aktif.');
     }
   };
 
@@ -382,6 +448,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
         recognitionRef.current.stop();
       } catch {}
     }
+    stopAudioVisualizer();
     setIsListening(false);
     setLiveInterimText('');
   };
@@ -1204,46 +1271,109 @@ export const LiveVoiceAssistantModal: React.FC = () => {
               </div>
             )}
 
-            {/* Banner Error Mikrofon jika Akses Ditolak atau Terganggu */}
+            {/* Banner Error Mikrofon & Panduan Izin Interaktif */}
             {speechError && (
-              <div className="mx-3 my-2 p-2.5 rounded-xl bg-rose-50/90 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-[11px] flex items-center justify-between animate-in fade-in">
-                <div className="flex items-center gap-2 min-w-0">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
-                  <span className="truncate">{speechError}</span>
+              <div className="mx-3 my-2 p-3 rounded-2xl bg-rose-50/95 dark:bg-rose-950/80 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-200 text-xs shadow-md animate-in fade-in slide-in-from-top-1">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="w-5 h-5 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <p className="font-bold text-rose-900 dark:text-rose-100">
+                      Izin Akses Mikrofon Diperlukan
+                    </p>
+                    <p className="text-[11px] leading-relaxed text-rose-700 dark:text-rose-300">
+                      {speechError}
+                    </p>
+                    <div className="pt-1 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSpeechError(null);
+                          if (navigator?.mediaDevices?.getUserMedia) {
+                            navigator.mediaDevices.getUserMedia({ audio: true })
+                              .then(() => startListening())
+                              .catch(() => {
+                                setSpeechError('Peramban masih memblokir mikrofon. Klik ikon gembok 🔒 di samping URL dan pilih "Izinkan" untuk Mikrofon.');
+                              });
+                          } else {
+                            startListening();
+                          }
+                        }}
+                        className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] cursor-pointer shadow-xs transition-colors"
+                      >
+                        Minta Izin Ulang / Coba Lagi
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSpeechError(null)}
+                        className="px-2.5 py-1 rounded-lg border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-[10px] font-semibold hover:bg-rose-100 dark:hover:bg-rose-900/50 cursor-pointer transition-colors"
+                      >
+                        Tutup
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setSpeechError(null)}
-                  className="p-1 text-rose-400 hover:text-rose-600 cursor-pointer shrink-0 ml-1"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
               </div>
             )}
 
-            {/* Banner Transkrip Suara Langsung (Real-Time Interim Voice Feedback) */}
+            {/* Banner Transkrip Suara Langsung & Visualizer Indikator Suara Masuk */}
             {isListening && (
-              <div className="mx-3 my-2 p-2.5 rounded-xl bg-blue-50/95 dark:bg-blue-950/70 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-100 text-[11px] flex items-center justify-between animate-in slide-in-from-bottom-1 shadow-xs">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="flex items-center gap-0.5 shrink-0">
-                    <span className="w-1 h-2.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                    <span className="w-1 h-4 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                    <span className="w-1 h-2.5 bg-blue-600 rounded-full animate-bounce" />
+              <div className="mx-3 my-2 p-3 rounded-2xl bg-blue-50/95 dark:bg-blue-950/75 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-100 text-[11px] space-y-2 shadow-sm animate-in slide-in-from-bottom-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {/* Visualizer Gelombang Suara (Volume Bar Level Dinamis) */}
+                    <div className="flex items-center gap-1 h-5 px-2 py-0.5 bg-white/80 dark:bg-slate-900/80 rounded-lg border border-blue-200 dark:border-blue-800/80 shadow-2xs">
+                      {[0.5, 0.9, 1.3, 1.0, 0.8, 1.2].map((mult, idx) => {
+                        const h = Math.max(4, Math.min(18, Math.round((audioVolume * mult * 0.18) + 4)));
+                        const isVocal = audioVolume > 12;
+                        return (
+                          <span
+                            key={idx}
+                            className={`w-1 rounded-full transition-all duration-75 ${
+                              isVocal
+                                ? 'bg-emerald-500 dark:bg-emerald-400 shadow-xs shadow-emerald-500/50'
+                                : 'bg-blue-400/50 dark:bg-blue-500/40'
+                            }`}
+                            style={{ height: `${h}px` }}
+                          />
+                        );
+                      })}
+                    </div>
+
+                    {/* Status Deteksi Suara Masuk */}
+                    {audioVolume > 12 ? (
+                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 shrink-0 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                        Suara Masuk: {audioVolume}%
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                        Menunggu suara Anda...
+                      </span>
+                    )}
                   </div>
-                  <div className="min-w-0 truncate">
-                    <span className="font-bold text-blue-700 dark:text-blue-300">Mendengarkan: </span>
-                    <span className="italic text-slate-700 dark:text-slate-200">
-                      {liveInterimText || 'Bicaralah sekarang dalam bahasa Indonesia...'}
-                    </span>
-                  </div>
+
+                  <button
+                    type="button"
+                    onClick={stopListening}
+                    className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold cursor-pointer shrink-0 shadow-xs active:scale-95 transition-all"
+                  >
+                    Selesai Bicara
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={stopListening}
-                  className="px-2 py-0.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold cursor-pointer shrink-0 ml-2 shadow-xs"
-                >
-                  Selesai Bicara
-                </button>
+
+                {/* Teks Ucapan yang Terbaca Secara Real-Time */}
+                <div className="px-2.5 py-1.5 rounded-xl bg-white/70 dark:bg-slate-900/60 border border-blue-100 dark:border-blue-900/40 min-w-0">
+                  <p className="text-[11px] leading-relaxed italic text-slate-800 dark:text-slate-200 break-words">
+                    {liveInterimText ? (
+                      <span>&ldquo;{liveInterimText}&rdquo;</span>
+                    ) : (
+                      <span className="text-slate-400 dark:text-slate-500">
+                        Bicaralah sekarang dalam bahasa Indonesia, misalnya: &ldquo;Catat semen masuk 20 sak...&rdquo;
+                      </span>
+                    )}
+                  </p>
+                </div>
               </div>
             )}
 
@@ -1298,17 +1428,24 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                 <Paperclip className="w-4 h-4" />
               </button>
 
-              {/* Tombol Mic Suara Indonesia Real-Time */}
+              {/* Tombol Mic Suara Indonesia Real-Time dengan Dynamic Audio Level Glow */}
               <button
                 type="button"
                 onClick={toggleListening}
-                className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-all cursor-pointer shadow-md ${
+                className={`relative w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-all cursor-pointer shadow-md ${
                   isListening
-                    ? 'bg-rose-600 text-white animate-pulse ring-4 ring-rose-500/30 shadow-rose-600/30'
+                    ? audioVolume > 12
+                      ? 'bg-emerald-600 text-white ring-4 ring-emerald-500/40 shadow-emerald-600/40 scale-105'
+                      : 'bg-rose-600 text-white ring-4 ring-rose-500/30 shadow-rose-600/30'
                     : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/25 active:scale-95'
                 }`}
+                style={isListening && audioVolume > 10 ? { transform: `scale(${1 + Math.min(0.18, audioVolume / 450)})` } : undefined}
                 title={isListening ? 'Klik untuk berhenti mendengarkan' : 'Klik untuk bicara bahasa Indonesia'}
               >
+                {/* Gelombang Ripple Lingkaran saat Suara Terdeteksi Masuk */}
+                {isListening && audioVolume > 15 && (
+                  <span className="absolute inset-0 rounded-2xl bg-emerald-400 opacity-40 animate-ping pointer-events-none" />
+                )}
                 {isListening ? <MicOff className="w-4.5 h-4.5" /> : <Mic className="w-4.5 h-4.5" />}
               </button>
 
