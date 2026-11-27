@@ -7,7 +7,8 @@
 import { AgentContextSnapshot, AgentIntentResult, parseAgentQuery } from './agentEngine';
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
-const DEFAULT_MODEL = 'gemini-1.5-flash';
+const CANDIDATE_MODELS = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest'];
+const DEFAULT_MODEL = 'gemini-3.5-flash';
 
 let memoryApiKey = '';
 
@@ -77,50 +78,51 @@ export async function testGeminiConnection(customKey?: string): Promise<{
     };
   }
 
-  try {
-    const endpoint = `${GEMINI_API_URL}/${DEFAULT_MODEL}:generateContent?key=${key}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+  let lastErrMsg = '';
+  for (const model of CANDIDATE_MODELS) {
+    try {
+      const endpoint = `${GEMINI_API_URL}/${model}:generateContent?key=${key}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: 'Balas hanya satu kata: Terhubung.' }]
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: 'Balas hanya satu kata: Terhubung.' }]
+            }
+          ],
+          generationConfig: {
+            maxOutputTokens: 10,
+            temperature: 0.1
           }
-        ],
-        generationConfig: {
-          maxOutputTokens: 10,
-          temperature: 0.1
-        }
-      }),
-      signal: controller.signal
-    });
+        }),
+        signal: controller.signal
+      });
 
-    clearTimeout(timeoutId);
+      clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      const errJson = await response.json().catch(() => null);
-      const errMsg = errJson?.error?.message || `HTTP ${response.status} ${response.statusText}`;
-      return {
-        success: false,
-        message: `Koneksi ditolak oleh Google: ${errMsg}`
-      };
+      if (response.ok) {
+        return {
+          success: true,
+          message: `Koneksi ke Google Gemini AI berhasil terhubung! (Model: ${model})`,
+          model: model
+        };
+      } else {
+        const errJson = await response.json().catch(() => null);
+        lastErrMsg = errJson?.error?.message || `HTTP ${response.status} ${response.statusText}`;
+      }
+    } catch (err: any) {
+      lastErrMsg = err.message || 'Timeout/Jaringan terputus';
     }
-
-    return {
-      success: true,
-      message: 'Koneksi ke Google Gemini AI berhasil terhubung!',
-      model: DEFAULT_MODEL
-    };
-  } catch (err: any) {
-    return {
-      success: false,
-      message: `Gagal menghubungi server Gemini: ${err.message || 'Timeout/Jaringan terputus'}`
-    };
   }
+
+  return {
+    success: false,
+    message: `Koneksi ditolak oleh Google: ${lastErrMsg}`
+  };
 }
 
 /**
@@ -200,44 +202,58 @@ Keluarkan HANYA JSON valid tanpa markdown, dengan format:
 }
 `;
 
-    const endpoint = `${GEMINI_API_URL}/${DEFAULT_MODEL}:generateContent?key=${key}`;
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: promptText },
+    let parsed: any = null;
+    let lastErr = '';
+
+    for (const model of CANDIDATE_MODELS) {
+      try {
+        const endpoint = `${GEMINI_API_URL}/${model}:generateContent?key=${key}`;
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
               {
-                inlineData: {
-                  mimeType: mimeType,
-                  data: base64Data
-                }
+                parts: [
+                  { text: promptText },
+                  {
+                    inlineData: {
+                      mimeType: mimeType,
+                      data: base64Data
+                    }
+                  }
+                ]
               }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 1024,
-          responseMimeType: 'application/json'
+            ],
+            generationConfig: {
+              temperature: 0.2,
+              maxOutputTokens: 1024,
+              responseMimeType: 'application/json'
+            }
+          })
+        });
+
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => null);
+          lastErr = errBody?.error?.message || `HTTP ${response.status}`;
+          continue;
         }
-      })
-    });
 
-    if (!response.ok) {
-      throw new Error(`Google Gemini Vision API error: HTTP ${response.status}`);
+        const resJson = await response.json();
+        const candidateText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!candidateText) continue;
+
+        parsed = JSON.parse(candidateText);
+        break;
+      } catch (e: any) {
+        lastErr = e.message;
+        continue;
+      }
     }
 
-    const resJson = await response.json();
-    const candidateText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!candidateText) {
-      throw new Error('Tidak ada respon teks dari Vision AI.');
+    if (!parsed) {
+      throw new Error(`Semua model Vision Gemini gagal memproses nota: ${lastErr}`);
     }
-
-    // Parsing JSON hasil ekstraksi Gemini Vision
-    const parsed = JSON.parse(candidateText);
     const store = parsed.storeName || 'Toko Material Lapangan';
     const itemName = parsed.matchedItemName || 'Material Belanja';
     const qty = Number(parsed.quantity) || 1;
@@ -368,43 +384,46 @@ ATURAN KEAMANAN & PRIVASI:
 }
 `;
 
-  try {
-    const endpoint = `${GEMINI_API_URL}/${DEFAULT_MODEL}:generateContent?key=${key}`;
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: systemPrompt },
-              { text: `Pesan pengguna: "${userQuery}"` }
-            ]
+  for (const model of CANDIDATE_MODELS) {
+    try {
+      const endpoint = `${GEMINI_API_URL}/${model}:generateContent?key=${key}`;
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: systemPrompt },
+                { text: `Pesan pengguna: "${userQuery}"` }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 1024,
+            responseMimeType: 'application/json'
           }
-        ],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 1024,
-          responseMimeType: 'application/json'
-        }
-      })
-    });
+        })
+      });
 
-    if (!response.ok) {
-      throw new Error(`Gemini Chat API returned ${response.status}`);
+      if (!response.ok) {
+        continue;
+      }
+
+      const resJson = await response.json();
+      const candidateText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!candidateText) {
+        continue;
+      }
+
+      const parsed: AgentIntentResult = JSON.parse(candidateText);
+      return parsed;
+    } catch {
+      continue;
     }
-
-    const resJson = await response.json();
-    const candidateText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!candidateText) {
-      throw new Error('Jawaban Gemini kosong.');
-    }
-
-    const parsed: AgentIntentResult = JSON.parse(candidateText);
-    return parsed;
-  } catch (err) {
-    console.warn('[GeminiAI] Gagal memproses kueri cerdas, beralih ke mesin lokal:', err);
-    // Seamless fallback ke mesin parser lokal
-    return parseAgentQuery(userQuery, context);
   }
+
+  // Fallback lokal jika semua model Gemini sedang sibuk atau luring
+  return parseAgentQuery(userQuery, context);
 }
