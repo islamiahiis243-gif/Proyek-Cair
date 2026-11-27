@@ -126,9 +126,9 @@ export async function testGeminiConnection(customKey?: string): Promise<{
 }
 
 /**
- * Mengonversi File menjadi base64 string
+ * Mengonversi File atau Blob menjadi base64 string
  */
-export function fileToBase64(file: File): Promise<string> {
+export function fileToBase64(file: File | Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -139,6 +139,113 @@ export function fileToBase64(file: File): Promise<string> {
     };
     reader.onerror = error => reject(error);
   });
+}
+
+/**
+ * Menganalisis Rekaman Audio Suara Langsung menggunakan Google Gemini Flash Multimodal
+ */
+export async function processAudioWithGemini(
+  audioBlob: Blob,
+  context: AgentContextSnapshot
+): Promise<AgentIntentResult> {
+  const key = getGeminiApiKey();
+  if (!key) {
+    return {
+      type: 'GENERAL_QUERY',
+      confidence: 0.5,
+      spokenResponse: 'Rekaman suara diterima, namun Google Gemini API Key belum aktif. Masukkan API Key di Pengaturan agar suara dapat dianalisis cerdas.',
+      actionRequired: false,
+      proposedActionTitle: 'Rekaman Suara Diterima',
+      proposedActionSubtitle: 'Aktifkan Gemini API Key di Pengaturan',
+      data: {}
+    };
+  }
+
+  const base64Data = await fileToBase64(audioBlob);
+  const mimeType = audioBlob.type || 'audio/webm';
+
+  const boqSummary = context.items
+    .slice(0, 35)
+    .map(it => `- [ID: ${it.id}] ${it.nama_barang} (Satuan: ${it.satuan}, Stok: ${it.stok_saat_ini}, Harga: Rp ${it.harga_satuan.toLocaleString('id-ID')})`)
+    .join('\n');
+
+  const systemPrompt = `
+Anda adalah "Live AI Proyek Cair", asisten cerdas lapangan berbasis rekaman suara percakapan alami untuk proyek konstruksi.
+Tugas Anda:
+1. Dengarkan rekaman suara bahasa Indonesia pengguna ini secara cermat.
+2. Pahami maksud/intensi pengguna (apakah mencatat barang masuk, pengeluaran kas, cek stok barang, cek saldo kas, laba rugi, dsb).
+3. Konteks Proyek Aktif:
+   * Proyek: ${context.projectName}
+   * Pengguna: ${context.userName} (Jabatan: ${context.userRole})
+   * Saldo Kas Saat Ini: Rp ${(context.currentCashBalance || 0).toLocaleString('id-ID')}
+   * Daftar Material Master BOQ Proyek:
+${boqSummary}
+
+Hasilkan output HANYA JSON valid tanpa teks atau markdown:
+{
+  "type": "STOCK_IN_AND_CASH" | "STOCK_OUT" | "CASH_EXPENSE" | "CHECK_STOCK" | "CHECK_CASH_BALANCE" | "CHECK_PROFIT_LOSS" | "CHECK_APPROVAL_QUEUE" | "NAVIGATE" | "CONFIRM_ACTION" | "CANCEL_ACTION" | "GENERAL_QUERY",
+  "confidence": 0.95,
+  "spokenResponse": "Jawaban asisten ramah dalam bahasa Indonesia yang akan disuarakan TTS...",
+  "actionRequired": boolean,
+  "proposedActionTitle": "Judul kartu aksi jika ada",
+  "proposedActionSubtitle": "Rincian singkat",
+  "data": {
+    "matchedItemId": "id_dari_master_atau_null",
+    "matchedItemName": "Nama Barang",
+    "quantity": 10,
+    "unit": "sak/rit/m3/kg/unit",
+    "pricePerUnit": 65000,
+    "totalAmount": 650000,
+    "storeName": "Nama Toko",
+    "paymentScenario": "KAS_PROYEK" | "KANTOR_PUSAT" | "TEMPO_TOKO" | "PANJAR_LAPANGAN",
+    "category": "Material" | "Upah / Tukang" | "Alat" | "Operasional" | "Panjar / Kasbon",
+    "notes": "Catatan ringkas"
+  }
+}
+`;
+
+  for (const model of CANDIDATE_MODELS) {
+    try {
+      const endpoint = `${GEMINI_API_URL}/${model}:generateContent?key=${key}`;
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: systemPrompt },
+                {
+                  inlineData: {
+                    mimeType: mimeType,
+                    data: base64Data
+                  }
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 1024,
+            responseMimeType: 'application/json'
+          }
+        })
+      });
+
+      if (!response.ok) continue;
+
+      const resJson = await response.json();
+      const text = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) continue;
+
+      const parsed: AgentIntentResult = JSON.parse(text);
+      return parsed;
+    } catch {
+      continue;
+    }
+  }
+
+  throw new Error('Gagal menganalisis suara melalui Gemini AI.');
 }
 
 /**
@@ -362,7 +469,7 @@ ATURAN KEAMANAN & PRIVASI:
      * PANJAR_LAPANGAN (kasbon/panjar kerja)
 3. Hasilkan output HANYA JSON valid tanpa teks lain:
 {
-  "type": "STOCK_IN_AND_CASH" | "STOCK_OUT" | "CASH_EXPENSE" | "CHECK_STOCK" | "CHECK_CASH_BALANCE" | "CHECK_PROFIT_LOSS" | "CHECK_APPROVAL_QUEUE" | "NAVIGATE" | "CONFIRM_ACTION" | "CANCEL_ACTION" | "CHAT",
+  "type": "STOCK_IN_AND_CASH" | "STOCK_OUT" | "CASH_EXPENSE" | "CHECK_STOCK" | "CHECK_CASH_BALANCE" | "CHECK_PROFIT_LOSS" | "CHECK_APPROVAL_QUEUE" | "NAVIGATE" | "CONFIRM_ACTION" | "CANCEL_ACTION" | "GENERAL_QUERY",
   "confidence": 0.95,
   "spokenResponse": "Jawaban lisan ringkas dan bersahabat yang akan disuarakan oleh TTS...",
   "actionRequired": boolean,

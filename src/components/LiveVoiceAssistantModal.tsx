@@ -32,6 +32,7 @@ import {
 import {
   processWithGemini,
   analyzeReceiptWithGemini,
+  processAudioWithGemini,
   isGeminiAiAvailable
 } from '../lib/geminiService';
 import { formatRupiah } from '../lib/pdfGenerator';
@@ -90,13 +91,49 @@ export const LiveVoiceAssistantModal: React.FC = () => {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef<number | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
-  const startAudioVisualizer = async () => {
+  // Helper cerdas membuka stream mikrofon dengan multi-fallback perangkat
+  const getMicrophoneStream = async (): Promise<MediaStream> => {
+    // 1. Coba izin standar
     try {
-      if (!navigator?.mediaDevices?.getUserMedia) return;
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioStreamRef.current = stream;
+      return await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err: any) {
+      console.warn('Percobaan getUserMedia({ audio: true }) pertama:', err.name, err.message);
+    }
 
+    // 2. Coba tanpa constraint echo/gain khusus (sering crash di beberapa driver sound Windows)
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        }
+      });
+    } catch (err: any) {
+      console.warn('Percobaan getUserMedia unconstrained kedua:', err.name);
+    }
+
+    // 3. Scan perangkat audioinput fisik yang tersedia di sistem Windows (lewati bluetooth mati)
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter(d => d.kind === 'audioinput' && d.deviceId);
+      for (const dev of audioInputs) {
+        try {
+          return await navigator.mediaDevices.getUserMedia({
+            audio: { deviceId: { exact: dev.deviceId } }
+          });
+        } catch {}
+      }
+    } catch {}
+
+    throw new Error('Tidak ada mikrofon aktif yang dapat diakses di perangkat Anda.');
+  };
+
+  const startAudioVisualizer = (stream: MediaStream) => {
+    try {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContextClass) return;
 
@@ -104,7 +141,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
       audioContextRef.current = audioCtx;
 
       if (audioCtx.state === 'suspended') {
-        await audioCtx.resume();
+        audioCtx.resume().catch(() => {});
       }
 
       const source = audioCtx.createMediaStreamSource(stream);
@@ -142,6 +179,14 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
+    }
+    if (mediaRecorderRef.current) {
+      try {
+        if (mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+        }
+      } catch {}
+      mediaRecorderRef.current = null;
     }
     if (audioStreamRef.current) {
       audioStreamRef.current.getTracks().forEach(t => t.stop());
@@ -354,103 +399,137 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     }
     setIsSpeaking(false);
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      setSpeechError('Peramban Anda belum mendukung Speech Recognition. Gunakan Google Chrome, Microsoft Edge, atau ketik langsung di kotak pesan.');
+    // Dapatkan media stream mikrofon dengan pemulihan multi-device otomatis
+    let stream: MediaStream | null = null;
+    try {
+      stream = await getMicrophoneStream();
+      audioStreamRef.current = stream;
+    } catch (err: any) {
+      console.warn('Gagal memperoleh stream mikrofon:', err);
+      let detail = 'Peramban tidak dapat mengakses mikrofon.';
+      if (err.name === 'NotFoundError' || err.message?.includes('tidak ada mikrofon')) {
+        detail = 'Tidak ada perangkat mikrofon fisik yang terdeteksi aktif di sistem laptop/PC Anda.';
+      } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        detail = 'Izin akses mikrofon terhalang peramban atau setelan privasi Windows. Pastikan izin "Allow" aktif di peramban dan "Settings > Privacy > Microphone" di Windows diaktifkan.';
+      } else if (err.name === 'NotReadableError') {
+        detail = 'Mikrofon sedang dipakai aplikasi lain atau mengalami kendala driver audio Windows.';
+      }
+      setSpeechError(detail);
       return;
     }
 
-    // Bersihkan instance lama jika ada
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.abort();
-      } catch {}
-      recognitionRef.current = null;
+    // Aktifkan visualisasi amplitudo suara live dengan stream tunggal
+    startAudioVisualizer(stream);
+
+    // Aktifkan MediaRecorder untuk menangkap rekaman suara langsung ke Gemini
+    audioChunksRef.current = [];
+    try {
+      const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+      const recorder = new MediaRecorder(stream, { mimeType: mime });
+      recorder.ondataavailable = e => {
+        if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.start(250);
+      mediaRecorderRef.current = recorder;
+    } catch (recErr) {
+      console.warn('MediaRecorder error:', recErr);
     }
 
-    // Aktifkan visualisasi amplitudo suara live
-    startAudioVisualizer().catch(() => {});
+    setIsListening(true);
 
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.lang = 'id-ID';
-      recognition.continuous = false;
-      recognition.interimResults = true; // Menampilkan kata secara real-time saat berbicara
+    // Jalankan juga SpeechRecognition untuk umpan balik transkripsi teks berjalan jika peramban mendukung
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch {}
+        recognitionRef.current = null;
+      }
 
-      recognition.onstart = () => {
-        setIsListening(true);
-        setSpeechError(null);
-      };
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'id-ID';
+        recognition.continuous = false;
+        recognition.interimResults = true;
 
-      recognition.onresult = (event: any) => {
-        let interim = '';
-        let finalTranscript = '';
+        recognition.onresult = (event: any) => {
+          let interim = '';
+          let finalTranscript = '';
 
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interim += event.results[i][0].transcript;
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript;
+            } else {
+              interim += event.results[i][0].transcript;
+            }
           }
-        }
 
-        if (interim) {
-          setLiveInterimText(interim);
-          setInputText(interim);
-        }
+          if (interim) {
+            setLiveInterimText(interim);
+            setInputText(interim);
+          }
 
-        if (finalTranscript && finalTranscript.trim()) {
-          setIsListening(false);
-          stopAudioVisualizer();
-          setLiveInterimText('');
-          setInputText('');
-          handleProcessInput(finalTranscript.trim());
-        }
-      };
+          if (finalTranscript && finalTranscript.trim()) {
+            stopListening(finalTranscript.trim());
+          }
+        };
 
-      recognition.onerror = (event: any) => {
-        console.warn('Speech recognition error event:', event.error);
-        setIsListening(false);
-        stopAudioVisualizer();
-        setLiveInterimText('');
+        recognition.onerror = (event: any) => {
+          console.warn('Speech recognition warning:', event.error);
+          // Jika SpeechRecognition gagal di peramban, MediaRecorder tetap merekam audio untuk diproses Gemini saat berhenti!
+        };
 
-        if (event.error === 'not-allowed') {
-          setSpeechError('Izin akses mikrofon belum diizinkan oleh peramban. Silakan klik ikon gembok di sebelah alamat URL (atau tombol "Minta Izin Ulang" di bawah) untuk mengizinkan mikrofon.');
-        } else if (event.error === 'no-speech') {
-          // Hening, tidak perlu error keras
-        } else if (event.error === 'network') {
-          setSpeechError('Koneksi suara terganggu. Periksa koneksi internet Anda atau ketik langsung di kotak pesan.');
-        } else if (event.error !== 'aborted') {
-          setSpeechError(`Perekaman suara terhenti (${event.error}). Klik tombol mic untuk mencoba kembali.`);
-        }
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-        stopAudioVisualizer();
-        setLiveInterimText('');
-      };
-
-      recognitionRef.current = recognition;
-      recognition.start();
-    } catch (err: any) {
-      console.error('Gagal mengaktifkan SpeechRecognition:', err);
-      setIsListening(false);
-      stopAudioVisualizer();
-      setSpeechError('Gagal mengaktifkan mikrofon. Pastikan perangkat mikrofon terpasang dan izin aktif.');
+        recognitionRef.current = recognition;
+        recognition.start();
+      } catch (e) {
+        console.warn('SpeechRecognition start error:', e);
+      }
     }
   };
 
-  const stopListening = () => {
+  const stopListening = async (preTranscribedText?: string) => {
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
       } catch {}
     }
+
+    const recordedChunks = [...audioChunksRef.current];
     stopAudioVisualizer();
     setIsListening(false);
     setLiveInterimText('');
+
+    // Skenario A: Ada teks transkripsi dari Web Speech API
+    if (preTranscribedText && preTranscribedText.trim()) {
+      handleProcessInput(preTranscribedText.trim());
+      return;
+    }
+
+    // Skenario B: Web Speech API kosong/gagal, namun ada audio chunk yang berhasil direkam oleh MediaRecorder
+    if (recordedChunks.length > 0 && !inputText.trim()) {
+      setIsAiThinking(true);
+      try {
+        const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+        const audioBlob = new Blob(recordedChunks, { type: mime });
+        const context = buildContextSnapshot();
+        const result = await processAudioWithGemini(audioBlob, context);
+        setIsAiThinking(false);
+        setPendingAction(result);
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            sender: 'assistant',
+            text: result.spokenResponse,
+            timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+            actionCard: result.actionRequired ? result : undefined
+          }
+        ]);
+        speakResponse(result.spokenResponse);
+      } catch (err: any) {
+        setIsAiThinking(false);
+        console.warn('Gagal memproses audio via Gemini fallback:', err);
+      }
+    }
   };
 
   const toggleListening = () => {
@@ -1288,19 +1367,11 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                         type="button"
                         onClick={() => {
                           setSpeechError(null);
-                          if (navigator?.mediaDevices?.getUserMedia) {
-                            navigator.mediaDevices.getUserMedia({ audio: true })
-                              .then(() => startListening())
-                              .catch(() => {
-                                setSpeechError('Peramban masih memblokir mikrofon. Klik ikon gembok 🔒 di samping URL dan pilih "Izinkan" untuk Mikrofon.');
-                              });
-                          } else {
-                            startListening();
-                          }
+                          startListening();
                         }}
-                        className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] cursor-pointer shadow-xs transition-colors"
+                        className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] cursor-pointer shadow-xs transition-colors"
                       >
-                        Minta Izin Ulang / Coba Lagi
+                        Coba Sambungkan Mikrofon Lagi
                       </button>
                       <button
                         type="button"
@@ -1355,7 +1426,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
 
                   <button
                     type="button"
-                    onClick={stopListening}
+                    onClick={() => stopListening()}
                     className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold cursor-pointer shrink-0 shadow-xs active:scale-95 transition-all"
                   >
                     Selesai Bicara
