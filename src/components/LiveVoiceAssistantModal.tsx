@@ -20,7 +20,8 @@ import {
   Building2,
   Clock,
   ShieldCheck,
-  Receipt
+  Receipt,
+  RefreshCw
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import {
@@ -74,6 +75,109 @@ export const LiveVoiceAssistantModal: React.FC = () => {
   const [attachedPreview, setAttachedPreview] = useState<string | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // State & Ref Kamera Interaktif Langsung
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraFacingMode, setCameraFacingMode] = useState<'environment' | 'user'>('environment');
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+
+  // State & Ref Suara & Speech Recognition
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  const [liveInterimText, setLiveInterimText] = useState<string>('');
+
+  const stopCameraStream = useCallback(() => {
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
+    }
+    setIsCameraActive(false);
+  }, []);
+
+  const openLiveCamera = async () => {
+    stopListening();
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    }
+    setIsSpeaking(false);
+
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      cameraInputRef.current?.click();
+      return;
+    }
+
+    try {
+      stopCameraStream();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: cameraFacingMode,
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
+      });
+      cameraStreamRef.current = stream;
+      setIsCameraActive(true);
+
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(e => console.warn('Video play error:', e));
+        }
+      }, 100);
+    } catch (err: any) {
+      console.warn('Gagal membuka webcam langsung, beralih ke input kamera file:', err);
+      stopCameraStream();
+      cameraInputRef.current?.click();
+    }
+  };
+
+  const toggleCameraFacing = async () => {
+    const nextMode = cameraFacingMode === 'environment' ? 'user' : 'environment';
+    setCameraFacingMode(nextMode);
+    if (isCameraActive) {
+      stopCameraStream();
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: nextMode,
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          }
+        });
+        cameraStreamRef.current = stream;
+        setIsCameraActive(true);
+        setTimeout(() => {
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.play().catch(() => {});
+          }
+        }, 100);
+      } catch {
+        openLiveCamera();
+      }
+    }
+  };
+
+  const captureLivePhoto = () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(blob => {
+      if (blob) {
+        const capturedFile = new File([blob], `nota_lapangan_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        stopCameraStream();
+        handleFileSelect(capturedFile);
+      }
+    }, 'image/jpeg', 0.92);
+  };
 
   const handleFileSelect = async (file: File) => {
     setAttachedFile(file);
@@ -142,6 +246,14 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     }
   }, [messages, isOpen, pendingAction]);
 
+  // Cleanup saat unmount
+  useEffect(() => {
+    return () => {
+      stopCameraStream();
+      stopListening();
+    };
+  }, [stopCameraStream]);
+
   // Fungsi Text-to-Speech (TTS) Suara Asisten Bahasa Indonesia
   const speakResponse = useCallback((text: string) => {
     if (!ttsEnabled || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
@@ -158,54 +270,127 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     } catch {}
   }, [ttsEnabled]);
 
-  // Setup Web Speech API (Speech Recognition)
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
+  const startListening = async () => {
+    setSpeechError(null);
+    setLiveInterimText('');
+
+    // Hentikan suara TTS asisten agar tidak terjadi feedback
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    }
+    setIsSpeaking(false);
+
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
+
+    if (!SpeechRecognition) {
+      setSpeechError('Peramban Anda belum mendukung Speech Recognition. Gunakan Google Chrome, Microsoft Edge, atau ketik langsung di kotak pesan.');
+      return;
+    }
+
+    // Minta izin mikrofon jika belum
+    try {
+      if (navigator?.mediaDevices?.getUserMedia) {
+        const testAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        testAudioStream.getTracks().forEach(t => t.stop());
+      }
+    } catch (micErr: any) {
+      if (micErr.name === 'NotAllowedError' || micErr.name === 'PermissionDeniedError') {
+        setSpeechError('Izin akses mikrofon belum diizinkan. Silakan klik ikon gembok di sebelah alamat URL peramban untuk mengizinkan mikrofon.');
+        return;
+      }
+    }
+
+    // Bersihkan instance lama jika ada
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {}
+      recognitionRef.current = null;
+    }
+
+    try {
       const recognition = new SpeechRecognition();
       recognition.lang = 'id-ID';
       recognition.continuous = false;
-      recognition.interimResults = false;
+      recognition.interimResults = true; // Menampilkan kata secara real-time saat berbicara
 
       recognition.onstart = () => {
         setIsListening(true);
+        setSpeechError(null);
       };
 
       recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setIsListening(false);
-        if (transcript && transcript.trim()) {
-          handleProcessInput(transcript.trim());
+        let interim = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interim += event.results[i][0].transcript;
+          }
+        }
+
+        if (interim) {
+          setLiveInterimText(interim);
+          setInputText(interim);
+        }
+
+        if (finalTranscript && finalTranscript.trim()) {
+          setIsListening(false);
+          setLiveInterimText('');
+          setInputText('');
+          handleProcessInput(finalTranscript.trim());
         }
       };
 
-      recognition.onerror = () => {
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition error event:', event.error);
         setIsListening(false);
+        setLiveInterimText('');
+
+        if (event.error === 'not-allowed') {
+          setSpeechError('Izin mikrofon tidak diizinkan. Mohon izinkan mikrofon di pengaturan peramban.');
+        } else if (event.error === 'no-speech') {
+          // Hening, tidak perlu error keras
+        } else if (event.error === 'network') {
+          setSpeechError('Koneksi suara terganggu. Periksa koneksi internet Anda atau ketik langsung.');
+        } else if (event.error !== 'aborted') {
+          setSpeechError(`Perekaman suara terhenti (${event.error}). Klik mic untuk mencoba kembali.`);
+        }
       };
 
       recognition.onend = () => {
         setIsListening(false);
+        setLiveInterimText('');
       };
 
       recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err: any) {
+      console.error('Gagal mengaktifkan SpeechRecognition:', err);
+      setIsListening(false);
+      setSpeechError('Gagal mengaktifkan mikrofon. Silakan coba kembali atau ketik pesan.');
     }
-  }, []);
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+    }
+    setIsListening(false);
+    setLiveInterimText('');
+  };
 
   const toggleListening = () => {
     if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
+      stopListening();
     } else {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.start();
-        } catch {
-          setIsListening(false);
-        }
-      } else {
-        alert('Browser Anda belum mendukung input suara langsung. Anda dapat menggunakan kotak ketik teks.');
-      }
+      startListening();
     }
   };
 
@@ -692,7 +877,91 @@ export const LiveVoiceAssistantModal: React.FC = () => {
           ========================================================================= */}
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="w-full sm:max-w-xl h-[88vh] sm:h-[620px] bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden transition-colors">
+          <div className="relative w-full sm:max-w-xl h-[88vh] sm:h-[620px] bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden transition-colors">
+            {/* =========================================================================
+                KAMERA PEMINDAI NOTA INTERAKTIF LANGSUNG (LIVE VIEWFINDER OVERLAY)
+                ========================================================================= */}
+            {isCameraActive && (
+              <div className="absolute inset-0 z-50 bg-slate-950 flex flex-col rounded-t-3xl sm:rounded-3xl overflow-hidden animate-in fade-in zoom-in-95">
+                {/* Header Viewfinder */}
+                <div className="p-3.5 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between z-10">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-xs font-bold text-white tracking-wide">Kamera Pemindai Nota Fisik</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={stopCameraStream}
+                    className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                    title="Tutup Kamera"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Video Stream & Aiming Guide Frame */}
+                <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
+                  <video
+                    ref={videoRef}
+                    playsInline
+                    autoPlay
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+
+                  {/* Frame Panduan Bidik Nota Fisik */}
+                  <div className="absolute inset-5 sm:inset-8 border-2 border-dashed border-blue-400/80 rounded-2xl pointer-events-none flex flex-col items-center justify-between p-3 sm:p-4 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]">
+                    <span className="text-[11px] font-semibold text-white/95 bg-blue-600/80 px-3 py-1 rounded-full backdrop-blur-xs shadow-md">
+                      Posisikan nota fisik di dalam kotak ini
+                    </span>
+                    <span className="text-[10px] text-white/80 bg-black/60 px-2.5 py-0.5 rounded-full backdrop-blur-xs">
+                      Pastikan nama toko & total rupiah terlihat tajam
+                    </span>
+                  </div>
+                </div>
+
+                {/* Viewfinder Controls */}
+                <div className="p-4 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 flex items-center justify-around z-10">
+                  {/* Switch Camera */}
+                  <button
+                    type="button"
+                    onClick={toggleCameraFacing}
+                    className="p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 transition-colors flex flex-col items-center gap-1 cursor-pointer active:scale-95"
+                    title="Putar Kamera"
+                  >
+                    <RefreshCw className="w-5 h-5" />
+                    <span className="text-[9px] text-slate-400">Putar</span>
+                  </button>
+
+                  {/* Shutter Button (Jepret Foto) */}
+                  <button
+                    type="button"
+                    onClick={captureLivePhoto}
+                    className="w-16 h-16 rounded-full bg-white hover:bg-slate-100 p-1.5 shadow-xl ring-4 ring-blue-500/50 hover:ring-blue-500 active:scale-95 transition-all flex items-center justify-center cursor-pointer"
+                    title="Jepret Foto Nota"
+                  >
+                    <div className="w-full h-full rounded-full border-2 border-slate-900 bg-blue-600 flex items-center justify-center text-white">
+                      <Camera className="w-6 h-6" />
+                    </div>
+                  </button>
+
+                  {/* Upload file fallback */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      stopCameraStream();
+                      cameraInputRef.current?.click();
+                    }}
+                    className="p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 transition-colors flex flex-col items-center gap-1 cursor-pointer active:scale-95"
+                    title="Pilih Berkas Dari Galeri / Komputer"
+                  >
+                    <ImageIcon className="w-5 h-5" />
+                    <span className="text-[9px] text-slate-400">Berkas</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Header Modal */}
             <div className="p-4 sm:p-4.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-xs">
               <div className="flex items-center gap-3">
@@ -752,6 +1021,8 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                   type="button"
                   onClick={() => {
                     setIsOpen(false);
+                    stopCameraStream();
+                    stopListening();
                     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
                       window.speechSynthesis.cancel();
                     }
@@ -933,16 +1204,59 @@ export const LiveVoiceAssistantModal: React.FC = () => {
               </div>
             )}
 
-            {/* Input Tersembunyi untuk Kamera HP & File Galeri */}
+            {/* Banner Error Mikrofon jika Akses Ditolak atau Terganggu */}
+            {speechError && (
+              <div className="mx-3 my-2 p-2.5 rounded-xl bg-rose-50/90 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-[11px] flex items-center justify-between animate-in fade-in">
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                  <span className="truncate">{speechError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSpeechError(null)}
+                  className="p-1 text-rose-400 hover:text-rose-600 cursor-pointer shrink-0 ml-1"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Banner Transkrip Suara Langsung (Real-Time Interim Voice Feedback) */}
+            {isListening && (
+              <div className="mx-3 my-2 p-2.5 rounded-xl bg-blue-50/95 dark:bg-blue-950/70 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-100 text-[11px] flex items-center justify-between animate-in slide-in-from-bottom-1 shadow-xs">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <span className="w-1 h-2.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                    <span className="w-1 h-4 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                    <span className="w-1 h-2.5 bg-blue-600 rounded-full animate-bounce" />
+                  </div>
+                  <div className="min-w-0 truncate">
+                    <span className="font-bold text-blue-700 dark:text-blue-300">Mendengarkan: </span>
+                    <span className="italic text-slate-700 dark:text-slate-200">
+                      {liveInterimText || 'Bicaralah sekarang dalam bahasa Indonesia...'}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={stopListening}
+                  className="px-2 py-0.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold cursor-pointer shrink-0 ml-2 shadow-xs"
+                >
+                  Selesai Bicara
+                </button>
+              </div>
+            )}
+
+            {/* Input Tersembunyi untuk Berkas Foto/Dokumen */}
             <input
               ref={cameraInputRef}
               type="file"
               accept="image/*"
-              capture="environment"
               onChange={e => {
                 if (e.target.files && e.target.files[0]) {
                   handleFileSelect(e.target.files[0]);
                 }
+                e.target.value = '';
               }}
               className="hidden"
             />
@@ -954,21 +1268,22 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                 if (e.target.files && e.target.files[0]) {
                   handleFileSelect(e.target.files[0]);
                 }
+                e.target.value = '';
               }}
               className="hidden"
             />
 
-            {/* Input Bar, Kamera & Mic Trigger */}
+            {/* Input Bar, Tombol Kamera Langsung & Tombol Mic Suara */}
             <form
               onSubmit={handleFormSubmit}
               className="p-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2"
             >
-              {/* Tombol Kamera Langsung */}
+              {/* Tombol Kamera Langsung (Live Viewfinder / Foto Nota) */}
               <button
                 type="button"
-                onClick={() => cameraInputRef.current?.click()}
+                onClick={openLiveCamera}
                 className="w-10 h-10 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-blue-400 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 flex items-center justify-center shrink-0 transition-all cursor-pointer shadow-xs active:scale-95"
-                title="Foto Nota Fisik (Kamera HP Langsung)"
+                title="Buka Kamera untuk Foto Nota Fisik"
               >
                 <Camera className="w-4.5 h-4.5" />
               </button>
@@ -983,7 +1298,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                 <Paperclip className="w-4 h-4" />
               </button>
 
-              {/* Tombol Mic Suara Indonesia */}
+              {/* Tombol Mic Suara Indonesia Real-Time */}
               <button
                 type="button"
                 onClick={toggleListening}
@@ -994,7 +1309,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                 }`}
                 title={isListening ? 'Klik untuk berhenti mendengarkan' : 'Klik untuk bicara bahasa Indonesia'}
               >
-                {isListening ? <MicOff className="w-4.5 h-4.5 animate-spin" /> : <Mic className="w-4.5 h-4.5" />}
+                {isListening ? <MicOff className="w-4.5 h-4.5" /> : <Mic className="w-4.5 h-4.5" />}
               </button>
 
               <input
