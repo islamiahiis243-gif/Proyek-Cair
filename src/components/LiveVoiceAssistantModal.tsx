@@ -25,7 +25,10 @@ import {
   Activity,
   Check,
   HelpCircle,
-  Radio
+  Radio,
+  Sliders,
+  RotateCcw,
+  FileAudio
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import {
@@ -80,6 +83,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
   const [attachedPreview, setAttachedPreview] = useState<string | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
 
   // State & Ref Kamera Interaktif Langsung
   const [isCameraActive, setIsCameraActive] = useState(false);
@@ -103,6 +107,8 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     hasSpeechRecognition: boolean;
     testStatus: 'idle' | 'running' | 'success' | 'failed';
     testMessage?: string;
+    isSecureContext?: boolean;
+    isHttpNonLocalhost?: boolean;
   } | null>(null);
 
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -284,7 +290,53 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     const previewUrl = URL.createObjectURL(file);
     setAttachedPreview(previewUrl);
 
-    // Jika berkas berupa gambar/foto nota fisik, langsung picu analisis cerdas Vision AI
+    // 1. Jika berkas berupa audio / rekaman suara, kirim langsung ke Gemini Multimodal Audio
+    const isAudio = file.type.startsWith('audio/') ||
+      /\.(m4a|mp3|wav|ogg|webm|aac|flac|opus|wma)$/i.test(file.name);
+
+    if (isAudio) {
+      setIsAiThinking(true);
+      const audioNotice: ChatMessage = {
+        id: `audio-${Date.now()}`,
+        sender: 'assistant',
+        text: `🎙️ Rekaman suara "${file.name}" diterima. Sedang mentranskrip dan memproses niat lapangan dengan Gemini Flash Audio...`,
+        timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+      };
+      setMessages(prev => [...prev, audioNotice]);
+
+      try {
+        const context = buildContextSnapshot();
+        const audioResult = await processAudioWithGemini(file, context);
+        setIsAiThinking(false);
+        setPendingAction(audioResult);
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            sender: 'assistant',
+            text: audioResult.spokenResponse,
+            timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+            actionCard: audioResult.actionRequired ? audioResult : undefined
+          }
+        ]);
+        speakResponse(audioResult.spokenResponse);
+      } catch (err: any) {
+        setIsAiThinking(false);
+        console.warn('Gagal analisis audio file via Gemini:', err);
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `err-${Date.now()}`,
+            sender: 'assistant',
+            text: `⚠️ Maaf, berkas audio belum berhasil dianalisis: ${err?.message || 'format audio tidak terbaca'}.`,
+            timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+          }
+        ]);
+      }
+      return;
+    }
+
+    // 2. Jika berkas berupa gambar/foto nota fisik, picu analisis cerdas Vision AI
     if (file.type.startsWith('image/')) {
       setIsScanningReceipt(true);
       const scanNotice: ChatMessage = {
@@ -326,6 +378,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     }
     if (cameraInputRef.current) cameraInputRef.current.value = '';
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (audioInputRef.current) audioInputRef.current.value = '';
   };
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
@@ -379,6 +432,9 @@ export const LiveVoiceAssistantModal: React.FC = () => {
       if (typeof navigator !== 'undefined' && (navigator as any).permissions?.query) {
         const p = await (navigator as any).permissions.query({ name: 'microphone' });
         perm = p.state; // 'granted' | 'denied' | 'prompt'
+        p.onchange = () => {
+          runMicrophoneDiagnostic();
+        };
       }
     } catch {}
 
@@ -393,24 +449,32 @@ export const LiveVoiceAssistantModal: React.FC = () => {
     const hasMR = typeof window !== 'undefined' && 'MediaRecorder' in window;
     const hasSR = typeof window !== 'undefined' && Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 
-    // Uji sambung mikrofon nyata 2 detik
+    const isSecureContext = typeof window !== 'undefined' ? (window.isSecureContext ?? true) : true;
+    const isHttpNonLocalhost = typeof window !== 'undefined' &&
+      window.location.protocol === 'http:' &&
+      window.location.hostname !== 'localhost' &&
+      window.location.hostname !== '127.0.0.1';
+
+    // Uji sambung mikrofon nyata
     let testSuccess = false;
     let testMsg = '';
     try {
       if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
         const testStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         testSuccess = true;
-        testMsg = 'Mikrofon terhubung dan berfungsi dengan normal! Sistem siap menangkap suara.';
+        testMsg = 'Mikrofon terhubung dan berfungsi normal! Sistem siap menangkap suara.';
         testStream.getTracks().forEach(t => t.stop());
       } else {
         testMsg = 'API getUserMedia tidak didukung pada peramban ini.';
       }
     } catch (testErr: any) {
       testSuccess = false;
-      if (testErr.name === 'NotAllowedError' || testErr.name === 'PermissionDeniedError') {
-        testMsg = 'Izin mikrofon diblokir. Buka ikon gembok di sebelah URL Chrome dan izinkan Microphone, serta pastikan "Let desktop apps access your microphone" di Windows aktif.';
+      if (isHttpNonLocalhost || !isSecureContext) {
+        testMsg = `Google Chrome memblokir mikrofon pada protokol HTTP biasa (${typeof window !== 'undefined' ? window.location.host : ''}). Silakan buka melalui http://localhost:5173 atau gunakan HTTPS.`;
+      } else if (testErr.name === 'NotAllowedError' || testErr.name === 'PermissionDeniedError') {
+        testMsg = 'Chrome memblokir mikrofon untuk alamat ini dan sengaja menahan jendela pop-up. Ikuti 3 langkah buka blokir di bawah untuk mengizinkan.';
       } else if (testErr.name === 'NotFoundError') {
-        testMsg = 'Tidak ada perangkat mikrofon fisik yang terdeteksi di laptop/PC Anda.';
+        testMsg = 'Tidak ada perangkat mikrofon fisik yang terdeteksi aktif di sistem laptop/PC Anda.';
       } else {
         testMsg = `Kendala perangkat: ${testErr.name || testErr.message}`;
       }
@@ -423,7 +487,9 @@ export const LiveVoiceAssistantModal: React.FC = () => {
       hasMediaRecorder: hasMR,
       hasSpeechRecognition: hasSR,
       testStatus: testSuccess ? 'success' : 'failed',
-      testMessage: testMsg
+      testMessage: testMsg,
+      isSecureContext,
+      isHttpNonLocalhost
     });
     setIsTestingMic(false);
   };
@@ -1376,10 +1442,96 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                   </div>
                 )}
 
+                {/* Panduan 3 Langkah Membuka Blokir Izin di Chrome & Windows */}
+                {(diagnosticResult?.permissionState === 'denied' || diagnosticResult?.testStatus === 'failed') && (
+                  <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white text-xs">
+                        <Sliders className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                        <span>Cara Membuka Blokir Izin Mikrofon di Chrome (3 Langkah)</span>
+                      </div>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 font-semibold border border-rose-200 dark:border-rose-800">
+                        Chrome Menahan Pop-up
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                      Google Chrome <strong>tidak akan memunculkan jendela pop-up izin</strong> jika alamat situs ini pernah tercatat dalam status &ldquo;Diblokir&rdquo;. Untuk mengaktifkannya kembali:
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[11px]">
+                      {/* Langkah 1 */}
+                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-indigo-600 dark:text-indigo-400">
+                          <span className="w-4 h-4 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center">1</span>
+                          <span>Klik Ikon Setelan</span>
+                        </div>
+                        <p className="text-slate-600 dark:text-slate-400 text-[10px] leading-relaxed">
+                          Di bilah alamat Chrome (sebelah kiri alamat URL), klik ikon <strong>Setelan Situs 🎛️</strong> atau <strong>Gembok 🔒</strong>.
+                        </p>
+                      </div>
+
+                      {/* Langkah 2 */}
+                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-indigo-600 dark:text-indigo-400">
+                          <span className="w-4 h-4 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center">2</span>
+                          <span>Ubah ke &ldquo;Izinkan&rdquo;</span>
+                        </div>
+                        <p className="text-slate-600 dark:text-slate-400 text-[10px] leading-relaxed">
+                          Pada baris <strong>Mikrofon (Microphone)</strong>, ubah dari <em>Blokir</em> menjadi <strong>Izinkan (Allow)</strong>, atau klik <em>Atur ulang izin</em>.
+                        </p>
+                      </div>
+
+                      {/* Langkah 3 */}
+                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-indigo-600 dark:text-indigo-400">
+                          <span className="w-4 h-4 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center">3</span>
+                          <span>Muat Ulang Halaman</span>
+                        </div>
+                        <p className="text-slate-600 dark:text-slate-400 text-[10px] leading-relaxed">
+                          Klik tombol <strong>Muat Ulang Halaman</strong> agar peramban Chrome membaca izin yang baru.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Catatan Privasi Windows 10/11 */}
+                    <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-[10px] text-amber-900 dark:text-amber-200 space-y-1">
+                      <div className="font-bold flex items-center gap-1">
+                        <span>🛡️ Khusus Windows 10/11:</span>
+                      </div>
+                      <p className="leading-relaxed">
+                        Jika di Chrome sudah diatur &ldquo;Izinkan&rdquo; namun masih terblokir, buka <strong>Settings Windows &gt; Privacy &amp; security &gt; Microphone</strong>, lalu pastikan opsi <strong>&ldquo;Let desktop apps access your microphone&rdquo;</strong> dalam posisi <strong>ON / Aktif</strong>.
+                      </p>
+                    </div>
+
+                    {/* Tombol Aksi Cepat: Reload & Rekam/Pilih File Suara */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => window.location.reload()}
+                        className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Muat Ulang Halaman (Reload)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => audioInputRef.current?.click()}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95"
+                        title="Rekam atau unggah file suara (.m4a, .mp3, .wav, .webm)"
+                      >
+                        <FileAudio className="w-3.5 h-3.5" />
+                        Alternatif: Rekam / Pilih File Suara
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Tombol Uji & Panduan Langkah Cepat */}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-1 border-t border-indigo-100 dark:border-indigo-900/40">
                   <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                    💡 <strong>Tips Cepat Chrome & Windows:</strong> Klik ikon gembok di sebelah URL &gt; izinkan mikrofon, dan cek switch privasi mikrofon di Windows Settings.
+                    💡 <strong>Tips Cepat Chrome:</strong> Klik ikon gembok 🔒 atau setelan 🎛️ di bilah alamat &gt; izinkan mikrofon &gt; muat ulang halaman.
                   </div>
                   <button
                     type="button"
@@ -1569,8 +1721,9 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                 <div className="flex items-start gap-2.5">
                   <AlertCircle className="w-5 h-5 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
                   <div className="flex-1 min-w-0 space-y-1.5">
-                    <p className="font-bold text-rose-900 dark:text-rose-100">
-                      Izin Akses Mikrofon Diperlukan
+                    <p className="font-bold text-rose-900 dark:text-rose-100 flex items-center justify-between">
+                      <span>Izin Akses Mikrofon Diperlukan</span>
+                      <span className="text-[10px] text-rose-600 dark:text-rose-400 font-normal">Chrome menahan pop-up</span>
                     </p>
                     <p className="text-[11px] leading-relaxed text-rose-700 dark:text-rose-300">
                       {speechError}
@@ -1592,9 +1745,26 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                           setShowDiagnostic(true);
                           runMicrophoneDiagnostic();
                         }}
-                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] cursor-pointer shadow-xs transition-colors"
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] cursor-pointer shadow-xs transition-colors flex items-center gap-1"
                       >
-                        Buka Diagnostik & Solusi Izin
+                        <Sliders className="w-3 h-3" />
+                        Panduan Buka Blokir Chrome
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.location.reload()}
+                        className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-[10px] cursor-pointer shadow-xs transition-colors flex items-center gap-1"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Muat Ulang
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => audioInputRef.current?.click()}
+                        className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] cursor-pointer shadow-xs transition-colors flex items-center gap-1"
+                      >
+                        <FileAudio className="w-3 h-3" />
+                        Alternatif: File Suara
                       </button>
                       <button
                         type="button"
@@ -1678,7 +1848,7 @@ export const LiveVoiceAssistantModal: React.FC = () => {
               </div>
             )}
 
-            {/* Input Tersembunyi untuk Berkas Foto/Dokumen */}
+            {/* Input Tersembunyi untuk Berkas Foto/Dokumen/Audio */}
             <input
               ref={cameraInputRef}
               type="file"
@@ -1703,8 +1873,21 @@ export const LiveVoiceAssistantModal: React.FC = () => {
               }}
               className="hidden"
             />
+            <input
+              ref={audioInputRef}
+              type="file"
+              accept="audio/*,.m4a,.mp3,.wav,.ogg,.webm,.aac,.opus"
+              capture="user"
+              onChange={e => {
+                if (e.target.files && e.target.files[0]) {
+                  handleFileSelect(e.target.files[0]);
+                }
+                e.target.value = '';
+              }}
+              className="hidden"
+            />
 
-            {/* Input Bar, Tombol Kamera Langsung & Tombol Mic Suara */}
+            {/* Input Bar, Tombol Kamera Langsung, Lampiran, Rekaman Audio & Tombol Mic Suara */}
             <form
               onSubmit={handleFormSubmit}
               className="p-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2"
@@ -1727,6 +1910,16 @@ export const LiveVoiceAssistantModal: React.FC = () => {
                 title="Pilih Berkas Nota / Galeri / PDF"
               >
                 <Paperclip className="w-4 h-4" />
+              </button>
+
+              {/* Tombol Rekam / Unggah File Audio (Bypass izin WebRTC untuk Chrome yang terkunci) */}
+              <button
+                type="button"
+                onClick={() => audioInputRef.current?.click()}
+                className="w-10 h-10 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-emerald-400 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 flex items-center justify-center shrink-0 transition-all cursor-pointer shadow-xs active:scale-95"
+                title="Rekam atau Pilih Berkas Suara (.m4a, .mp3, .wav, .webm)"
+              >
+                <FileAudio className="w-4.5 h-4.5" />
               </button>
 
               {/* Tombol Mic Suara Indonesia Real-Time dengan Dynamic Emerald Glow */}
